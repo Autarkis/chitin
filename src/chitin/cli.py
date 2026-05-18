@@ -17,79 +17,124 @@ def main(argv: list[str] | None = None) -> None:
         prog="chitin",
         description="Convex collision geometry from point clouds and meshes",
     )
-    parser.add_argument("input", type=Path, help="Input file (PLY, OBJ, STL)")
-    parser.add_argument(
-        "-o", "--output", type=Path, required=True, help="Output file path"
+    sub = parser.add_subparsers(dest="command")
+
+    _add_extract_parser(sub)
+    _add_inspect_parser(sub)
+    _add_validate_parser(sub)
+
+    args = parser.parse_args(argv)
+    if args.command == "extract":
+        _cmd_extract(args)
+    elif args.command == "inspect":
+        _cmd_inspect(args)
+    elif args.command == "validate":
+        _cmd_validate(args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("extract", help="extract collision geometry from an asset")
+    p.add_argument(
+        "input",
+        type=Path,
+        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, FBX, USD, USDA, USDC)",
     )
-    parser.add_argument(
+    p.add_argument("-o", "--output", type=Path, required=True, help="Output file path")
+    p.add_argument(
         "-f",
         "--format",
         choices=["usd", "json", "phys"],
         default=None,
         help="Output format (inferred from extension if omitted)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--concavity",
         type=float,
         default=0.05,
         help="CoACD concavity threshold (default: 0.05)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--opacity-threshold",
         type=float,
         default=0.1,
         help="Minimum opacity to keep a splat (default: 0.1)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--poisson-depth",
         type=int,
         default=8,
         help="Poisson reconstruction depth (default: 8)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--max-hulls",
         type=int,
         default=2048,
         help="Maximum number of convex hulls (default: 2048)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--scene-name",
         type=str,
         default="scene",
         help="Root prim name for USD output (default: scene)",
     )
-    parser.add_argument(
+    p.add_argument(
         "--post-process",
         type=str,
         default=None,
         help="Post-process command to run with {input} substituted. "
         "Overrides ~/.config/chitin/config.toml",
     )
-    parser.add_argument(
-        "--no-hook",
-        action="store_true",
-        help="Skip post-process hook even if configured",
-    )
-    parser.add_argument(
+    p.add_argument("--no-hook", action="store_true", help="Skip post-process hook")
+    p.add_argument(
         "--cloud",
         action="store_true",
         help="Submit job to chitin cloud service instead of running locally",
     )
-    parser.add_argument(
+    p.add_argument(
         "--force",
         action="store_true",
         help="Run locally even when preflight check says the input is too large",
     )
-    parser.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
 
-    args = parser.parse_args(argv)
 
+def _add_inspect_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("inspect", help="inspect a .phys file")
+    p.add_argument("file", type=Path, help="path to .phys file")
+
+
+def _add_validate_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("validate", help="validate a .phys file")
+    p.add_argument("file", type=Path, help="path to .phys file")
+
+
+FORMAT_MAP = {
+    ".usda": "usd",
+    ".usd": "usd",
+    ".json": "json",
+    ".phys": "phys",
+}
+
+
+def _infer_format(path: Path) -> str | None:
+    return FORMAT_MAP.get(path.suffix.lower())
+
+
+def _cmd_extract(args: argparse.Namespace) -> None:
     if args.cloud:
-        parser.error("chitin cloud service is not yet available")
+        print("chitin: cloud service is not yet available", file=sys.stderr)
+        sys.exit(1)
 
     fmt = args.format or _infer_format(args.output)
     if fmt is None:
-        parser.error(f"Cannot infer format from {args.output.suffix}. Use --format.")
+        print(
+            f"chitin: cannot infer format from {args.output.suffix}, use --format",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     pf = preflight_check(args.input)
     if pf.level == "red" and not args.force:
@@ -135,16 +180,49 @@ def main(argv: list[str] | None = None) -> None:
             run_post_process(hook_cmd, args.input, quiet=args.quiet)
 
 
-FORMAT_MAP = {
-    ".usda": "usd",
-    ".usd": "usd",
-    ".json": "json",
-    ".phys": "phys",
-}
+def _cmd_inspect(args: argparse.Namespace) -> None:
+    from chitin.phys import read_phys
+
+    try:
+        pf = read_phys(args.file)
+    except ValueError as e:
+        print(f"chitin: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"version:    {pf.version}")
+    print(f"hulls:      {len(pf.hulls)}")
+    print(f"vertices:   {pf.total_vertices}")
+    print(f"triangles:  {pf.total_triangles}")
+    print(f"rigged:     {pf.has_bones}")
+    if pf.bones:
+        print(f"bones:      {len(pf.bones)}")
+        for b in pf.bones:
+            print(f"  {b.name}")
+
+    print()
+    for i, h in enumerate(pf.hulls):
+        line = f"  hull {i}: {len(h.vertices)} verts, {len(h.indices) // 3} tris"
+        if h.bone_index is not None:
+            line += f", bone {h.bone_index}"
+        aabb_size = h.aabb_max - h.aabb_min
+        line += f", size [{aabb_size[0]:.3f}, {aabb_size[1]:.3f}, {aabb_size[2]:.3f}]"
+        print(line)
 
 
-def _infer_format(path: Path) -> str | None:
-    return FORMAT_MAP.get(path.suffix.lower())
+def _cmd_validate(args: argparse.Namespace) -> None:
+    from chitin.phys import validate_phys
+
+    issues = validate_phys(args.file)
+    if not issues:
+        print(f"{args.file}: ok")
+        return
+
+    for issue in issues:
+        print(f"{args.file}: {issue}", file=sys.stderr)
+
+    errors = sum(1 for i in issues if i.severity == "error")
+    if errors:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
