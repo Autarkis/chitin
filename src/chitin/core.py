@@ -54,9 +54,19 @@ def extract_from_arrays(
         if normals is not None:
             normals = np.asarray(normals, dtype=np.float64)[mask]
 
+    if len(positions) < 100:
+        return ExtractionResult(
+            hulls=[], source_vertex_count=source_count, mesh_vertex_count=0
+        )
+
     mesh = _poisson_reconstruct(positions, normals, config)
     vertices = np.asarray(mesh.vertices, dtype=np.float64)
     triangles = np.asarray(mesh.triangles, dtype=np.int32)
+
+    if len(triangles) < 4:
+        return ExtractionResult(
+            hulls=[], source_vertex_count=source_count, mesh_vertex_count=len(vertices)
+        )
 
     return _decompose_and_build(
         vertices, triangles, source_count, len(vertices), config
@@ -110,19 +120,23 @@ def _poisson_reconstruct(
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
 
-    if normals is not None:
+    has_valid_normals = normals is not None and not np.allclose(normals, 0)
+    if has_valid_normals:
         pcd.normals = o3d.utility.Vector3dVector(normals)
     else:
         pcd.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
         )
-        pcd.orient_normals_consistent_tangent_plane(k=15)
+        pcd.orient_normals_consistent_tangent_plane(k=10)
 
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
         pcd, depth=config.poisson_depth
     )
 
     densities = np.asarray(densities)
+    if len(densities) == 0:
+        return mesh
+
     density_threshold = np.quantile(densities, 0.1)
     vertices_to_remove = densities < density_threshold
     mesh.remove_vertices_by_mask(vertices_to_remove)
@@ -143,7 +157,7 @@ def _decompose_and_build(
     parts = coacd.run_coacd(
         coacd_mesh,
         threshold=config.concavity,
-        preprocess=config.coacd_preprocess,
+        preprocess_mode=config.coacd_preprocess_mode,
         preprocess_resolution=config.coacd_preprocess_resolution,
         max_convex_hull=config.max_hulls,
     )
