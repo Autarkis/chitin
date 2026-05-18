@@ -9,5 +9,6 @@ class Config:
     poisson_depth: int = 8
     min_hull_vertices: int = 4
     max_hulls: int = 2048
+    opacity_is_logit: bool = False
     coacd_preprocess: bool = True
     coacd_preprocess_resolution: int = 30

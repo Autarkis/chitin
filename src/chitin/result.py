@@ -9,6 +9,16 @@ from pathlib import Path
 import numpy as np
 
 
+def _quantize_vertices(
+    vertices: np.ndarray, aabb_min: np.ndarray, aabb_max: np.ndarray
+) -> np.ndarray:
+    extent = aabb_max - aabb_min
+    extent = np.where(extent == 0, 1.0, extent)
+    normalized = (vertices - aabb_min) / extent
+    quantized = np.clip(normalized * 65535 - 32768, -32768, 32767)
+    return quantized.astype(np.int16)
+
+
 @dataclass
 class Hull:
     vertices: np.ndarray  # (N, 3) float32
@@ -40,69 +50,86 @@ class ExtractionResult:
 
     def to_phys(self, path: str | Path) -> None:
         MAGIC = b"PHYS"
-        VERSION = 1
-        buf = bytearray()
-        buf.extend(MAGIC)
-        buf.extend(struct.pack("<I", VERSION))
-        buf.extend(struct.pack("<I", len(self.hulls)))
-        buf.extend(b"\x00" * 20)  # reserved to 32-byte header
+        VERSION = 2
+        HEADER_SIZE = 32
+        DESCRIPTOR_SIZE = 40
 
-        descriptors = bytearray()
-        vertex_buf = bytearray()
-        index_buf = bytearray()
-        vertex_offset = 0
-        index_offset = 0
+        hull_count = len(self.hulls)
+        total_vertices = sum(len(h.vertices) for h in self.hulls)
+        total_indices = sum(len(h.indices) for h in self.hulls)
 
-        for hull in self.hulls:
-            nv = len(hull.vertices)
-            ni = len(hull.indices)
-            descriptors.extend(struct.pack("<I", vertex_offset))
-            descriptors.extend(struct.pack("<I", nv))
-            descriptors.extend(struct.pack("<I", index_offset))
-            descriptors.extend(struct.pack("<I", ni))
-            descriptors.extend(b"\x00" * 24)  # pad to 40 bytes per descriptor
+        hull_table_offset = HEADER_SIZE
+        vertex_data_offset = hull_table_offset + hull_count * DESCRIPTOR_SIZE
+        index_data_offset = vertex_data_offset + total_vertices * 3 * 2  # int16[3]
 
-            vertex_buf.extend(hull.vertices.astype(np.float32).tobytes())
-            index_buf.extend(hull.indices.astype(np.uint32).tobytes())
-            vertex_offset += nv
-            index_offset += ni
+        with open(path, "wb") as f:
+            f.write(MAGIC)
+            f.write(struct.pack("<H", VERSION))
+            f.write(struct.pack("<H", 0))  # flags
+            f.write(struct.pack("<I", hull_count))
+            f.write(struct.pack("<I", total_vertices))
+            f.write(struct.pack("<I", total_indices))
+            f.write(struct.pack("<I", hull_table_offset))
+            f.write(struct.pack("<I", vertex_data_offset))
+            f.write(struct.pack("<I", index_data_offset))
 
-        buf.extend(descriptors)
-        buf.extend(vertex_buf)
-        buf.extend(index_buf)
-        Path(path).write_bytes(bytes(buf))
+            vertex_offset = 0
+            index_offset = 0
+            aabbs = []
+            for hull in self.hulls:
+                nv = len(hull.vertices)
+                ni = len(hull.indices)
+                aabb_min = hull.vertices.min(axis=0).astype(np.float32)
+                aabb_max = hull.vertices.max(axis=0).astype(np.float32)
+                aabbs.append((aabb_min, aabb_max))
+
+                f.write(struct.pack("<I", vertex_offset))
+                f.write(struct.pack("<I", nv))
+                f.write(struct.pack("<I", index_offset))
+                f.write(struct.pack("<I", ni))
+                f.write(struct.pack("<3f", *aabb_min))
+                f.write(struct.pack("<3f", *aabb_max))
+
+                vertex_offset += nv
+                index_offset += ni
+
+            for hull, (aabb_min, aabb_max) in zip(self.hulls, aabbs):
+                quantized = _quantize_vertices(hull.vertices, aabb_min, aabb_max)
+                f.write(quantized.tobytes())
+
+            for hull in self.hulls:
+                f.write(hull.indices.astype(np.uint16).tobytes())
 
     def to_usd(self, path: str | Path, scene_name: str = "scene") -> None:
         try:
-            from pxr import Sdf, Usd, UsdGeom, UsdPhysics
+            from pxr import Gf, Usd, UsdGeom, UsdPhysics
         except ImportError:
             raise ImportError(
                 "USD output requires usd-core. Install with: pip install chitin[usd]"
             )
 
         stage = Usd.Stage.CreateNew(str(path))
-        stage.SetMetadata("upAxis", "Y")
-        stage.SetMetadata("metersPerUnit", 1.0)
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
         UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
         root = UsdGeom.Xform.Define(stage, f"/{scene_name}")
         stage.SetDefaultPrim(root.GetPrim())
-        colliders_scope = UsdGeom.Scope.Define(stage, f"/{scene_name}/Colliders")
+        UsdGeom.Scope.Define(stage, f"/{scene_name}/Colliders")
 
         for i, hull in enumerate(self.hulls):
-            mesh_path = f"/{scene_name}/Colliders/hull_{i}"
+            mesh_path = f"/{scene_name}/Colliders/hull_{i:04d}"
             mesh = UsdGeom.Mesh.Define(stage, mesh_path)
-            mesh.GetPointsAttr().Set([tuple(v) for v in hull.vertices.tolist()])
 
-            face_count = len(hull.indices) // 3
-            mesh.GetFaceVertexCountsAttr().Set([3] * face_count)
-            mesh.GetFaceVertexIndicesAttr().Set(hull.indices.tolist())
+            points = [
+                Gf.Vec3f(float(v[0]), float(v[1]), float(v[2])) for v in hull.vertices
+            ]
+            mesh.CreatePointsAttr().Set(points)
+            mesh.CreateFaceVertexCountsAttr().Set([3] * (len(hull.indices) // 3))
+            mesh.CreateFaceVertexIndicesAttr().Set(hull.indices.tolist())
 
             prim = mesh.GetPrim()
             UsdPhysics.CollisionAPI.Apply(prim)
-            UsdPhysics.MeshCollisionAPI.Apply(prim)
-            prim.CreateAttribute("physics:approximation", Sdf.ValueTypeNames.Token).Set(
-                "convexHull"
-            )
+            mesh_col = UsdPhysics.MeshCollisionAPI.Apply(prim)
+            mesh_col.CreateApproximationAttr().Set("convexHull")
 
         stage.GetRootLayer().Save()

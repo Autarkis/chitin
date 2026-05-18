@@ -44,7 +44,12 @@ def extract_from_arrays(
     source_count = len(positions)
 
     if opacity is not None:
-        mask = np.asarray(opacity).ravel() >= config.opacity_threshold
+        raw = np.asarray(opacity, dtype=np.float64).ravel()
+        if config.opacity_is_logit:
+            activated = 1.0 / (1.0 + np.exp(-raw))
+        else:
+            activated = raw
+        mask = activated >= config.opacity_threshold
         positions = positions[mask]
         if normals is not None:
             normals = np.asarray(normals, dtype=np.float64)[mask]
@@ -79,8 +84,11 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
     )
 
     opacity = None
+    is_logit = False
     if "opacity" in vertex.data.dtype.names:
         opacity = np.asarray(vertex["opacity"], dtype=np.float64)
+        raw_range = opacity.max() - opacity.min()
+        is_logit = raw_range > 1.0 or opacity.min() < 0.0
 
     normals = None
     if all(n in vertex.data.dtype.names for n in ("nx", "ny", "nz")):
@@ -88,7 +96,10 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
             np.float64
         )
 
-    return extract_from_arrays(positions, opacity, normals, config)
+    cfg = config
+    if is_logit and not config.opacity_is_logit:
+        cfg = Config(**{**vars(config), "opacity_is_logit": True})
+    return extract_from_arrays(positions, opacity, normals, cfg)
 
 
 def _poisson_reconstruct(
