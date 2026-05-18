@@ -111,6 +111,7 @@ namespace Chitin
                     for (int row = 0; row < 4; row++)
                         for (int col = 0; col < 4; col++)
                             m[row, col] = r.ReadSingle();
+                    m = Matrix4x4.Transpose(m);
 
                     ushort nameLen = r.ReadUInt16();
                     string name = Encoding.UTF8.GetString(r.ReadBytes(nameLen));

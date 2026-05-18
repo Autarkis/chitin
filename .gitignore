@@ -8,5 +8,6 @@ build/
 .venv/
 .ruff_cache/
 .pytest_cache/
+node_modules/
 *.so
 *.dylib

@@ -33,7 +33,6 @@ export function createDebugMeshes(
     for (let i = 0; i < phys.bones.length; i++) {
       const m = new Matrix4();
       m.fromArray(phys.bones[i].bindTransform);
-      m.transpose();
       boneTransforms.set(i, m);
     }
   }

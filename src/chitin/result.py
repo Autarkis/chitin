@@ -92,6 +92,16 @@ class ExtractionResult:
             flags |= FLAG_HAS_BIND_POSES
         descriptor_size = 44 if has_bones else 40
 
+        for i, h in enumerate(self.hulls):
+            if len(h.vertices) > 65535:
+                raise ValueError(
+                    f"hull {i}: {len(h.vertices)} vertices exceeds uint16 limit (65535)"
+                )
+            if len(h.indices) > 0 and h.indices.max() > 65535:
+                raise ValueError(
+                    f"hull {i}: index value {h.indices.max()} exceeds uint16 limit"
+                )
+
         hull_count = len(self.hulls)
         total_vertices = sum(len(h.vertices) for h in self.hulls)
         total_indices = sum(len(h.indices) for h in self.hulls)

@@ -1,7 +1,11 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import numpy as np
 import pytest
-import trimesh
+
+try:
+    import trimesh
+except ImportError:
+    trimesh = None
 
 
 @pytest.fixture
