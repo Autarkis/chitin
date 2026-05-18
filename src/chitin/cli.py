@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
 from chitin.config import Config
 from chitin.core import extract
+from chitin.hooks import get_post_process_command, run_post_process
+from chitin.preflight import check as preflight_check
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -55,13 +58,49 @@ def main(argv: list[str] | None = None) -> None:
         default="scene",
         help="Root prim name for USD output (default: scene)",
     )
+    parser.add_argument(
+        "--post-process",
+        type=str,
+        default=None,
+        help="Post-process command to run with {input} substituted. "
+        "Overrides ~/.config/chitin/config.toml",
+    )
+    parser.add_argument(
+        "--no-hook",
+        action="store_true",
+        help="Skip post-process hook even if configured",
+    )
+    parser.add_argument(
+        "--cloud",
+        action="store_true",
+        help="Submit job to chitin cloud service instead of running locally",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Run locally even when preflight check says the input is too large",
+    )
     parser.add_argument("-q", "--quiet", action="store_true")
 
     args = parser.parse_args(argv)
 
+    if args.cloud:
+        parser.error("chitin cloud service is not yet available")
+
     fmt = args.format or _infer_format(args.output)
     if fmt is None:
         parser.error(f"Cannot infer format from {args.output.suffix}. Use --format.")
+
+    pf = preflight_check(args.input)
+    if pf.level == "red" and not args.force:
+        print(f"chitin: {pf.message}", file=sys.stderr)
+        print(
+            "chitin: use --force to run anyway, or --cloud to offload",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    elif pf.level == "yellow" and not args.quiet:
+        print(f"chitin: warning: {pf.message}", file=sys.stderr)
 
     config = Config(
         concavity=args.concavity,
@@ -89,6 +128,11 @@ def main(argv: list[str] | None = None) -> None:
             f"chitin: {len(result.hulls)} hulls from "
             f"{result.source_vertex_count} source verts in {dt:.1f}s"
         )
+
+    if not args.no_hook:
+        hook_cmd = get_post_process_command(args.post_process)
+        if hook_cmd:
+            run_post_process(hook_cmd, args.input, quiet=args.quiet)
 
 
 FORMAT_MAP = {

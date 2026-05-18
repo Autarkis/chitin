@@ -12,3 +12,4 @@ class Config:
     opacity_is_logit: bool = False
     coacd_preprocess_mode: str = "auto"
     coacd_preprocess_resolution: int = 50
+    max_decompose_vertices: int = 200_000

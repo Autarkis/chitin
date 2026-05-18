@@ -24,6 +24,7 @@ dependencies = [
     "coacd>=1.0",
     "trimesh>=4.0",
     "plyfile>=1.0",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
