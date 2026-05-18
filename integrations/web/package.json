@@ -1,0 +1,29 @@
+{
+  "name": "@chitin/web",
+  "version": "0.1.0",
+  "description": "Load chitin .phys collision sidecars in the browser",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@dimforge/rapier3d": ">=0.13",
+    "three": ">=0.160"
+  },
+  "peerDependenciesMeta": {
+    "@dimforge/rapier3d": { "optional": true },
+    "three": { "optional": true }
+  },
+  "devDependencies": {
+    "@dimforge/rapier3d": "^0.14",
+    "three": "^0.170",
+    "@types/three": "^0.170",
+    "typescript": "^5.6",
+    "vitest": "^2.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "com.chitin.physics",
+  "version": "0.1.0",
+  "displayName": "Chitin Physics Colliders",
+  "description": "Import .phys collision sidecars into Unity",
+  "unity": "6000.0",
+  "license": "MIT",
+  "author": { "name": "Boris Blosse" }
+}

@@ -1,0 +1,18 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "0.1.0",
+    "FriendlyName": "Chitin Physics Importer",
+    "Description": "Import .phys collision sidecars into Unreal Engine",
+    "Category": "Physics",
+    "CreatedBy": "Boris Blosse",
+    "EnabledByDefault": true,
+    "CanContainContent": false,
+    "Modules": [
+        {
+            "Name": "ChitinImporter",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
