@@ -29,18 +29,26 @@ dependencies = [
 
 [project.optional-dependencies]
 usd = ["usd-core>=24.0"]
-all = ["chitin[usd]"]
+service = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+]
+all = ["chitin[usd,service]"]
 dev = [
     "chitin[all]",
     "pytest>=8.0",
+    "httpx>=0.27",
     "ruff>=0.4",
 ]
 
 [project.scripts]
 chitin = "chitin.cli:main"
+chitin-server = "chitin_service.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chitin"]
+packages = ["src/chitin", "src/chitin_service"]
 
 [tool.ruff]
 line-length = 88
