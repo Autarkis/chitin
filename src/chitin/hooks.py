@@ -1,8 +1,10 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
+import threading
 import tomllib
 from pathlib import Path
 
@@ -25,26 +27,29 @@ def get_post_process_command(cli_override: str | None = None) -> str | None:
 def run_post_process(
     command_template: str, input_path: Path, quiet: bool = False
 ) -> str | None:
-    cmd = command_template.replace("{input}", str(input_path))
+    cmd_str = command_template.replace("{input}", shlex.quote(str(input_path)))
+    cmd = shlex.split(cmd_str)
 
     if not quiet:
-        print(f"chitin: running post-process hook: {cmd}")
+        print(f"chitin: running post-process hook: {cmd_str}")
 
     proc = subprocess.Popen(
         cmd,
-        shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
 
-    stderr_lines = []
-    for line in proc.stderr:
-        decoded = line.decode("utf-8", errors="replace")
-        stderr_lines.append(decoded)
-        if not quiet:
-            sys.stderr.write(decoded)
+    def _stream_stderr():
+        for line in proc.stderr:
+            decoded = line.decode("utf-8", errors="replace")
+            if not quiet:
+                sys.stderr.write(decoded)
+
+    stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
+    stderr_thread.start()
 
     stdout = proc.stdout.read().decode("utf-8", errors="replace").strip()
+    stderr_thread.join()
     proc.wait()
 
     if proc.returncode != 0:
