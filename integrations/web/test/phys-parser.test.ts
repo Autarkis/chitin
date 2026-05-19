@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import { parsePhys } from "../src/phys-parser.js";
 
 const FIXTURE = resolve(__dirname, "golden_rigged.phys");
+const UNALIGNED_FIXTURE = resolve(__dirname, "unaligned_bind.phys");
 
-function loadFixture(): ArrayBuffer {
-  const buf = readFileSync(FIXTURE);
+function loadFixture(path = FIXTURE): ArrayBuffer {
+  const buf = readFileSync(path);
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 }
 
@@ -79,6 +80,15 @@ describe("parsePhys", () => {
         expect(v).toBeLessThanOrEqual(hull.aabbMax[c] + 0.01);
       }
     }
+  });
+
+  it("parses unaligned bind-pose block without throwing", () => {
+    const phys = parsePhys(loadFixture(UNALIGNED_FIXTURE));
+    expect(phys.hasBones).toBe(true);
+    expect(phys.hasBindPoses).toBe(true);
+    expect(phys.bones).toHaveLength(1);
+    expect(phys.bones[0].name).toBe("offset_bone");
+    expect(phys.bones[0].bindTransform[12]).toBeCloseTo(3.0, 4);
   });
 
   it("rejects bad magic", () => {

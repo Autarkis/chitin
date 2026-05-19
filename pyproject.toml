@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Convex collision geometry from point clouds, meshes, and gaussian splats"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 authors = [{ name = "Boris Blosse" }]
 keywords = ["physics", "collision", "convex-decomposition", "gaussian-splatting", "usd", "robotics"]
 classifiers = [

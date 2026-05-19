@@ -84,7 +84,10 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     }
 
     const idxOff = indexDataOff + iOff * 2;
-    const indices = new Uint16Array(buffer, idxOff, iCount);
+    const indices = new Uint16Array(iCount);
+    for (let t = 0; t < iCount; t++) {
+      indices[t] = view.getUint16(idxOff + t * 2, true);
+    }
 
     hulls.push({ vertices, indices, aabbMin, aabbMax, boneIndex });
   }
@@ -97,13 +100,16 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     const decoder = new TextDecoder("utf-8");
 
     for (let b = 0; b < boneCount; b++) {
-      const bindTransform = new Float32Array(buffer, bOff, 16);
+      const bindTransform = new Float32Array(16);
+      for (let f = 0; f < 16; f++) {
+        bindTransform[f] = view.getFloat32(bOff + f * 4, true);
+      }
       bOff += 64;
       const nameLen = view.getUint16(bOff, true);
       bOff += 2;
       const name = decoder.decode(new Uint8Array(buffer, bOff, nameLen));
       bOff += nameLen;
-      bones.push({ name, bindTransform: new Float32Array(bindTransform) });
+      bones.push({ name, bindTransform });
     }
   }
 

@@ -23,6 +23,7 @@ except ImportError:
 needs_core = pytest.mark.skipif(not HAS_CORE, reason="open3d/coacd not available")
 
 GOLDEN_FIXTURE = Path(__file__).parent / "fixtures" / "golden_rigged.phys"
+UNALIGNED_FIXTURE = Path(__file__).parent / "fixtures" / "unaligned_bind.phys"
 
 
 @needs_core
@@ -257,5 +258,20 @@ def test_golden_fixture_world_reconstruction():
 
 def test_golden_fixture_validates_clean():
     issues = validate_phys(GOLDEN_FIXTURE)
+    errors = [i for i in issues if i.severity == "error"]
+    assert errors == []
+
+
+def test_unaligned_bind_block():
+    pf = read_phys(UNALIGNED_FIXTURE)
+    assert pf.has_bones
+    assert pf.has_bind_poses
+    assert len(pf.bones) == 1
+    assert pf.bones[0].name == "offset_bone"
+    np.testing.assert_allclose(pf.bones[0].bind_transform[3, 0], 3.0, atol=1e-6)
+
+
+def test_unaligned_bind_block_validates_clean():
+    issues = validate_phys(UNALIGNED_FIXTURE)
     errors = [i for i in issues if i.severity == "error"]
     assert errors == []
