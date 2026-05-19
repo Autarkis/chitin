@@ -51,3 +51,192 @@ def test_all_zero_normals_triggers_estimation(sphere_points):
         sphere_points, normals=zero_normals, config=Config(concavity=0.5)
     )
     assert len(r.hulls) >= 1
+
+
+def test_normals_from_covariance_identity_quat():
+    from chitin.core import _normals_from_covariance
+
+    scales = np.array(
+        [
+            [np.log(5.0), np.log(5.0), np.log(0.1)],
+            [np.log(0.1), np.log(5.0), np.log(5.0)],
+            [np.log(5.0), np.log(0.1), np.log(5.0)],
+        ]
+    )
+    rots = np.array([[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], dtype=np.float64)
+
+    normals = _normals_from_covariance(scales, rots, log_scale=True)
+
+    np.testing.assert_allclose(np.abs(normals[0]), [0, 0, 1], atol=1e-10)
+    np.testing.assert_allclose(np.abs(normals[1]), [1, 0, 0], atol=1e-10)
+    np.testing.assert_allclose(np.abs(normals[2]), [0, 1, 0], atol=1e-10)
+
+
+def test_normals_from_covariance_unit_length():
+    from chitin.core import _normals_from_covariance
+
+    rng = np.random.default_rng(99)
+    scales = rng.standard_normal((200, 3))
+    rots = rng.standard_normal((200, 4))
+
+    normals = _normals_from_covariance(scales, rots, log_scale=True)
+    lengths = np.linalg.norm(normals, axis=1)
+    np.testing.assert_allclose(lengths, 1.0, atol=1e-10)
+
+
+def test_normals_from_covariance_linear_scale():
+    from chitin.core import _normals_from_covariance
+
+    scales = np.array([[5.0, 5.0, 0.1]], dtype=np.float64)
+    rots = np.array([[1, 0, 0, 0]], dtype=np.float64)
+
+    normals = _normals_from_covariance(scales, rots, log_scale=False)
+    np.testing.assert_allclose(np.abs(normals[0]), [0, 0, 1], atol=1e-10)
+
+
+def test_inflate_splat_points_count():
+    from chitin.core import _inflate_splat_points
+
+    positions = np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float64)
+    scales = np.array([[np.log(1.0), np.log(1.0), np.log(0.1)]] * 2, dtype=np.float64)
+    rots = np.array([[1, 0, 0, 0]] * 2, dtype=np.float64)
+
+    inflated = _inflate_splat_points(positions, scales, rots, surface_ratio=0.2)
+    assert len(inflated) == 10  # 2 originals * 5 (center + 4 disk samples)
+    np.testing.assert_array_equal(inflated[:2], positions)
+
+
+def test_octree_partition_small_set():
+    from chitin.core import _octree_partition
+
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(-10, 10, (100, 3))
+
+    cells = _octree_partition(positions, max_points=200)
+    assert len(cells) == 1
+    assert len(cells[0].indices) == 100
+
+
+def test_octree_partition_splits():
+    from chitin.core import _octree_partition
+
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(-10, 10, (1000, 3))
+
+    cells = _octree_partition(positions, max_points=200)
+    assert len(cells) > 1
+
+    all_indices = np.concatenate([c.indices for c in cells])
+    assert len(all_indices) == 1000
+    assert len(np.unique(all_indices)) == 1000
+
+
+def test_octree_partition_bounds_cover_points():
+    from chitin.core import _octree_partition
+
+    rng = np.random.default_rng(7)
+    positions = rng.uniform(-5, 5, (500, 3))
+
+    cells = _octree_partition(positions, max_points=100)
+    for cell in cells:
+        pts = positions[cell.indices]
+        assert np.all(pts >= cell.bounds_min - 1e-10)
+        assert np.all(pts <= cell.bounds_max + 1e-10)
+
+
+def test_octree_partition_max_depth():
+    from chitin.core import _octree_partition
+
+    positions = np.zeros((100, 3), dtype=np.float64)
+    cells = _octree_partition(positions, max_points=10, max_depth=2)
+    assert all(len(c.indices) <= 100 for c in cells)
+
+
+def _sphere_with_covariance(n, rng=None):
+    rng = rng or np.random.default_rng(42)
+    pts = rng.standard_normal((n, 3))
+    pts = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+    scales = np.full((n, 3), [np.log(1.0), np.log(1.0), np.log(0.1)], dtype=np.float64)
+    rots = _orient_quats_to_sphere(pts)
+    return pts, scales, rots
+
+
+def _orient_quats_to_sphere(pts):
+
+    n = len(pts)
+    normals = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+    z_axis = np.array([0.0, 0.0, 1.0])
+    rots = np.zeros((n, 4), dtype=np.float64)
+    for i in range(n):
+        v = np.cross(z_axis, normals[i])
+        c = np.dot(z_axis, normals[i])
+        if np.linalg.norm(v) < 1e-10:
+            rots[i] = [1, 0, 0, 0] if c > 0 else [0, 1, 0, 0]
+        else:
+            rots[i, 0] = 1.0 + c
+            rots[i, 1:] = v
+            rots[i] /= np.linalg.norm(rots[i])
+    return rots
+
+
+def test_covariance_normals_match_sphere_surface():
+    from chitin.core import _normals_from_covariance
+
+    pts, scales, rots = _sphere_with_covariance(200)
+    derived = _normals_from_covariance(scales, rots, log_scale=True)
+    expected = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+    dots = np.abs(np.sum(derived * expected, axis=1))
+    assert np.mean(dots) > 0.99
+
+
+def test_covariance_pipeline_end_to_end():
+    pts, scales, rots = _sphere_with_covariance(500)
+    r = extract_from_arrays(pts, scales=scales, rots=rots, config=Config(concavity=0.5))
+    assert len(r.hulls) >= 1
+    assert r.build_plan.detected.get("covariance_normals") is True
+
+
+def test_covariance_with_opacity_filtering():
+    pts, scales, rots = _sphere_with_covariance(1000)
+    opacity = np.ones(1000, dtype=np.float64)
+    opacity[:500] = 0.0
+
+    r = extract_from_arrays(
+        pts,
+        opacity=opacity,
+        scales=scales,
+        rots=rots,
+        config=Config(opacity_threshold=0.5, concavity=0.5),
+    )
+    assert r.source_vertex_count == 1000
+    assert r.build_plan.detected.get("filtered_vertices") == 500
+
+
+def test_covariance_with_lod():
+    pts, scales, rots = _sphere_with_covariance(500)
+    r = extract_from_arrays(
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(concavity=0.05, lod_concavities=[0.3, 0.5]),
+    )
+    assert r.lod_tiers is not None
+    assert len(r.lod_tiers) == 2
+    assert r.lod_tiers[0].concavity == 0.3
+    assert r.lod_tiers[1].concavity == 0.5
+
+
+def test_spatial_split_triggered():
+    rng = np.random.default_rng(42)
+    pts, scales, rots = _sphere_with_covariance(2000, rng=rng)
+    pts = pts * 5.0
+
+    r = extract_from_arrays(
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(concavity=0.5, spatial_split_threshold=500),
+    )
+    assert len(r.hulls) >= 1
+    assert r.build_plan.detected.get("cell_count", 0) > 1
+    assert "reconciled_hulls" in r.build_plan.detected

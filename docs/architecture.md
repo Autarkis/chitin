@@ -112,6 +112,6 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 ## What chitin is not
 
 - Not a physics engine. It produces collider geometry; something else simulates it.
-- Not a mesh optimizer. It does not simplify, LOD, or retopologize. It decomposes.
+- Not a mesh optimizer. It does not simplify or retopologize visual meshes. Collision LOD tiers are fresh decompositions at different concavity thresholds, not decimations.
 - Not a cloud service (yet). The build service is local-first. Cloud is a deployment decision, not an architecture one.
 - Not a format converter. `.phys` is the primary output. JSON and USD are companions for ecosystems that need them.

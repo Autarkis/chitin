@@ -32,7 +32,10 @@ chitin extract scene.ply -o scene.phys --opacity-threshold 0.5
 # extract from a mesh
 chitin extract model.obj -o colliders.phys --concavity 0.05
 
-# inspect a .phys file
+# multi-LOD: generate tiers at different concavity thresholds
+chitin extract model.obj -o colliders.phys --concavity 0.05 --lod-concavities 0.1,0.3,0.5
+
+# inspect a .phys file (shows LOD tiers if present)
 chitin inspect colliders.phys
 
 # validate binary integrity
@@ -50,6 +53,11 @@ result = extract("scene.ply", config)
 result.to_phys("colliders.phys")   # primary output
 result.to_json("colliders.json")   # debug companion
 result.to_usd("colliders.usda")    # USD Physics (Isaac Sim, Omniverse)
+
+# multi-LOD output (v3 .phys with tiered collision hulls)
+config = Config(concavity=0.05, lod_concavities=[0.1, 0.3, 0.5])
+result = extract("model.obj", config)
+result.to_phys("colliders.phys")   # LOD 0 at 0.05, then tiers at 0.1, 0.3, 0.5
 ```
 
 ### From numpy arrays
@@ -68,15 +76,26 @@ result = extract_from_arrays(positions, config=Config())
 from chitin import read_phys, validate_phys
 
 phys = read_phys("colliders.phys")
-for hull in phys.hulls:
+for hull in phys.hulls:              # LOD 0 (highest detail)
     print(hull.vertices.shape, hull.indices.shape)
+
+# LOD tiers (if present)
+for tier in phys.lod_tiers:
+    print(f"concavity={tier.concavity}: {tier.hull_count} hulls")
+
+# pick the tier closest to a target concavity
+coarse = phys.lod_tier(0.3)
 
 issues = validate_phys("colliders.phys")
 ```
 
 ## .phys format
 
-The `.phys` v2 binary sidecar is the primary output. It stores quantized convex hulls with optional per-bone bind transforms in a single file that loads in microseconds. Full spec in [docs/phys.md](docs/phys.md).
+The `.phys` binary sidecar is the primary output. It stores quantized convex hulls with optional per-bone bind transforms and collision LOD tiers in a single file that loads in microseconds. Full spec in [docs/phys.md](docs/phys.md).
+
+### Collision LOD
+
+A single decomposition forces a tradeoff between fidelity and cost. Multi-LOD solves this: the producer generates tiers at different concavity thresholds, the consumer picks based on distance, platform budget, or simulation context. LOD 0 is always the highest-detail decomposition. Additional tiers are coarser and cheaper. v2 readers open a v3 file and get LOD 0 without changes.
 
 | Format | Extension | Use |
 |--------|-----------|-----|
@@ -86,7 +105,7 @@ The `.phys` v2 binary sidecar is the primary output. It stores quantized convex 
 
 ## Engine integrations
 
-All integrations read the same `.phys` v2 binary with identical dequantization.
+All integrations read the same `.phys` binary with identical dequantization.
 
 | Engine | Package | Path |
 |--------|---------|------|
@@ -111,7 +130,8 @@ chitin-server download <job_id> -o ./output
 2. Filters by opacity for gaussian splat point clouds
 3. Reconstructs surface mesh via Poisson reconstruction (Open3D)
 4. Decomposes into convex hulls (CoACD)
-5. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
+5. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
+6. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
 
 ## Limitations
 

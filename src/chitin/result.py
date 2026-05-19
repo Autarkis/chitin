@@ -100,18 +100,23 @@ class ExtractionResult:
             flags |= FLAG_HAS_BIND_POSES
         if has_lod:
             flags |= FLAG_HAS_LOD
-        version = 3 if has_lod else 2
+        version = 3
         descriptor_size = 44 if has_bones else 40
 
-        for i, h in enumerate(self.hulls):
-            if len(h.vertices) > 65535:
-                raise ValueError(
-                    f"hull {i}: {len(h.vertices)} vertices exceeds uint16 limit (65535)"
-                )
-            if len(h.indices) > 0 and h.indices.max() > 65535:
-                raise ValueError(
-                    f"hull {i}: index value {h.indices.max()} exceeds uint16 limit"
-                )
+        all_hull_lists = [(self.hulls, "LOD0")]
+        if has_lod:
+            for t, tier in enumerate(self.lod_tiers):
+                all_hull_lists.append((tier.hulls, f"LOD tier {t}"))
+        for hull_list, label in all_hull_lists:
+            for i, h in enumerate(hull_list):
+                if len(h.vertices) > 65535:
+                    raise ValueError(
+                        f"{label} hull {i}: {len(h.vertices)} vertices exceeds uint16 limit (65535)"
+                    )
+                if len(h.indices) > 0 and h.indices.max() > 65535:
+                    raise ValueError(
+                        f"{label} hull {i}: index value {h.indices.max()} exceeds uint16 limit"
+                    )
 
         hull_count = len(self.hulls)
         total_vertices = sum(len(h.vertices) for h in self.hulls)

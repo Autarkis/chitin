@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 
 MAGIC = b"PHYS"
-CURRENT_VERSION = 3
 HEADER_SIZE = 32
 FLAG_HAS_BONES = 0x01
 FLAG_HAS_BIND_POSES = 0x02
@@ -111,9 +110,6 @@ def read_phys(path: str | Path) -> PhysFile:
         index_data_off,
     ) = struct.unpack_from("<HHIIIIII", data, 4)
 
-    if version > CURRENT_VERSION:
-        raise ValueError(f"unsupported version: {version}")
-
     has_bones = bool(flags & FLAG_HAS_BONES)
     desc_size = _descriptor_size(flags)
 
@@ -182,7 +178,7 @@ def read_phys(path: str | Path) -> PhysFile:
             t_concavity = struct.unpack_from("<f", data, lod_off)[0]
             t_hull_count = struct.unpack_from("<I", data, lod_off + 4)[0]
             t_total_verts = struct.unpack_from("<I", data, lod_off + 8)[0]
-            t_total_idx = struct.unpack_from("<I", data, lod_off + 12)[0]
+            _t_total_idx = struct.unpack_from("<I", data, lod_off + 12)[0]  # noqa: F841
             t_data_size = struct.unpack_from("<I", data, lod_off + 16)[0]
             lod_off += LOD_TIER_HEADER_SIZE
 
@@ -267,10 +263,6 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
         vertex_data_off,
         index_data_off,
     ) = struct.unpack_from("<HHIIIIII", data, 4)
-
-    if version > CURRENT_VERSION:
-        issues.append(ValidationIssue("error", f"unsupported version: {version}"))
-        return issues
 
     has_bones = bool(flags & FLAG_HAS_BONES)
     desc_size = _descriptor_size(flags)

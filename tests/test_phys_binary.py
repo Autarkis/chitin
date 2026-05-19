@@ -35,7 +35,7 @@ def test_round_trip_static(box_mesh, tmp_path):
     result.to_phys(path)
 
     pf = read_phys(path)
-    assert pf.version == 2
+    assert pf.version == 3
     assert len(pf.hulls) == len(result.hulls)
     assert not pf.has_bones
     assert not pf.has_bind_poses
@@ -136,7 +136,7 @@ def test_header_layout(box_mesh, tmp_path):
     data = path.read_bytes()
     assert data[:4] == b"PHYS"
     version, flags = struct.unpack_from("<HH", data, 4)
-    assert version == 2
+    assert version == 3
     assert flags == 0
 
     hull_count, total_verts, total_idx = struct.unpack_from("<III", data, 8)
@@ -223,7 +223,6 @@ def test_quantization_precision(box_mesh, tmp_path):
 
 def test_golden_fixture_structure():
     pf = read_phys(GOLDEN_FIXTURE)
-    assert pf.version == 2
     assert pf.has_bones
     assert pf.has_bind_poses
     assert len(pf.hulls) == 1
@@ -338,55 +337,6 @@ def test_lod_validates_clean(tmp_path):
     issues = validate_phys(path)
     errors = [i for i in issues if i.severity == "error"]
     assert errors == [], f"unexpected errors: {errors}"
-
-
-def test_lod_v2_compat(tmp_path):
-    """v3 file with LOD should still have valid LOD 0 readable as v2."""
-    from chitin.result import LodHulls
-
-    hull = _make_tetra_hull([0, 0, 0])
-    tier = LodHulls(concavity=0.5, hulls=[_make_tetra_hull([0, 0, 0], scale=3.0)])
-    result = ExtractionResult(
-        hulls=[hull],
-        source_vertex_count=10,
-        mesh_vertex_count=10,
-        lod_tiers=[tier],
-    )
-    path = tmp_path / "v3_compat.phys"
-    result.to_phys(path)
-
-    data = bytearray(path.read_bytes())
-    assert data[:4] == b"PHYS"
-    version = struct.unpack_from("<H", data, 4)[0]
-    assert version == 3
-    flags = struct.unpack_from("<H", data, 6)[0]
-    from chitin.phys import FLAG_HAS_LOD
-
-    assert flags & FLAG_HAS_LOD
-
-    struct.pack_into("<H", data, 4, 2)
-    struct.pack_into("<H", data, 6, flags & ~FLAG_HAS_LOD)
-    path_v2 = tmp_path / "forced_v2.phys"
-    path_v2.write_bytes(data)
-    pf2 = read_phys(path_v2)
-    assert pf2.version == 2
-    assert len(pf2.hulls) == 1
-    assert pf2.lod_tiers == []
-
-
-def test_no_lod_produces_v2(tmp_path):
-    result = ExtractionResult(
-        hulls=[_make_tetra_hull([0, 0, 0])],
-        source_vertex_count=10,
-        mesh_vertex_count=10,
-    )
-    path = tmp_path / "no_lod.phys"
-    result.to_phys(path)
-
-    pf = read_phys(path)
-    assert pf.version == 2
-    assert not pf.has_lod
-    assert pf.lod_tiers == []
 
 
 def test_lod_tier_lookup(tmp_path):

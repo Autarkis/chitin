@@ -47,7 +47,7 @@ def test_phys_header(box_mesh, tmp_path):
         magic = f.read(4)
         assert magic == b"PHYS"
         version = struct.unpack("<H", f.read(2))[0]
-        assert version == 2
+        assert version == 3
         flags = struct.unpack("<H", f.read(2))[0]
         assert flags == 0
         hull_count = struct.unpack("<I", f.read(4))[0]

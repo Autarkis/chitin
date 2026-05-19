@@ -1,6 +1,7 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import coacd
@@ -10,7 +11,237 @@ import trimesh
 
 from chitin.config import Config
 from chitin.plan import BuildPlan
-from chitin.result import BoneInfo, ExtractionResult, Hull
+from chitin.result import BoneInfo, ExtractionResult, Hull, LodHulls
+
+
+def _quat_to_rotation_matrices(rots: np.ndarray) -> np.ndarray:
+    n = len(rots)
+    w, x, y, z = rots[:, 0], rots[:, 1], rots[:, 2], rots[:, 3]
+    norms = np.sqrt(w * w + x * x + y * y + z * z)
+    norms = np.where(norms == 0, 1.0, norms)
+    w, x, y, z = w / norms, x / norms, y / norms, z / norms
+
+    R = np.zeros((n, 3, 3), dtype=np.float64)
+    R[:, 0, 0] = 1 - 2 * (y * y + z * z)
+    R[:, 0, 1] = 2 * (x * y - w * z)
+    R[:, 0, 2] = 2 * (x * z + w * y)
+    R[:, 1, 0] = 2 * (x * y + w * z)
+    R[:, 1, 1] = 1 - 2 * (x * x + z * z)
+    R[:, 1, 2] = 2 * (y * z - w * x)
+    R[:, 2, 0] = 2 * (x * z - w * y)
+    R[:, 2, 1] = 2 * (y * z + w * x)
+    R[:, 2, 2] = 1 - 2 * (x * x + y * y)
+    return R
+
+
+def _normals_from_covariance(
+    scales: np.ndarray, rots: np.ndarray, log_scale: bool = True
+) -> np.ndarray:
+    linear_scales = np.exp(scales) if log_scale else scales
+    R = _quat_to_rotation_matrices(rots)
+    min_axis = np.argmin(linear_scales, axis=1)
+    normals = R[np.arange(len(scales)), :, min_axis]
+    norms = np.linalg.norm(normals, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return normals / norms
+
+
+def _inflate_splat_points(
+    positions: np.ndarray,
+    scales: np.ndarray,
+    rots: np.ndarray,
+    surface_ratio: float,
+    log_scale: bool = True,
+) -> np.ndarray:
+    """Expand gaussian centers into disk samples along the two largest axes."""
+    linear_scales = np.exp(scales) if log_scale else scales
+    R = _quat_to_rotation_matrices(rots)
+
+    sorted_axes = np.argsort(linear_scales, axis=1)
+    major = sorted_axes[:, 2]
+    minor = sorted_axes[:, 1]
+
+    n = len(positions)
+    idx = np.arange(n)
+    axis_a = R[idx, :, major] * (linear_scales[idx, major, np.newaxis] * surface_ratio)
+    axis_b = R[idx, :, minor] * (linear_scales[idx, minor, np.newaxis] * surface_ratio)
+
+    samples = [positions]
+    samples.append(positions + axis_a)
+    samples.append(positions - axis_a)
+    samples.append(positions + axis_b)
+    samples.append(positions - axis_b)
+    return np.concatenate(samples, axis=0)
+
+
+@dataclass
+class _OctreeCell:
+    bounds_min: np.ndarray
+    bounds_max: np.ndarray
+    indices: np.ndarray
+
+
+def _octree_partition(
+    positions: np.ndarray, max_points: int, max_depth: int = 6
+) -> list[_OctreeCell]:
+    cells: list[_OctreeCell] = []
+
+    def _split(indices: np.ndarray, bmin: np.ndarray, bmax: np.ndarray, depth: int):
+        if len(indices) <= max_points or depth >= max_depth:
+            cells.append(_OctreeCell(bounds_min=bmin, bounds_max=bmax, indices=indices))
+            return
+        mid = (bmin + bmax) / 2
+        pts = positions[indices]
+        octant_id = (
+            (pts[:, 0] >= mid[0]).astype(np.int32)
+            | ((pts[:, 1] >= mid[1]).astype(np.int32) << 1)
+            | ((pts[:, 2] >= mid[2]).astype(np.int32) << 2)
+        )
+        for octant in range(8):
+            child_mask = octant_id == octant
+            child_indices = indices[child_mask]
+            if len(child_indices) == 0:
+                continue
+            child_min = np.array(
+                [
+                    mid[0] if (octant & 1) else bmin[0],
+                    mid[1] if (octant & 2) else bmin[1],
+                    mid[2] if (octant & 4) else bmin[2],
+                ]
+            )
+            child_max = np.array(
+                [
+                    bmax[0] if (octant & 1) else mid[0],
+                    bmax[1] if (octant & 2) else mid[1],
+                    bmax[2] if (octant & 4) else mid[2],
+                ]
+            )
+            _split(child_indices, child_min, child_max, depth + 1)
+
+    scene_min = positions.min(axis=0)
+    scene_max = positions.max(axis=0)
+    extent = scene_max - scene_min
+    extent = np.where(extent == 0, 1.0, extent)
+    scene_max = scene_min + extent
+
+    _split(np.arange(len(positions)), scene_min, scene_max, 0)
+    return cells
+
+
+def _centroid_in_bounds(
+    hull: Hull, bounds_min: np.ndarray, bounds_max: np.ndarray
+) -> bool:
+    centroid = hull.vertices.mean(axis=0)
+    return bool(
+        centroid[0] >= bounds_min[0]
+        and centroid[0] <= bounds_max[0]
+        and centroid[1] >= bounds_min[1]
+        and centroid[1] <= bounds_max[1]
+        and centroid[2] >= bounds_min[2]
+        and centroid[2] <= bounds_max[2]
+    )
+
+
+def _extract_spatial(
+    positions: np.ndarray,
+    normals: np.ndarray,
+    scales: np.ndarray,
+    rots: np.ndarray,
+    config: Config,
+    plan: BuildPlan,
+) -> ExtractionResult:
+    linear_scales = np.exp(scales) if config.splat_scale_is_log else scales
+    median_scale = np.median(linear_scales)
+    padding = median_scale * 3.0
+
+    cells = _octree_partition(positions, config.spatial_split_threshold)
+    plan.step("spatial_partition")
+    plan.detected["cell_count"] = len(cells)
+    plan.detected["padding"] = float(padding)
+
+    source_count = plan.source_vertices or len(positions)
+    all_hulls: list[Hull] = []
+    lod_buckets: dict[int, list[Hull]] = {}
+
+    for cell in cells:
+        padded_min = cell.bounds_min - padding
+        padded_max = cell.bounds_max + padding
+        padded_mask = (
+            (positions[:, 0] >= padded_min[0])
+            & (positions[:, 0] <= padded_max[0])
+            & (positions[:, 1] >= padded_min[1])
+            & (positions[:, 1] <= padded_max[1])
+            & (positions[:, 2] >= padded_min[2])
+            & (positions[:, 2] <= padded_max[2])
+        )
+        cell_positions = positions[padded_mask]
+        cell_normals = normals[padded_mask]
+        cell_scales = scales[padded_mask]
+        cell_rots = rots[padded_mask]
+
+        if len(cell_positions) < 100:
+            continue
+
+        if config.splat_surface_ratio > 0:
+            cell_positions = _inflate_splat_points(
+                cell_positions,
+                cell_scales,
+                cell_rots,
+                config.splat_surface_ratio,
+                log_scale=config.splat_scale_is_log,
+            )
+            cell_normals = np.tile(cell_normals, (5, 1))
+
+        cell_mesh = _poisson_reconstruct(cell_positions, cell_normals, config)
+        cell_verts = np.asarray(cell_mesh.vertices, dtype=np.float64)
+        cell_tris = np.asarray(cell_mesh.triangles, dtype=np.int32)
+
+        if len(cell_tris) < 4:
+            continue
+
+        cell_result = _decompose_and_build(
+            cell_verts, cell_tris, len(cell_positions), len(cell_verts), config
+        )
+
+        strict_min = cell.bounds_min
+        strict_max = cell.bounds_max
+
+        for hull in cell_result.hulls:
+            if _centroid_in_bounds(hull, strict_min, strict_max):
+                all_hulls.append(hull)
+
+        if cell_result.lod_tiers:
+            for tier_idx, tier in enumerate(cell_result.lod_tiers):
+                if tier_idx not in lod_buckets:
+                    lod_buckets[tier_idx] = []
+                for hull in tier.hulls:
+                    if _centroid_in_bounds(hull, strict_min, strict_max):
+                        lod_buckets[tier_idx].append(hull)
+
+    plan.step("spatial_reconcile")
+    plan.detected["reconciled_hulls"] = len(all_hulls)
+
+    merged_lod_tiers = None
+    if lod_buckets and config.lod_concavities:
+        merged_lod_tiers = []
+        sorted_concavities = sorted(config.lod_concavities)
+        for tier_idx in sorted(lod_buckets.keys()):
+            concavity = (
+                sorted_concavities[tier_idx]
+                if tier_idx < len(sorted_concavities)
+                else 0.0
+            )
+            merged_lod_tiers.append(
+                LodHulls(concavity=concavity, hulls=lod_buckets[tier_idx])
+            )
+
+    return ExtractionResult(
+        hulls=all_hulls,
+        source_vertex_count=source_count,
+        mesh_vertex_count=sum(len(h.vertices) for h in all_hulls),
+        build_plan=plan,
+        lod_tiers=merged_lod_tiers,
+    )
 
 
 def extract(
@@ -46,6 +277,8 @@ def extract_from_arrays(
     positions: np.ndarray,
     opacity: np.ndarray | None = None,
     normals: np.ndarray | None = None,
+    scales: np.ndarray | None = None,
+    rots: np.ndarray | None = None,
     config: Config | None = None,
     _plan: BuildPlan | None = None,
 ) -> ExtractionResult:
@@ -57,6 +290,15 @@ def extract_from_arrays(
         _plan = BuildPlan(input_kind="arrays", collider_kind="point_cloud")
     _plan.source_vertices = source_count
 
+    has_covariance = scales is not None and rots is not None
+    if has_covariance:
+        scales = np.asarray(scales, dtype=np.float64)
+        rots = np.asarray(rots, dtype=np.float64)
+        normals = _normals_from_covariance(
+            scales, rots, log_scale=config.splat_scale_is_log
+        )
+        _plan.detected["covariance_normals"] = True
+
     if opacity is not None:
         raw = np.asarray(opacity, dtype=np.float64).ravel()
         if config.opacity_is_logit:
@@ -66,9 +308,30 @@ def extract_from_arrays(
         mask = activated >= config.opacity_threshold
         positions = positions[mask]
         if normals is not None:
-            normals = np.asarray(normals, dtype=np.float64)[mask]
+            normals = normals[mask]
+        if has_covariance:
+            scales = scales[mask]
+            rots = rots[mask]
         _plan.step("opacity_filter")
         _plan.detected["filtered_vertices"] = int(mask.sum())
+
+    if has_covariance and config.splat_surface_ratio > 0:
+        if len(positions) > config.spatial_split_threshold:
+            _plan.source_vertices = source_count
+            return _extract_spatial(positions, normals, scales, rots, config, _plan)
+
+        pre_inflate_count = len(positions)
+        positions = _inflate_splat_points(
+            positions,
+            scales,
+            rots,
+            config.splat_surface_ratio,
+            log_scale=config.splat_scale_is_log,
+        )
+        normals = np.tile(normals, (5, 1))
+        _plan.step("splat_inflate")
+        _plan.detected["inflated_from"] = pre_inflate_count
+        _plan.detected["inflated_to"] = len(positions)
 
     if len(positions) < 100:
         return ExtractionResult(
@@ -281,21 +544,45 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
         raw_range = opacity.max() - opacity.min()
         is_logit = raw_range > 1.0 or opacity.min() < 0.0
 
-    has_normals = all(n in vertex.data.dtype.names for n in ("nx", "ny", "nz"))
+    has_scales = all(f"scale_{i}" in vertex.data.dtype.names for i in range(3))
+    has_rots = all(f"rot_{i}" in vertex.data.dtype.names for i in range(4))
+    has_covariance = has_scales and has_rots
+
     normals = None
-    if has_normals:
-        normals = np.column_stack([vertex["nx"], vertex["ny"], vertex["nz"]]).astype(
+    scales_arr = None
+    rots_arr = None
+    if has_covariance:
+        scales_arr = np.column_stack([vertex[f"scale_{i}"] for i in range(3)]).astype(
             np.float64
         )
+        rots_arr = np.column_stack([vertex[f"rot_{i}"] for i in range(4)]).astype(
+            np.float64
+        )
+    else:
+        has_normals = all(n in vertex.data.dtype.names for n in ("nx", "ny", "nz"))
+        if has_normals:
+            normals = np.column_stack(
+                [vertex["nx"], vertex["ny"], vertex["nz"]]
+            ).astype(np.float64)
 
     plan.detected["has_opacity"] = has_opacity
     plan.detected["is_logit"] = is_logit
-    plan.detected["has_normals"] = has_normals
+    plan.detected["has_normals"] = normals is not None or has_covariance
+    plan.detected["has_covariance"] = has_covariance
 
     cfg = config
     if is_logit and not config.opacity_is_logit:
         cfg = Config(**{**vars(config), "opacity_is_logit": True})
-    return extract_from_arrays(positions, opacity, normals, cfg, _plan=plan)
+
+    return extract_from_arrays(
+        positions,
+        opacity=opacity,
+        normals=normals,
+        scales=scales_arr,
+        rots=rots_arr,
+        config=cfg,
+        _plan=plan,
+    )
 
 
 def _extract_from_usd(path: Path, config: Config) -> ExtractionResult:

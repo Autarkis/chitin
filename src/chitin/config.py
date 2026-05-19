@@ -16,3 +16,6 @@ class Config:
     coacd_preprocess_resolution: int = 50
     max_decompose_vertices: int = 200_000
     lod_concavities: list[float] | None = None
+    splat_scale_is_log: bool = True
+    splat_surface_ratio: float = 0.2
+    spatial_split_threshold: int = 500_000
