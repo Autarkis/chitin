@@ -1,0 +1,74 @@
+name: Release Python Package (PyPI)
+
+on:
+  push:
+    tags:
+      - "python-v*"
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#python-v}"
+          echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          PKG_VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")
+          echo "pkg_version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate version match
+        run: |
+          if [ "${{ steps.version.outputs.tag_version }}" != "${{ steps.version.outputs.pkg_version }}" ]; then
+            echo "::error::Tag version (${{ steps.version.outputs.tag_version }}) does not match pyproject.toml (${{ steps.version.outputs.pkg_version }})"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Store distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-pypi:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/chitin
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download distribution packages
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
