@@ -128,18 +128,56 @@ def _octree_partition(
     return cells
 
 
-def _centroid_in_bounds(
+def _aabb_overlaps_bounds(
     hull: Hull, bounds_min: np.ndarray, bounds_max: np.ndarray
 ) -> bool:
-    centroid = hull.vertices.mean(axis=0)
+    h_min = hull.vertices.min(axis=0)
+    h_max = hull.vertices.max(axis=0)
     return bool(
-        centroid[0] >= bounds_min[0]
-        and centroid[0] <= bounds_max[0]
-        and centroid[1] >= bounds_min[1]
-        and centroid[1] <= bounds_max[1]
-        and centroid[2] >= bounds_min[2]
-        and centroid[2] <= bounds_max[2]
+        h_max[0] >= bounds_min[0]
+        and h_min[0] <= bounds_max[0]
+        and h_max[1] >= bounds_min[1]
+        and h_min[1] <= bounds_max[1]
+        and h_max[2] >= bounds_min[2]
+        and h_min[2] <= bounds_max[2]
     )
+
+
+def _aabb_iou(a: Hull, b: Hull) -> float:
+    a_min, a_max = a.vertices.min(axis=0), a.vertices.max(axis=0)
+    b_min, b_max = b.vertices.min(axis=0), b.vertices.max(axis=0)
+    inter_min = np.maximum(a_min, b_min)
+    inter_max = np.minimum(a_max, b_max)
+    inter_dims = np.maximum(inter_max - inter_min, 0)
+    inter_vol = float(inter_dims[0] * inter_dims[1] * inter_dims[2])
+    a_vol = float(np.prod(a_max - a_min))
+    b_vol = float(np.prod(b_max - b_min))
+    union_vol = a_vol + b_vol - inter_vol
+    if union_vol <= 0:
+        return 0.0
+    return inter_vol / union_vol
+
+
+def _dedup_overlapping_hulls(
+    hulls: list[Hull], iou_threshold: float = 0.5
+) -> list[Hull]:
+    if len(hulls) <= 1:
+        return hulls
+    order = sorted(
+        range(len(hulls)), key=lambda i: len(hulls[i].vertices), reverse=True
+    )
+    discarded: set[int] = set()
+    kept: list[Hull] = []
+    for i in order:
+        if i in discarded:
+            continue
+        kept.append(hulls[i])
+        for j in order:
+            if j <= i or j in discarded:
+                continue
+            if _aabb_iou(hulls[i], hulls[j]) >= iou_threshold:
+                discarded.add(j)
+    return kept
 
 
 def _extract_spatial(
@@ -207,7 +245,7 @@ def _extract_spatial(
         strict_max = cell.bounds_max
 
         for hull in cell_result.hulls:
-            if _centroid_in_bounds(hull, strict_min, strict_max):
+            if _aabb_overlaps_bounds(hull, strict_min, strict_max):
                 all_hulls.append(hull)
 
         if cell_result.lod_tiers:
@@ -215,8 +253,12 @@ def _extract_spatial(
                 if tier_idx not in lod_buckets:
                     lod_buckets[tier_idx] = []
                 for hull in tier.hulls:
-                    if _centroid_in_bounds(hull, strict_min, strict_max):
+                    if _aabb_overlaps_bounds(hull, strict_min, strict_max):
                         lod_buckets[tier_idx].append(hull)
+
+    all_hulls = _dedup_overlapping_hulls(all_hulls)
+    for tier_idx in lod_buckets:
+        lod_buckets[tier_idx] = _dedup_overlapping_hulls(lod_buckets[tier_idx])
 
     plan.step("spatial_reconcile")
     plan.detected["reconciled_hulls"] = len(all_hulls)

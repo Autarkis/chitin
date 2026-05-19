@@ -152,6 +152,62 @@ def test_octree_partition_max_depth():
     assert all(len(c.indices) <= 100 for c in cells)
 
 
+def test_aabb_iou_identical():
+    from chitin.core import _aabb_iou
+    from chitin.result import Hull
+
+    verts = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32)
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+    h = Hull(vertices=verts, indices=idx)
+    assert abs(_aabb_iou(h, h) - 1.0) < 1e-10
+
+
+def test_aabb_iou_no_overlap():
+    from chitin.core import _aabb_iou
+    from chitin.result import Hull
+
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+    a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
+    b = Hull(vertices=np.array([[5, 5, 5], [6, 6, 6]], dtype=np.float32), indices=idx)
+    assert _aabb_iou(a, b) == 0.0
+
+
+def test_aabb_iou_partial():
+    from chitin.core import _aabb_iou
+    from chitin.result import Hull
+
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+    a = Hull(vertices=np.array([[0, 0, 0], [2, 2, 2]], dtype=np.float32), indices=idx)
+    b = Hull(vertices=np.array([[1, 1, 1], [3, 3, 3]], dtype=np.float32), indices=idx)
+    iou = _aabb_iou(a, b)
+    assert 0.0 < iou < 1.0
+
+
+def test_dedup_removes_duplicate():
+    from chitin.core import _dedup_overlapping_hulls
+    from chitin.result import Hull
+
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+    a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
+    b = Hull(
+        vertices=np.array([[0.05, 0.05, 0.05], [0.95, 0.95, 0.95]], dtype=np.float32),
+        indices=idx,
+    )
+    result = _dedup_overlapping_hulls([a, b], iou_threshold=0.5)
+    assert len(result) == 1
+
+
+def test_dedup_keeps_distinct():
+    from chitin.core import _dedup_overlapping_hulls
+    from chitin.result import Hull
+
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+    a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
+    b = Hull(vertices=np.array([[5, 5, 5], [6, 6, 6]], dtype=np.float32), indices=idx)
+    result = _dedup_overlapping_hulls([a, b], iou_threshold=0.5)
+    assert len(result) == 2
+
+
 def _sphere_with_covariance(n, rng=None):
     rng = rng or np.random.default_rng(42)
     pts = rng.standard_normal((n, 3))
