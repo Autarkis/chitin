@@ -1,4 +1,6 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -13,3 +15,4 @@ class Config:
     coacd_preprocess_mode: str = "auto"
     coacd_preprocess_resolution: int = 50
     max_decompose_vertices: int = 200_000
+    lod_concavities: list[float] | None = None

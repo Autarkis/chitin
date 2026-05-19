@@ -488,9 +488,29 @@ def _decompose_and_build(
         if len(verts) >= config.min_hull_vertices:
             hulls.append(Hull(vertices=verts, indices=tris))
 
+    lod_tiers = None
+    if config.lod_concavities:
+        lod_tiers = []
+        for lod_concavity in sorted(config.lod_concavities):
+            lod_parts = coacd.run_coacd(
+                coacd_mesh,
+                threshold=lod_concavity,
+                preprocess_mode=config.coacd_preprocess_mode,
+                preprocess_resolution=config.coacd_preprocess_resolution,
+                max_convex_hull=config.max_hulls,
+            )
+            lod_hulls = []
+            for verts, tris in lod_parts:
+                verts = np.asarray(verts, dtype=np.float32)
+                tris = np.asarray(tris, dtype=np.uint32).ravel()
+                if len(verts) >= config.min_hull_vertices:
+                    lod_hulls.append(Hull(vertices=verts, indices=tris))
+            lod_tiers.append(LodHulls(concavity=lod_concavity, hulls=lod_hulls))
+
     return ExtractionResult(
         hulls=hulls,
         source_vertex_count=source_count,
         mesh_vertex_count=mesh_count,
         build_plan=_plan,
+        lod_tiers=lod_tiers,
     )

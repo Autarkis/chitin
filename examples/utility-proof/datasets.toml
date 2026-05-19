@@ -1,0 +1,45 @@
+# Utility proof datasets for Chitin.
+# Each entry describes one test asset: where to get it, what it tests, and what license it carries.
+# download.py reads this manifest and fetches assets to ./assets/<key>/
+
+[stanford-bunny]
+name = "Stanford Bunny (via PyVista)"
+description = "Classic scanned object. Tests: static mesh → convex hulls, visual fit, hull count, basic collider quality."
+url = "https://raw.githubusercontent.com/pyvista/vtk-data/master/Data/bunny.ply"
+format = "ply"
+license = "Stanford 3D Scanning Repository (free use/redistribution)"
+citation = "Stanford 3D Scanning Repository; hosted by PyVista (Apache 2.0)"
+category = "object"
+redistribute = true
+
+[ycb-mug]
+name = "YCB — mug (025_mug)"
+description = "Standard robotics manipulation object. Tests: sim-ready collider from scan, stable grasping geometry."
+url = "https://ycb-benchmarks.s3.amazonaws.com/data/google/025_mug_google_512k.tgz"
+format = "ply"
+license = "MIT-like (research use)"
+citation = "Calli et al., YCB Object and Model Set, RAM 2015"
+category = "object"
+archive = "tgz"
+asset_path = "025_mug/google_512k/nontextured.ply"
+
+[garden-3dgs]
+name = "Mip-NeRF 360 Garden — 3DGS reconstruction"
+description = "Outdoor gaussian splat scene. Tests: splat point cloud → scene-scale collision, opacity filtering, large input."
+url = "https://github.com/isl-org/open3d_downloads/releases/download/3dgs-1/mipnerf360_garden_crop_table.ply"
+format = "ply"
+license = "MIT (Open3D) / CC-BY 4.0 (Mip-NeRF 360)"
+citation = "Barron et al., Mip-NeRF 360, CVPR 2022; Open3D project"
+category = "scene"
+notes = "192 MB. Gaussian splat PLY with SH coefficients and opacity. This is the wedge demo."
+
+[rocketbox-character]
+name = "Microsoft Rocketbox — rigged avatar"
+description = "MIT-licensed rigged humanoid. Tests: per-bone hull extraction, bind transform correctness, ragdoll readiness."
+url = "https://github.com/microsoft/Microsoft-Rocketbox/archive/refs/heads/main.zip"
+format = "fbx"
+license = "MIT"
+citation = "Microsoft Rocketbox Avatars, 2020"
+category = "rigged"
+notes = "Large repo (~2GB). download.py extracts a single avatar."
+avatar_path = "Microsoft-Rocketbox-main/Adults/Male/m_ca_a_01/m_ca_a_01.fbx"

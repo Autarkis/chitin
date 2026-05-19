@@ -11,3 +11,5 @@ build/
 node_modules/
 *.so
 *.dylib
+examples/utility-proof/assets/
+examples/utility-proof/reports/

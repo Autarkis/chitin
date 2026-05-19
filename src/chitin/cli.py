@@ -75,6 +75,12 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Maximum number of convex hulls (default: 2048)",
     )
     p.add_argument(
+        "--lod-concavities",
+        type=str,
+        default=None,
+        help="Comma-separated concavity thresholds for LOD tiers (e.g. 0.1,0.3,0.5)",
+    )
+    p.add_argument(
         "--scene-name",
         type=str,
         default="scene",
@@ -147,11 +153,16 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     elif pf.level == "yellow" and not args.quiet:
         print(f"chitin: warning: {pf.message}", file=sys.stderr)
 
+    lod_concavities = None
+    if args.lod_concavities:
+        lod_concavities = [float(x.strip()) for x in args.lod_concavities.split(",")]
+
     config = Config(
         concavity=args.concavity,
         opacity_threshold=args.opacity_threshold,
         poisson_depth=args.poisson_depth,
         max_hulls=args.max_hulls,
+        lod_concavities=lod_concavities,
     )
 
     if not args.quiet:
@@ -180,6 +191,17 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             run_post_process(hook_cmd, args.input, quiet=args.quiet)
 
 
+def _print_hull_table(label: str, hulls: list) -> None:
+    print(f"{label}: {len(hulls)} hulls")
+    for i, h in enumerate(hulls):
+        line = f"  hull {i}: {len(h.vertices)} verts, {len(h.indices) // 3} tris"
+        if h.bone_index is not None:
+            line += f", bone {h.bone_index}"
+        aabb_size = h.aabb_max - h.aabb_min
+        line += f", size [{aabb_size[0]:.3f}, {aabb_size[1]:.3f}, {aabb_size[2]:.3f}]"
+        print(line)
+
+
 def _cmd_inspect(args: argparse.Namespace) -> None:
     from chitin.phys import read_phys
 
@@ -198,15 +220,18 @@ def _cmd_inspect(args: argparse.Namespace) -> None:
         print(f"bones:      {len(pf.bones)}")
         for b in pf.bones:
             print(f"  {b.name}")
+    if pf.lod_tiers:
+        print(f"lod_tiers:  {len(pf.lod_tiers)}")
 
     print()
-    for i, h in enumerate(pf.hulls):
-        line = f"  hull {i}: {len(h.vertices)} verts, {len(h.indices) // 3} tris"
-        if h.bone_index is not None:
-            line += f", bone {h.bone_index}"
-        aabb_size = h.aabb_max - h.aabb_min
-        line += f", size [{aabb_size[0]:.3f}, {aabb_size[1]:.3f}, {aabb_size[2]:.3f}]"
-        print(line)
+    _print_hull_table("LOD 0", pf.hulls)
+
+    if pf.lod_tiers:
+        for t, tier in enumerate(pf.lod_tiers):
+            print()
+            _print_hull_table(
+                f"LOD {t + 1} (concavity={tier.concavity:.3f})", tier.hulls
+            )
 
 
 def _cmd_validate(args: argparse.Namespace) -> None:

@@ -12,6 +12,7 @@ from chitin.phys import (
     read_phys,
     validate_phys,
 )
+from chitin.result import ExtractionResult, Hull
 
 try:
     from chitin import Config, extract_from_mesh, extract_from_rigged_mesh
@@ -185,7 +186,6 @@ def test_validate_bind_pose_flag_without_block(box_mesh, tmp_path):
 
 @needs_core
 def test_writer_rejects_oversized_hull():
-    from chitin.result import ExtractionResult, Hull
 
     big_verts = np.random.randn(70000, 3).astype(np.float32)
     big_indices = np.arange(12, dtype=np.uint32)
@@ -275,3 +275,138 @@ def test_unaligned_bind_block_validates_clean():
     issues = validate_phys(UNALIGNED_FIXTURE)
     errors = [i for i in issues if i.severity == "error"]
     assert errors == []
+
+
+def _make_tetra_hull(center, scale=1.0):
+    verts = np.array(
+        [[1, 1, 1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1]], dtype=np.float32
+    ) * scale + np.array(center, dtype=np.float32)
+    indices = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    return Hull(vertices=verts, indices=indices)
+
+
+def test_lod_round_trip(tmp_path):
+    from chitin.result import LodHulls
+
+    hulls_lod0 = [_make_tetra_hull([0, 0, 0]), _make_tetra_hull([5, 0, 0])]
+    tier1 = LodHulls(concavity=0.1, hulls=[_make_tetra_hull([2.5, 0, 0], scale=3.0)])
+    tier2 = LodHulls(concavity=0.5, hulls=[_make_tetra_hull([2.5, 0, 0], scale=5.0)])
+
+    result = ExtractionResult(
+        hulls=hulls_lod0,
+        source_vertex_count=100,
+        mesh_vertex_count=80,
+        lod_tiers=[tier1, tier2],
+    )
+    path = tmp_path / "lod.phys"
+    result.to_phys(path)
+
+    pf = read_phys(path)
+    assert pf.version == 3
+    assert pf.has_lod
+    assert len(pf.hulls) == 2
+    assert len(pf.lod_tiers) == 2
+    assert pf.lod_tiers[0].concavity == pytest.approx(0.1)
+    assert pf.lod_tiers[1].concavity == pytest.approx(0.5)
+    assert len(pf.lod_tiers[0].hulls) == 1
+    assert len(pf.lod_tiers[1].hulls) == 1
+
+    for orig, loaded in zip(hulls_lod0, pf.hulls):
+        np.testing.assert_allclose(loaded.vertices, orig.vertices, atol=0.01)
+        np.testing.assert_array_equal(loaded.indices, orig.indices)
+
+    for orig_tier, loaded_tier in zip([tier1, tier2], pf.lod_tiers):
+        for orig_h, loaded_h in zip(orig_tier.hulls, loaded_tier.hulls):
+            np.testing.assert_allclose(loaded_h.vertices, orig_h.vertices, atol=0.01)
+            np.testing.assert_array_equal(loaded_h.indices, orig_h.indices)
+
+
+def test_lod_validates_clean(tmp_path):
+    from chitin.result import LodHulls
+
+    hulls = [_make_tetra_hull([0, 0, 0])]
+    tier = LodHulls(concavity=0.3, hulls=[_make_tetra_hull([0, 0, 0], scale=2.0)])
+    result = ExtractionResult(
+        hulls=hulls,
+        source_vertex_count=50,
+        mesh_vertex_count=50,
+        lod_tiers=[tier],
+    )
+    path = tmp_path / "lod_clean.phys"
+    result.to_phys(path)
+
+    issues = validate_phys(path)
+    errors = [i for i in issues if i.severity == "error"]
+    assert errors == [], f"unexpected errors: {errors}"
+
+
+def test_lod_v2_compat(tmp_path):
+    """v3 file with LOD should still have valid LOD 0 readable as v2."""
+    from chitin.result import LodHulls
+
+    hull = _make_tetra_hull([0, 0, 0])
+    tier = LodHulls(concavity=0.5, hulls=[_make_tetra_hull([0, 0, 0], scale=3.0)])
+    result = ExtractionResult(
+        hulls=[hull],
+        source_vertex_count=10,
+        mesh_vertex_count=10,
+        lod_tiers=[tier],
+    )
+    path = tmp_path / "v3_compat.phys"
+    result.to_phys(path)
+
+    data = bytearray(path.read_bytes())
+    assert data[:4] == b"PHYS"
+    version = struct.unpack_from("<H", data, 4)[0]
+    assert version == 3
+    flags = struct.unpack_from("<H", data, 6)[0]
+    from chitin.phys import FLAG_HAS_LOD
+
+    assert flags & FLAG_HAS_LOD
+
+    struct.pack_into("<H", data, 4, 2)
+    struct.pack_into("<H", data, 6, flags & ~FLAG_HAS_LOD)
+    path_v2 = tmp_path / "forced_v2.phys"
+    path_v2.write_bytes(data)
+    pf2 = read_phys(path_v2)
+    assert pf2.version == 2
+    assert len(pf2.hulls) == 1
+    assert pf2.lod_tiers == []
+
+
+def test_no_lod_produces_v2(tmp_path):
+    result = ExtractionResult(
+        hulls=[_make_tetra_hull([0, 0, 0])],
+        source_vertex_count=10,
+        mesh_vertex_count=10,
+    )
+    path = tmp_path / "no_lod.phys"
+    result.to_phys(path)
+
+    pf = read_phys(path)
+    assert pf.version == 2
+    assert not pf.has_lod
+    assert pf.lod_tiers == []
+
+
+def test_lod_tier_lookup(tmp_path):
+    from chitin.result import LodHulls
+
+    tiers = [
+        LodHulls(concavity=0.1, hulls=[_make_tetra_hull([0, 0, 0])]),
+        LodHulls(concavity=0.3, hulls=[_make_tetra_hull([0, 0, 0])]),
+        LodHulls(concavity=0.5, hulls=[_make_tetra_hull([0, 0, 0])]),
+    ]
+    result = ExtractionResult(
+        hulls=[_make_tetra_hull([0, 0, 0])],
+        source_vertex_count=10,
+        mesh_vertex_count=10,
+        lod_tiers=tiers,
+    )
+    path = tmp_path / "lookup.phys"
+    result.to_phys(path)
+
+    pf = read_phys(path)
+    closest = pf.lod_tier(0.25)
+    assert closest is not None
+    assert closest.concavity == pytest.approx(0.3)

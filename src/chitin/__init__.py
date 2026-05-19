@@ -2,7 +2,7 @@
 """Convex collision geometry from point clouds, meshes, and gaussian splats."""
 
 from chitin.config import Config
-from chitin.phys import PhysBone, PhysFile, PhysHull, read_phys, validate_phys
+from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
 from chitin.result import BoneInfo, ExtractionResult
 
@@ -25,6 +25,7 @@ __all__ = [
     "BuildPlan",
     "Config",
     "ExtractionResult",
+    "LodTier",
     "PhysBone",
     "PhysFile",
     "PhysHull",
