@@ -29,7 +29,7 @@ Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` 
 |------|---------|-------------|
 | `--concavity` | 0.05 | CoACD concavity threshold. Lower = tighter fit, more hulls. |
 | `--opacity-threshold` | 0.1 | Minimum opacity to keep a point (splat inputs only). |
-| `--poisson-depth` | 8 | Poisson reconstruction depth (point cloud inputs only). |
+| `--poisson-depth` | auto | Poisson reconstruction depth (point cloud inputs only). Auto-selects per cell based on point count. |
 | `--max-hulls` | 2048 | Maximum number of convex hulls. |
 | `--lod-concavities` | none | Comma-separated concavity thresholds for LOD tiers. |
 | `--scene-name` | scene | Root prim name (USD output only). |
@@ -213,7 +213,7 @@ for hull in phys.hulls:
 |-----------|------|---------|-------------|
 | `concavity` | float | 0.05 | CoACD concavity threshold for LOD 0. Lower = more hulls, tighter fit. |
 | `opacity_threshold` | float | 0.5 | Minimum opacity to keep a point (splat inputs). |
-| `poisson_depth` | int | 8 | Poisson reconstruction depth (point cloud inputs). Higher = more detail, slower. |
+| `poisson_depth` | int or None | None | Poisson reconstruction depth (point cloud inputs). None = auto-select per cell based on point count. Manual override: 4-7. |
 | `min_hull_vertices` | int | 4 | Discard hulls with fewer vertices than this. |
 | `max_hulls` | int | 2048 | Maximum number of convex hulls. |
 | `opacity_is_logit` | bool | False | Set True if opacity values are logits (pre-sigmoid). Auto-detected for PLY inputs. |
@@ -223,7 +223,7 @@ for hull in phys.hulls:
 | `lod_concavities` | list[float] or None | None | Additional concavity thresholds for LOD tiers. Produces a v3 .phys file. |
 | `splat_scale_is_log` | bool | True | Whether splat scale values are log-space (standard 3DGS convention). |
 | `splat_surface_ratio` | float | 0.2 | Anisotropic inflation ratio for splat disk samples. Set to 0 to disable inflation. |
-| `spatial_split_threshold` | int | 500000 | Point count above which octree spatial decomposition is used. |
+| `spatial_split_threshold` | int | 50000 | Point count above which octree spatial decomposition is used. |
 
 ## Gaussian Splat Covariance
 
@@ -237,9 +237,11 @@ For PLY files without covariance attributes (plain point clouds, photogrammetry)
 
 ### Spatial Decomposition for Large Scenes
 
-When a splat scene exceeds `spatial_split_threshold` points (default 500K), chitin automatically partitions the scene into octree cells and processes each cell independently. This keeps each cell's point count under the vertex budget, avoids hitting the `max_decompose_vertices` decimation limit, and enables natural parallelism.
+When a splat scene exceeds `spatial_split_threshold` points (default 50K), chitin automatically partitions the scene into octree cells and processes each cell independently. This keeps each cell's point count manageable for Poisson reconstruction, avoids hitting the `max_decompose_vertices` decimation limit, and enables natural parallelism.
 
-Each cell is padded by a ghost zone (3x the median gaussian scale) so that boundary geometry is reconstructed in both adjacent cells. After per-cell decomposition, a reconciliation pass keeps only hulls whose centroid falls within the cell's strict (unpadded) bounds, eliminating duplicates at boundaries.
+Each cell is padded by a ghost zone (3x the median gaussian scale) so that boundary geometry is reconstructed in both adjacent cells. After per-cell decomposition, a reconciliation pass deduplicates hulls at boundaries using AABB IOU (threshold 0.5), keeping the larger hull when two overlap significantly.
+
+Poisson reconstruction depth is auto-selected per cell based on point count (`floor(log2(n) / 3)`, clamped to 4-7). This avoids over-resolution on small cells and under-resolution on dense ones. Each cell's Poisson step runs in a subprocess so that an Open3D segfault on one cell doesn't kill the entire pipeline -- the cell is skipped and remaining cells continue.
 
 The build plan tracks `cell_count`, `padding`, and `reconciled_hulls` for diagnostics.
 

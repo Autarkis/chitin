@@ -57,7 +57,7 @@ The compiler kernel is a deterministic pipeline. Same input bytes + same config 
 Stages:
 1. **Input normalization** -- load any supported format into a common mesh/point cloud representation
 2. **Opacity filtering** -- for gaussian splats: discard points below threshold, keeping only physically present geometry
-3. **Surface reconstruction** -- Poisson reconstruction via Open3D for point clouds that lack connectivity
+3. **Surface reconstruction** -- Poisson reconstruction via Open3D for point clouds that lack connectivity. Depth auto-selected per cell based on point count (4-7). Runs in a subprocess per octree cell so segfaults are isolated.
 4. **Convex decomposition** -- CoACD splits non-convex geometry into convex hulls
 5. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
 6. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)

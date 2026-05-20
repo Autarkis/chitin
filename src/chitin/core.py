@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import math
+
 import coacd
 import numpy as np
 import open3d as o3d
@@ -12,6 +14,12 @@ import trimesh
 from chitin.config import Config
 from chitin.plan import BuildPlan
 from chitin.result import BoneInfo, ExtractionResult, Hull, LodHulls
+
+
+def _auto_poisson_depth(n_points: int) -> int:
+    if n_points < 1:
+        return 4
+    return max(4, min(7, math.floor(math.log2(n_points) / 3)))
 
 
 def _quat_to_rotation_matrices(rots: np.ndarray) -> np.ndarray:
@@ -230,9 +238,12 @@ def _extract_spatial(
             )
             cell_normals = np.tile(cell_normals, (5, 1))
 
-        cell_mesh = _poisson_reconstruct(cell_positions, cell_normals, config)
-        cell_verts = np.asarray(cell_mesh.vertices, dtype=np.float64)
-        cell_tris = np.asarray(cell_mesh.triangles, dtype=np.int32)
+        cell_result_mesh = _poisson_reconstruct(
+            cell_positions, cell_normals, config, isolate=True
+        )
+        if cell_result_mesh is None:
+            continue
+        cell_verts, cell_tris = cell_result_mesh
 
         if len(cell_tris) < 4:
             continue
@@ -388,9 +399,8 @@ def extract_from_arrays(
         _plan.step("normal_estimation")
     _plan.step("reconstruct")
 
-    mesh = _poisson_reconstruct(positions, normals, config)
-    vertices = np.asarray(mesh.vertices, dtype=np.float64)
-    triangles = np.asarray(mesh.triangles, dtype=np.int32)
+    result_mesh = _poisson_reconstruct(positions, normals, config)
+    vertices, triangles = result_mesh
 
     if len(triangles) < 4:
         return ExtractionResult(
@@ -732,16 +742,18 @@ def _segment_by_bone(
     return segments
 
 
-def _poisson_reconstruct(
+_POISSON_WORKER_SCRIPT = Path(__file__).parent / "_poisson_worker.py"
+
+
+def _poisson_reconstruct_inner(
     positions: np.ndarray,
     normals: np.ndarray | None,
-    config: Config,
-) -> o3d.geometry.TriangleMesh:
+    depth: int,
+) -> tuple[np.ndarray, np.ndarray]:
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
 
-    has_valid_normals = normals is not None and not np.allclose(normals, 0)
-    if has_valid_normals:
+    if normals is not None and not np.allclose(normals, 0):
         pcd.normals = o3d.utility.Vector3dVector(normals)
     else:
         pcd.estimate_normals(
@@ -750,18 +762,60 @@ def _poisson_reconstruct(
         pcd.orient_normals_consistent_tangent_plane(k=10)
 
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd, depth=config.poisson_depth
+        pcd, depth=depth
     )
 
     densities = np.asarray(densities)
-    if len(densities) == 0:
-        return mesh
+    if len(densities) > 0:
+        density_threshold = np.quantile(densities, 0.1)
+        mesh.remove_vertices_by_mask(densities < density_threshold)
 
-    density_threshold = np.quantile(densities, 0.1)
-    vertices_to_remove = densities < density_threshold
-    mesh.remove_vertices_by_mask(vertices_to_remove)
+    return (
+        np.asarray(mesh.vertices, dtype=np.float64),
+        np.asarray(mesh.triangles, dtype=np.int32),
+    )
 
-    return mesh
+
+def _poisson_reconstruct(
+    positions: np.ndarray,
+    normals: np.ndarray | None,
+    config: Config,
+    isolate: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    depth = config.poisson_depth
+    if depth is None:
+        depth = _auto_poisson_depth(len(positions))
+
+    if not isolate:
+        return _poisson_reconstruct_inner(positions, normals, depth)
+
+    import subprocess
+    import sys
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        in_path = Path(tmpdir) / "input.npz"
+        out_path = Path(tmpdir) / "output.npz"
+
+        save_dict: dict[str, np.ndarray] = {
+            "positions": positions,
+            "depth": np.array([depth]),
+        }
+        if normals is not None:
+            save_dict["normals"] = normals
+        np.savez(in_path, **save_dict)
+
+        result = subprocess.run(
+            [sys.executable, str(_POISSON_WORKER_SCRIPT), str(in_path), str(out_path)],
+            capture_output=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0 or not out_path.exists():
+            return None
+
+        data = np.load(out_path)
+        return data["vertices"], data["triangles"]
 
 
 def _maybe_decimate(

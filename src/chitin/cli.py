@@ -65,8 +65,8 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--poisson-depth",
         type=int,
-        default=8,
-        help="Poisson reconstruction depth (default: 8)",
+        default=None,
+        help="Poisson reconstruction depth (default: auto from point count)",
     )
     p.add_argument(
         "--max-hulls",

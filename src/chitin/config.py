@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class Config:
     concavity: float = 0.05
     opacity_threshold: float = 0.5
-    poisson_depth: int = 8
+    poisson_depth: int | None = None
     min_hull_vertices: int = 4
     max_hulls: int = 2048
     opacity_is_logit: bool = False
@@ -18,4 +18,4 @@ class Config:
     lod_concavities: list[float] | None = None
     splat_scale_is_log: bool = True
     splat_surface_ratio: float = 0.2
-    spatial_split_threshold: int = 500_000
+    spatial_split_threshold: int = 50_000

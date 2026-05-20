@@ -152,6 +152,18 @@ def test_octree_partition_max_depth():
     assert all(len(c.indices) <= 100 for c in cells)
 
 
+def test_auto_poisson_depth():
+    from chitin.core import _auto_poisson_depth
+
+    assert _auto_poisson_depth(0) == 4
+    assert _auto_poisson_depth(1000) == 4
+    assert _auto_poisson_depth(50_000) == 5
+    assert _auto_poisson_depth(100_000) == 5
+    assert _auto_poisson_depth(500_000) == 6
+    assert _auto_poisson_depth(1_000_000) == 6
+    assert _auto_poisson_depth(10_000_000) == 7
+
+
 def test_aabb_iou_identical():
     from chitin.core import _aabb_iou
     from chitin.result import Hull

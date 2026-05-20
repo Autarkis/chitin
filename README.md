@@ -128,7 +128,7 @@ chitin-server download <job_id> -o ./output
 
 1. Loads input (PLY, OBJ, STL, GLB, USD, or raw arrays)
 2. Filters by opacity for gaussian splat point clouds
-3. Reconstructs surface mesh via Poisson reconstruction (Open3D)
+3. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
 4. Decomposes into convex hulls (CoACD)
 5. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
 6. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
