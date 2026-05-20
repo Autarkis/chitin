@@ -19,3 +19,7 @@ class Config:
     splat_scale_is_log: bool = True
     splat_surface_ratio: float = 0.2
     spatial_split_threshold: int = 50_000
+    poisson_density_quantile: float = 0.1
+    surface_proximity_filter: float = 0.0
+    thin_shell: bool = False
+    thin_shell_thickness: float = 0.0

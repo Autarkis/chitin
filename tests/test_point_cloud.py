@@ -308,3 +308,56 @@ def test_spatial_split_triggered():
     assert len(r.hulls) >= 1
     assert r.build_plan.detected.get("cell_count", 0) > 1
     assert "reconciled_hulls" in r.build_plan.detected
+
+
+def test_proximity_filter_removes_distant_vertices():
+    from chitin.core import _proximity_filter_mesh
+
+    input_pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
+    mesh_verts = np.array(
+        [[0, 0, 0], [1, 0, 0], [0, 1, 0], [10, 10, 10]], dtype=np.float64
+    )
+    mesh_tris = np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int32)
+
+    filtered_verts, filtered_tris = _proximity_filter_mesh(
+        mesh_verts, mesh_tris, input_pts, max_distance_ratio=3.0
+    )
+    assert len(filtered_verts) == 3
+    assert len(filtered_tris) == 1
+
+
+def test_extrude_thin_shell_doubles_geometry():
+    from chitin.core import _extrude_thin_shell
+
+    verts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]], dtype=np.float64)
+    faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+
+    ext_verts, ext_faces = _extrude_thin_shell(verts, faces, thickness=0.1)
+    assert len(ext_verts) == 8
+    assert len(ext_faces) > 4
+
+
+def test_density_quantile_config():
+    pts, scales, rots = _sphere_with_covariance(500)
+    r_default = extract_from_arrays(
+        pts, scales=scales, rots=rots, config=Config(concavity=0.5)
+    )
+    r_tight = extract_from_arrays(
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(concavity=0.5, poisson_density_quantile=0.4),
+    )
+    assert r_default.hulls is not None
+    assert r_tight.hulls is not None
+
+
+def test_thin_shell_produces_hulls():
+    pts, scales, rots = _sphere_with_covariance(500)
+    r = extract_from_arrays(
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(concavity=0.5, thin_shell=True),
+    )
+    assert len(r.hulls) >= 1

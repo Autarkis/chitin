@@ -104,6 +104,29 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Run locally even when preflight check says the input is too large",
     )
+    p.add_argument(
+        "--density-quantile",
+        type=float,
+        default=0.1,
+        help="Poisson density filter quantile (default: 0.1, raise to 0.3+ for environments)",
+    )
+    p.add_argument(
+        "--proximity-filter",
+        type=float,
+        default=0.0,
+        help="Remove mesh vertices farther than N * median_nn_distance from input points (0 = disabled)",
+    )
+    p.add_argument(
+        "--thin-shell",
+        action="store_true",
+        help="Extrude filtered surface into a thin solid before decomposition (for environment scans)",
+    )
+    p.add_argument(
+        "--thin-shell-thickness",
+        type=float,
+        default=0.0,
+        help="Shell thickness (0 = auto from mesh extent)",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
 
 
@@ -163,6 +186,10 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         poisson_depth=args.poisson_depth,
         max_hulls=args.max_hulls,
         lod_concavities=lod_concavities,
+        poisson_density_quantile=args.density_quantile,
+        surface_proximity_filter=args.proximity_filter,
+        thin_shell=args.thin_shell,
+        thin_shell_thickness=args.thin_shell_thickness,
     )
 
     if not args.quiet:

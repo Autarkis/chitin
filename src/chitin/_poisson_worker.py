@@ -14,6 +14,9 @@ def main() -> None:
     positions = data["positions"]
     normals = data["normals"] if "normals" in data else None
     depth = int(data["depth"][0])
+    density_quantile = (
+        float(data["density_quantile"][0]) if "density_quantile" in data else 0.1
+    )
 
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
@@ -32,7 +35,7 @@ def main() -> None:
 
     densities = np.asarray(densities)
     if len(densities) > 0:
-        density_threshold = np.quantile(densities, 0.1)
+        density_threshold = np.quantile(densities, density_quantile)
         mesh.remove_vertices_by_mask(densities < density_threshold)
 
     np.savez(

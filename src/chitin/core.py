@@ -228,6 +228,7 @@ def _extract_spatial(
         if len(cell_positions) < 100:
             continue
 
+        raw_cell_positions = cell_positions
         if config.splat_surface_ratio > 0:
             cell_positions = _inflate_splat_points(
                 cell_positions,
@@ -245,6 +246,12 @@ def _extract_spatial(
             continue
         cell_verts, cell_tris = cell_result_mesh
 
+        if len(cell_tris) < 4:
+            continue
+
+        cell_verts, cell_tris = _post_poisson_filter(
+            cell_verts, cell_tris, raw_cell_positions, config
+        )
         if len(cell_tris) < 4:
             continue
 
@@ -368,6 +375,8 @@ def extract_from_arrays(
         _plan.step("opacity_filter")
         _plan.detected["filtered_vertices"] = int(mask.sum())
 
+    raw_positions = positions
+
     if has_covariance and config.splat_surface_ratio > 0:
         if len(positions) > config.spatial_split_threshold:
             _plan.source_vertices = source_count
@@ -402,6 +411,17 @@ def extract_from_arrays(
     result_mesh = _poisson_reconstruct(positions, normals, config)
     vertices, triangles = result_mesh
 
+    if len(triangles) < 4:
+        return ExtractionResult(
+            hulls=[],
+            source_vertex_count=source_count,
+            mesh_vertex_count=len(vertices),
+            build_plan=_plan,
+        )
+
+    vertices, triangles = _post_poisson_filter(
+        vertices, triangles, raw_positions, config
+    )
     if len(triangles) < 4:
         return ExtractionResult(
             hulls=[],
@@ -749,6 +769,7 @@ def _poisson_reconstruct_inner(
     positions: np.ndarray,
     normals: np.ndarray | None,
     depth: int,
+    density_quantile: float = 0.1,
 ) -> tuple[np.ndarray, np.ndarray]:
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
@@ -767,7 +788,7 @@ def _poisson_reconstruct_inner(
 
     densities = np.asarray(densities)
     if len(densities) > 0:
-        density_threshold = np.quantile(densities, 0.1)
+        density_threshold = np.quantile(densities, density_quantile)
         mesh.remove_vertices_by_mask(densities < density_threshold)
 
     return (
@@ -786,8 +807,10 @@ def _poisson_reconstruct(
     if depth is None:
         depth = _auto_poisson_depth(len(positions))
 
+    dq = config.poisson_density_quantile
+
     if not isolate:
-        return _poisson_reconstruct_inner(positions, normals, depth)
+        return _poisson_reconstruct_inner(positions, normals, depth, dq)
 
     import subprocess
     import sys
@@ -800,6 +823,7 @@ def _poisson_reconstruct(
         save_dict: dict[str, np.ndarray] = {
             "positions": positions,
             "depth": np.array([depth]),
+            "density_quantile": np.array([dq]),
         }
         if normals is not None:
             save_dict["normals"] = normals
@@ -816,6 +840,97 @@ def _poisson_reconstruct(
 
         data = np.load(out_path)
         return data["vertices"], data["triangles"]
+
+
+def _proximity_filter_mesh(
+    mesh_verts: np.ndarray,
+    mesh_tris: np.ndarray,
+    input_positions: np.ndarray,
+    max_distance_ratio: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    from scipy.spatial import cKDTree
+
+    input_tree = cKDTree(input_positions)
+    sample_dists, _ = input_tree.query(
+        input_positions[: min(1000, len(input_positions))], k=2
+    )
+    median_nn = np.median(sample_dists[:, 1])
+
+    threshold = max_distance_ratio * median_nn
+    mesh_dists, _ = input_tree.query(mesh_verts)
+    keep_mask = mesh_dists <= threshold
+
+    old_to_new = np.full(len(mesh_verts), -1, dtype=np.int64)
+    new_indices = np.where(keep_mask)[0]
+    old_to_new[new_indices] = np.arange(len(new_indices))
+
+    new_verts = mesh_verts[keep_mask]
+
+    tri_keep = np.all(keep_mask[mesh_tris], axis=1)
+    new_tris = old_to_new[mesh_tris[tri_keep]]
+
+    return new_verts, new_tris.astype(np.int32)
+
+
+def _extrude_thin_shell(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    thickness: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.compute_vertex_normals()
+    vnormals = np.asarray(mesh.vertex_normals, dtype=np.float64)
+
+    n = len(vertices)
+    half = thickness / 2.0
+    outer_verts = vertices + vnormals * half
+    inner_verts = vertices - vnormals * half
+    all_verts = np.vstack([outer_verts, inner_verts])
+
+    outer_faces = faces.copy()
+    inner_faces = faces[:, ::-1] + n
+
+    edges = np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    edges_sorted = np.sort(edges, axis=1)
+    edge_keys = edges_sorted[:, 0].astype(np.int64) * (n + 1) + edges_sorted[:, 1]
+    unique_keys, counts = np.unique(edge_keys, return_counts=True)
+    boundary_keys = set(unique_keys[counts == 1].tolist())
+
+    stitch_faces = []
+    for e0, e1 in edges:
+        key = min(e0, e1) * (n + 1) + max(e0, e1)
+        if key in boundary_keys:
+            stitch_faces.append([e0, e1, e1 + n])
+            stitch_faces.append([e0, e1 + n, e0 + n])
+
+    if stitch_faces:
+        stitch = np.array(stitch_faces, dtype=np.int32)
+        all_faces = np.vstack([outer_faces, inner_faces, stitch])
+    else:
+        all_faces = np.vstack([outer_faces, inner_faces])
+
+    return all_verts, all_faces
+
+
+def _post_poisson_filter(
+    mesh_verts: np.ndarray,
+    mesh_tris: np.ndarray,
+    input_positions: np.ndarray,
+    config: Config,
+) -> tuple[np.ndarray, np.ndarray]:
+    if config.surface_proximity_filter > 0:
+        mesh_verts, mesh_tris = _proximity_filter_mesh(
+            mesh_verts, mesh_tris, input_positions, config.surface_proximity_filter
+        )
+    if config.thin_shell and len(mesh_tris) >= 4:
+        thickness = config.thin_shell_thickness
+        if thickness <= 0:
+            extent = mesh_verts.max(axis=0) - mesh_verts.min(axis=0)
+            thickness = np.median(extent) * 0.02
+        mesh_verts, mesh_tris = _extrude_thin_shell(mesh_verts, mesh_tris, thickness)
+    return mesh_verts, mesh_tris
 
 
 def _maybe_decimate(

@@ -32,6 +32,10 @@ Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` 
 | `--poisson-depth` | auto | Poisson reconstruction depth (point cloud inputs only). Auto-selects per cell based on point count. |
 | `--max-hulls` | 2048 | Maximum number of convex hulls. |
 | `--lod-concavities` | none | Comma-separated concavity thresholds for LOD tiers. |
+| `--density-quantile` | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environments. |
+| `--proximity-filter` | 0 | Remove mesh vertices farther than N * median_nn_distance from input. |
+| `--thin-shell` | off | Extrude surface into thin solid before decomposition (environment scans). |
+| `--thin-shell-thickness` | 0 | Shell thickness (0 = auto from mesh extent). |
 | `--scene-name` | scene | Root prim name (USD output only). |
 | `--force` | off | Run even if preflight check flags the input as too large. |
 | `-q, --quiet` | off | Suppress progress output. |
@@ -224,6 +228,10 @@ for hull in phys.hulls:
 | `splat_scale_is_log` | bool | True | Whether splat scale values are log-space (standard 3DGS convention). |
 | `splat_surface_ratio` | float | 0.2 | Anisotropic inflation ratio for splat disk samples. Set to 0 to disable inflation. |
 | `spatial_split_threshold` | int | 50000 | Point count above which octree spatial decomposition is used. |
+| `poisson_density_quantile` | float | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environment scans to strip closure surfaces. |
+| `surface_proximity_filter` | float | 0.0 | Max distance (as multiple of median NN distance) from input points. Removes Poisson closure geometry far from real data. 0 = disabled. |
+| `thin_shell` | bool | False | Extrude filtered surface into a thin watertight solid before CoACD. Prevents volume-fill on environment scans. |
+| `thin_shell_thickness` | float | 0.0 | Shell extrusion thickness. 0 = auto (2% of median mesh extent). |
 
 ## Gaussian Splat Covariance
 
@@ -244,6 +252,35 @@ Each cell is padded by a ghost zone (3x the median gaussian scale) so that bound
 Poisson reconstruction depth is auto-selected per cell based on point count (`floor(log2(n) / 3)`, clamped to 4-7). This avoids over-resolution on small cells and under-resolution on dense ones. Each cell's Poisson step runs in a subprocess so that an Open3D segfault on one cell doesn't kill the entire pipeline -- the cell is skipped and remaining cells continue.
 
 The build plan tracks `cell_count`, `padding`, and `reconciled_hulls` for diagnostics.
+
+### Environment Scans
+
+Poisson reconstruction produces watertight meshes. For object scans (a mug, a statue), this is correct -- the closed surface IS the collision boundary. For environment scans (a room, a cave, an outdoor scene), Poisson closes the open boundaries and CoACD decomposes the enclosed volume, filling walkable space with invisible collision blocks.
+
+Two mechanisms address this:
+
+**Proximity filtering** (`surface_proximity_filter`): removes reconstructed mesh vertices that are far from any actual input point. Poisson's closure surfaces are artificial geometry with no nearby source data, so a distance threshold strips them while preserving real surfaces.
+
+**Thin-shell extrusion** (`thin_shell`): after filtering, extrudes the remaining surface into a thin watertight solid (inner + outer surface + stitched boundary edges). CoACD decomposes this thin slab instead of the full enclosed volume, producing collision hulls that follow the wall/floor/ceiling surfaces rather than filling the interior.
+
+```bash
+# environment scan with both fixes
+chitin extract room.ply -o room.phys \
+    --density-quantile 0.3 \
+    --proximity-filter 5.0 \
+    --thin-shell
+```
+
+```python
+config = Config(
+    concavity=0.05,
+    poisson_density_quantile=0.3,
+    surface_proximity_filter=5.0,
+    thin_shell=True,
+)
+```
+
+For object scans, the defaults (no proximity filter, no thin shell) remain correct.
 
 ## Concavity Tuning
 
