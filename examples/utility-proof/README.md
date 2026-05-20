@@ -10,8 +10,8 @@ Can Chitin take messy real 3D input and produce physics artifacts that are usefu
 
 | Case | Dataset | Tests |
 |------|---------|-------|
-| Scanned object | Google Scanned Objects, YCB mug | Static mesh → convex hulls. Visual fit, hull count, sim stability |
-| Scene / scan | Tanks and Temples — Barn | Scene-scale point cloud → walkable collision. Poisson reconstruction + decomposition |
+| Scanned object | Stanford Bunny, YCB mug | Static mesh → convex hulls. Visual fit, hull count, sim stability |
+| Gaussian splat scene | Mip-NeRF 360 Garden (3DGS) | Splat point cloud → scene-scale collision. Opacity filtering, covariance normals, octree partitioning, Poisson reconstruction + decomposition |
 | Rigged character | Microsoft Rocketbox | Per-bone hulls, bind transform correctness, ragdoll hull placement |
 
 ## Run
@@ -44,10 +44,10 @@ reports/<key>/
 
 ## What success looks like
 
-- Build completes without errors
+- Build completes without errors (subprocess isolation means individual cell crashes are tolerated, not fatal)
 - `chitin validate` passes clean
 - Hull count is reasonable for the asset complexity (not 1, not 10000)
-- Build time is under 60s for typical objects, under 5min for large scenes
+- Build time is under 60s for typical objects. Large splat scenes (500K+ points, dozens of octree cells) take 15-30 minutes -- the bottleneck is per-cell Poisson reconstruction and CoACD decomposition, not chitin overhead
 - .phys file size is small relative to the source asset
 
 Failures are expected and useful. A bad result becomes the roadmap: better defaults, better diagnostics, better preflight, or a documented limitation.

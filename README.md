@@ -32,6 +32,9 @@ chitin extract scene.ply -o scene.phys --opacity-threshold 0.5
 # extract from a mesh
 chitin extract model.obj -o colliders.phys --concavity 0.05
 
+# environment scan (room, cave, outdoor scene)
+chitin extract room.ply -o room.phys --density-quantile 0.3 --proximity-filter 5.0 --thin-shell
+
 # multi-LOD: generate tiers at different concavity thresholds
 chitin extract model.obj -o colliders.phys --concavity 0.05 --lod-concavities 0.1,0.3,0.5
 
@@ -128,16 +131,23 @@ chitin-server download <job_id> -o ./output
 
 1. Loads input (PLY, OBJ, STL, GLB, USD, or raw arrays)
 2. Filters by opacity for gaussian splat point clouds
-3. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
-4. Decomposes into convex hulls (CoACD)
-5. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
-6. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
+3. Derives oriented normals from gaussian covariance (scale + rotation) when available, falls back to KD-tree estimation
+4. Partitions large scenes into octree cells (threshold: 50K points) with ghost-zone overlap for boundary continuity
+5. Optionally inflates gaussian centers into disk samples along their two largest axes for better surface coverage
+6. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
+7. For environment scans: proximity-filters closure surfaces and optionally extrudes a thin shell to prevent interior volume fill
+8. Deduplicates cross-cell hulls by AABB IOU
+9. Decomposes into convex hulls (CoACD)
+10. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
+11. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
 
 ## Limitations
 
+- **Environment scans require manual config.** Poisson reconstruction produces watertight meshes, which fills room/cave interiors with solid collision. The `--thin-shell` and `--proximity-filter` flags mitigate this but need to be opted into. Auto-detection of object vs. environment scans is not yet implemented.
 - **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes with tightly packed accessors. Interleaved `byteStride`, multiple primitives, and vertex reordering may produce incorrect bone segmentation.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
 - **FBX skinning is not supported.** Static FBX meshes work via trimesh; skinned FBX requires a different code path.
+- **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.
 
 ## License
 

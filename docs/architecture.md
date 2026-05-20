@@ -29,7 +29,13 @@ The format is documented in [phys.md](phys.md).
                      │                      │
                      │   normalize          │
                      │   filter (opacity)   │
+                     │   derive normals     │
+                     │   octree partition   │
+                     │   inflate (splats)   │
                      │   reconstruct        │
+                     │   proximity filter   │
+                     │   thin-shell (env)   │
+                     │   dedup (cross-cell) │
                      │   decompose          │
                      │   segment (bones)    │
                      │   quantize           │
@@ -57,11 +63,16 @@ The compiler kernel is a deterministic pipeline. Same input bytes + same config 
 Stages:
 1. **Input normalization** -- load any supported format into a common mesh/point cloud representation
 2. **Opacity filtering** -- for gaussian splats: discard points below threshold, keeping only physically present geometry
-3. **Surface reconstruction** -- Poisson reconstruction via Open3D for point clouds that lack connectivity. Depth auto-selected per cell based on point count (4-7). Runs in a subprocess per octree cell so segfaults are isolated.
-4. **Convex decomposition** -- CoACD splits non-convex geometry into convex hulls
-5. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
-6. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)
-7. **Validation** -- structural checks before writing. Reject oversized hulls, degenerate AABBs, index overflow
+3. **Normal derivation** -- for 3DGS data with scale/rotation: derive oriented normals from the covariance ellipsoid (shortest axis = surface normal). Falls back to KD-tree estimation for plain point clouds
+4. **Spatial partitioning** -- octree split for scenes exceeding 50K points. Ghost-zone padding (3x median gaussian scale) ensures boundary continuity across cells
+5. **Splat inflation** -- optionally expand each gaussian center into disk samples along its two largest axes for better Poisson surface coverage
+6. **Surface reconstruction** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
+7. **Surface filtering** -- configurable density quantile strips low-confidence Poisson vertices. Proximity filter removes closure surfaces far from input data. Thin-shell extrusion prevents volume-fill on environment scans
+8. **Cross-cell deduplication** -- AABB IOU dedup (threshold 0.5) removes duplicate hulls at octree cell boundaries
+9. **Convex decomposition** -- CoACD splits non-convex geometry into convex hulls
+10. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
+11. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)
+12. **Validation** -- structural checks before writing. Reject oversized hulls, degenerate AABBs, index overflow
 
 The compiler does not make runtime decisions. It produces an artifact. Consumers decide how to use it.
 
@@ -108,6 +119,12 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 **No padding in the binary format.** The bind-pose block starts immediately after index data, which may not be 4-byte aligned. Readers must use byte-level access (DataView, BinaryReader), not typed-array views. This keeps the format simple and avoids wasting bytes on alignment that only matters for one parse pattern.
 
 **Compiler version in the cache key.** A CoACD update, quantization tweak, or reconstruction parameter change invalidates the cache automatically. No manual cache busting.
+
+**Auto-selected Poisson depth, never 8.** Open3D Poisson segfaults non-deterministically on dense spatial clusters at depth 8. The formula `clamp(floor(log2(n_points) / 3), 4, 7)` gives ~1-10 points per leaf cell at each depth level. Per-cell auto-selection means small cells don't get over-resolved and dense cells get appropriate resolution.
+
+**Subprocess isolation for Poisson.** Open3D uses internal threads that deadlock under `fork()` on macOS. The subprocess approach (`.npz` file exchange) avoids this entirely and also contains segfaults: if one cell crashes, the parent gets a nonzero return code, skips the cell, and continues. The I/O cost is negligible compared to CoACD.
+
+**Environment scans are opt-in, not auto-detected.** Poisson creates watertight meshes, which fills concave environments with solid geometry. The proximity filter and thin-shell extrusion fix this, but require explicit configuration. Auto-detecting object vs. environment scans from normal orientation is feasible but noisy for mixed scenes (object on a table in a room). Better to let the user declare intent than guess wrong.
 
 ## What chitin is not
 
