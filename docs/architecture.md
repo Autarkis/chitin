@@ -92,6 +92,7 @@ Consumers are thin. They read `.phys`, dequantize vertices, and hand geometry to
 | Consumer | Language | Physics API | Matrix convention |
 |----------|----------|-------------|-------------------|
 | `@autarkis/chitin-web` | TypeScript | Rapier WASM | Column-vector (implicit via `fromArray`) |
+| `@autarkis/chitin-lite` | TypeScript | CoACD WASM | N/A (produces `.phys`, does not consume) |
 | `com.chitin.physics` | C# | Unity MeshCollider | Column-vector (explicit transpose) |
 | ChitinImporter | C++ | Unreal UBodySetup | Row-vector (native match) |
 | `chitin.phys` | Python | Direct numpy | Row-vector (native match) |
@@ -125,6 +126,10 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 **Subprocess isolation for Poisson.** Open3D uses internal threads that deadlock under `fork()` on macOS. The subprocess approach (`.npz` file exchange) avoids this entirely and also contains segfaults: if one cell crashes, the parent gets a nonzero return code, skips the cell, and continues. The I/O cost is negligible compared to CoACD.
 
 **Environment scans are opt-in, not auto-detected.** Poisson creates watertight meshes, which fills concave environments with solid geometry. The proximity filter and thin-shell extrusion fix this, but require explicit configuration. Auto-detecting object vs. environment scans from normal orientation is feasible but noisy for mixed scenes (object on a table in a room). Better to let the user declare intent than guess wrong.
+
+**CoACD compiles to WASM without OpenVDB.** CoACD uses OpenVDB only for manifold repair as a preprocessing step. Building with `-DWITH_3RD_PARTY_LIBS=OFF` drops OpenVDB, Boost, TBB, and spdlog -- leaving pure C++ with header-only deps (CDT, nanoflann, vendored Bullet quickhull). The result is a 558KB `.wasm` module that runs the full MCTS decomposition algorithm in the browser. The trade-off is that input meshes must be manifold; without OpenVDB there is no automatic repair.
+
+**Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles the light path: mesh → convex hulls → `.phys`. Both produce the same `.phys` format. Open3D stays on the server; CoACD runs everywhere.
 
 ## What chitin is not
 

@@ -1,0 +1,21 @@
+{
+  "name": "@autarkis/chitin-lite",
+  "version": "0.1.0",
+  "description": "Convex decomposition and .phys sidecar generation in the browser via CoACD WASM",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "license": "MIT"
+}
