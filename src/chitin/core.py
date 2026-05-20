@@ -8,7 +8,6 @@ import math
 
 import coacd
 import numpy as np
-import open3d as o3d
 import trimesh
 
 from chitin.config import Config
@@ -771,6 +770,13 @@ def _poisson_reconstruct_inner(
     depth: int,
     density_quantile: float = 0.1,
 ) -> tuple[np.ndarray, np.ndarray]:
+    try:
+        import open3d as o3d
+    except ImportError:
+        raise ImportError(
+            "Point cloud extraction requires open3d. "
+            "Install with: pip install chitin[splat]"
+        )
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(positions)
 
@@ -848,7 +854,13 @@ def _proximity_filter_mesh(
     input_positions: np.ndarray,
     max_distance_ratio: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    from scipy.spatial import cKDTree
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        raise ImportError(
+            "Proximity filtering requires scipy. "
+            "Install with: pip install chitin[splat]"
+        )
 
     input_tree = cKDTree(input_positions)
     sample_dists, _ = input_tree.query(
@@ -872,16 +884,24 @@ def _proximity_filter_mesh(
     return new_verts, new_tris.astype(np.int32)
 
 
+def _vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    v0, v1, v2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
+    face_normals = np.cross(v1 - v0, v2 - v0)
+    vnormals = np.zeros_like(vertices)
+    np.add.at(vnormals, faces[:, 0], face_normals)
+    np.add.at(vnormals, faces[:, 1], face_normals)
+    np.add.at(vnormals, faces[:, 2], face_normals)
+    norms = np.linalg.norm(vnormals, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return vnormals / norms
+
+
 def _extrude_thin_shell(
     vertices: np.ndarray,
     faces: np.ndarray,
     thickness: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    mesh.triangles = o3d.utility.Vector3iVector(faces)
-    mesh.compute_vertex_normals()
-    vnormals = np.asarray(mesh.vertex_normals, dtype=np.float64)
+    vnormals = _vertex_normals(vertices, faces)
 
     n = len(vertices)
     half = thickness / 2.0
@@ -937,6 +957,10 @@ def _maybe_decimate(
     vertices: np.ndarray, faces: np.ndarray, max_vertices: int
 ) -> tuple[np.ndarray, np.ndarray]:
     if len(vertices) <= max_vertices:
+        return vertices, faces
+    try:
+        import open3d as o3d
+    except ImportError:
         return vertices, faces
     ratio = max_vertices / len(vertices)
     target_faces = max(4, int(len(faces) * ratio))

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Convex collision geometry from point clouds, meshes, and gaussian splats"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 authors = [{ name = "Boris Blosse" }]
 keywords = ["physics", "collision", "convex-decomposition", "gaussian-splatting", "usd", "robotics"]
 classifiers = [
@@ -20,7 +20,6 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.26",
-    "open3d>=0.18",
     "coacd>=1.0",
     "trimesh>=4.0",
     "plyfile>=1.0",
@@ -28,6 +27,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+splat = [
+    "open3d>=0.18",
+    "scipy>=1.10",
+]
 usd = ["usd-core>=24.0"]
 service = [
     "fastapi>=0.115",
@@ -35,7 +38,7 @@ service = [
     "python-multipart>=0.0.9",
     "httpx>=0.27",
 ]
-all = ["chitin[usd,service]"]
+all = ["chitin[splat,usd,service]"]
 dev = [
     "chitin[all]",
     "pytest>=8.0",

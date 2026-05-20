@@ -1,5 +1,14 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import numpy as np
+import pytest
+
+try:
+    import open3d  # noqa: F401
+
+    _HAS_OPEN3D = True
+except ImportError:
+    _HAS_OPEN3D = False
+requires_open3d = pytest.mark.skipif(not _HAS_OPEN3D, reason="requires chitin[splat]")
 
 from chitin import (
     Config,
@@ -18,6 +27,7 @@ def test_mesh_plan(box_mesh):
     assert r.build_plan.source_vertices == len(verts)
 
 
+@requires_open3d
 def test_point_cloud_plan(sphere_points):
     r = extract_from_arrays(
         sphere_points, normals=sphere_points, config=Config(concavity=0.5)
@@ -29,6 +39,7 @@ def test_point_cloud_plan(sphere_points):
     assert r.build_plan.source_vertices == len(sphere_points)
 
 
+@requires_open3d
 def test_point_cloud_with_opacity_plan(sphere_points):
     opacity = np.ones(len(sphere_points), dtype=np.float64)
     r = extract_from_arrays(
@@ -42,6 +53,7 @@ def test_point_cloud_with_opacity_plan(sphere_points):
     assert r.build_plan.detected.get("filtered_vertices") is not None
 
 
+@requires_open3d
 def test_point_cloud_normal_estimation_plan(sphere_points):
     r = extract_from_arrays(sphere_points, config=Config(concavity=0.5))
     assert r.build_plan is not None

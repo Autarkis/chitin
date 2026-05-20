@@ -1,9 +1,19 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import numpy as np
+import pytest
 
 from chitin import Config, extract_from_arrays
 
+try:
+    import open3d  # noqa: F401
 
+    _HAS_OPEN3D = True
+except ImportError:
+    _HAS_OPEN3D = False
+requires_open3d = pytest.mark.skipif(not _HAS_OPEN3D, reason="requires chitin[splat]")
+
+
+@requires_open3d
 def test_sphere_point_cloud(sphere_points):
     r = extract_from_arrays(
         sphere_points, normals=sphere_points, config=Config(concavity=0.5)
@@ -12,6 +22,7 @@ def test_sphere_point_cloud(sphere_points):
     assert r.source_vertex_count == len(sphere_points)
 
 
+@requires_open3d
 def test_too_few_points_returns_empty():
     pts = np.random.default_rng(0).standard_normal((50, 3))
     r = extract_from_arrays(pts)
@@ -19,6 +30,7 @@ def test_too_few_points_returns_empty():
     assert r.source_vertex_count == 50
 
 
+@requires_open3d
 def test_opacity_filtering():
     rng = np.random.default_rng(42)
     pts = rng.standard_normal((1000, 3))
@@ -30,6 +42,7 @@ def test_opacity_filtering():
     assert r.source_vertex_count == 1000
 
 
+@requires_open3d
 def test_logit_opacity():
     rng = np.random.default_rng(42)
     pts = rng.standard_normal((500, 3))
@@ -45,6 +58,7 @@ def test_logit_opacity():
     assert len(r.hulls) >= 1
 
 
+@requires_open3d
 def test_all_zero_normals_triggers_estimation(sphere_points):
     zero_normals = np.zeros_like(sphere_points)
     r = extract_from_arrays(
@@ -257,6 +271,7 @@ def test_covariance_normals_match_sphere_surface():
     assert np.mean(dots) > 0.99
 
 
+@requires_open3d
 def test_covariance_pipeline_end_to_end():
     pts, scales, rots = _sphere_with_covariance(500)
     r = extract_from_arrays(pts, scales=scales, rots=rots, config=Config(concavity=0.5))
@@ -264,6 +279,7 @@ def test_covariance_pipeline_end_to_end():
     assert r.build_plan.detected.get("covariance_normals") is True
 
 
+@requires_open3d
 def test_covariance_with_opacity_filtering():
     pts, scales, rots = _sphere_with_covariance(1000)
     opacity = np.ones(1000, dtype=np.float64)
@@ -280,6 +296,7 @@ def test_covariance_with_opacity_filtering():
     assert r.build_plan.detected.get("filtered_vertices") == 500
 
 
+@requires_open3d
 def test_covariance_with_lod():
     pts, scales, rots = _sphere_with_covariance(500)
     r = extract_from_arrays(
@@ -294,6 +311,7 @@ def test_covariance_with_lod():
     assert r.lod_tiers[1].concavity == 0.5
 
 
+@requires_open3d
 def test_spatial_split_triggered():
     rng = np.random.default_rng(42)
     pts, scales, rots = _sphere_with_covariance(2000, rng=rng)
@@ -337,6 +355,7 @@ def test_extrude_thin_shell_doubles_geometry():
     assert len(ext_faces) > 4
 
 
+@requires_open3d
 def test_density_quantile_config():
     pts, scales, rots = _sphere_with_covariance(500)
     r_default = extract_from_arrays(
@@ -352,6 +371,7 @@ def test_density_quantile_config():
     assert r_tight.hulls is not None
 
 
+@requires_open3d
 def test_thin_shell_produces_hulls():
     pts, scales, rots = _sphere_with_covariance(500)
     r = extract_from_arrays(

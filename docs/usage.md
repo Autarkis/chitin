@@ -3,13 +3,16 @@
 ## Installation
 
 ```bash
-pip install chitin              # core (phys + JSON output)
+pip install chitin              # mesh extraction (OBJ, GLB, STL, FBX)
+pip install chitin[splat]       # + point cloud / gaussian splat extraction
 pip install chitin[usd]         # + USD Physics output
 pip install chitin[service]     # + local build service
 pip install chitin[all]         # everything
 ```
 
-Requires Python 3.12 (open3d does not yet have a 3.13 wheel).
+The base install handles mesh inputs with just trimesh + CoACD. The `[splat]` extra adds Open3D (Poisson surface reconstruction) and scipy for point cloud and gaussian splat extraction.
+
+Requires Python 3.12. The base install works on 3.13+; `chitin[splat]` requires open3d which does not yet have a 3.13 wheel.
 
 ## CLI
 
