@@ -26,6 +26,33 @@ The base install handles mesh inputs with just trimesh + CoACD. The `[splat]` ex
 
 Requires Python 3.12. (`chitin[splat]` requires open3d, which does not yet have a 3.13 wheel. The base install works on 3.13+.)
 
+### Browser path
+
+For manifold meshes (OBJ, GLB, STL from standard modeling tools), you can skip Python entirely and run decomposition in the browser:
+
+```bash
+npm install @autarkis/chitin-lite
+```
+
+This wraps CoACD compiled to WebAssembly (558KB) and writes the same `.phys` format the Python compiler produces. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for usage.
+
+Use `chitin check <file>` to see which path a given input needs:
+
+```
+$ chitin check model.glb
+file:       model.glb
+format:     glb
+vertices:   12,847
+faces:      25,102
+manifold:   yes
+path:       either
+  server:   pip install chitin
+  browser:  npm install @autarkis/chitin-lite
+reason:     manifold mesh, eligible for browser-side decomposition
+```
+
+Point clouds, gaussian splats, and non-manifold meshes require the Python pipeline.
+
 ## CLI
 
 ```bash
