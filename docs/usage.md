@@ -28,6 +28,8 @@ Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` 
 
 Use Chitin when the collision result needs to be a portable physics asset: checked into a build, validated in CI, loaded by multiple runtimes, or inspected independently from the visual source. If the only goal is immediate walk mode inside a splat viewer, a voxel collision pipeline may be enough. Chitin is for the next step: reusable convex hull artifacts with stable readers.
 
+Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-aware. A splat viewer, Three.js scene, generated-world renderer, or custom engine can load the visual asset however it wants, then load `scene.phys` in the same coordinate space and attach those hulls to its physics world.
+
 **Options:**
 
 | Flag | Default | Description |
@@ -197,6 +199,21 @@ if phys.bones:
 issues = validate_phys("colliders.phys")
 for issue in issues:
     print(issue)  # "[error] hull 3: index 412 >= vertex_count 400"
+```
+
+### Browser runtime
+
+`@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine.
+
+```typescript
+import RAPIER from "@dimforge/rapier3d";
+import { parsePhys, addToWorld, createDebugMeshes } from "@autarkis/chitin-web";
+
+const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
+const phys = parsePhys(buffer);
+
+addToWorld(RAPIER, world, phys);
+scene.add(createDebugMeshes(phys));
 ```
 
 ### World-space reconstruction (rigged)

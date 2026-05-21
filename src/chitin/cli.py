@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_check_parser(sub)
     _add_inspect_parser(sub)
     _add_validate_parser(sub)
+    _add_probe_parser(sub)
 
     args = parser.parse_args(argv)
     if args.command == "extract":
@@ -33,6 +34,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_inspect(args)
     elif args.command == "validate":
         _cmd_validate(args)
+    elif args.command == "probe":
+        _cmd_probe(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -395,6 +398,61 @@ def _cmd_validate(args: argparse.Namespace) -> None:
     errors = sum(1 for i in issues if i.severity == "error")
     if errors:
         sys.exit(1)
+
+
+def _add_probe_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser("probe", help="raycast coverage probe for collision quality")
+    p.add_argument("file", type=Path, help="path to .phys file")
+    p.add_argument(
+        "--grid",
+        type=int,
+        default=64,
+        help="Grid resolution per axis (default: 64, total rays = grid^2)",
+    )
+    p.add_argument(
+        "--capsule-radius",
+        type=float,
+        default=0.3,
+        help="Character capsule radius for gap classification (default: 0.3)",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Write detailed results to JSON",
+    )
+    p.add_argument("-q", "--quiet", action="store_true")
+
+
+def _cmd_probe(args: argparse.Namespace) -> None:
+    import time
+
+    from chitin.probe import probe
+
+    if not args.quiet:
+        print(f"chitin probe: {args.file} ({args.grid}x{args.grid} grid)")
+
+    t0 = time.monotonic()
+    result = probe(
+        args.file, grid_resolution=args.grid, capsule_radius=args.capsule_radius
+    )
+    dt = time.monotonic() - t0
+
+    pct = result.coverage * 100
+    print(f"coverage:   {pct:.1f}% ({result.hits}/{result.total_rays} rays)")
+    print(f"confidence: {result.confidence}")
+    print(f"gaps:       {result.misses} rays in {result.gap_clusters} clusters")
+    print(f"capsule:    {result.capsule_radius}m radius")
+    print(f"time:       {dt:.2f}s")
+
+    if args.output:
+        result.to_json(args.output)
+        if not args.quiet:
+            print(f"wrote:      {args.output}")
+
+    if result.confidence == "low":
+        sys.exit(2)
 
 
 if __name__ == "__main__":

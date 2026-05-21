@@ -25,9 +25,10 @@ Chitin is free MIT-licensed infrastructure, but the strategic distinction is not
 | Voxelizes occupancy for walk mode, raycasts, or broad-phase queries | Reconstructs surfaces and decomposes them into convex hulls |
 | Often depends on a seed point, fill/carve presets, and a specific runtime | Uses explicit compiler config, build diagnostics, and portable readers |
 | Emits viewer-oriented voxel data or a generated collision mesh | Emits `.phys`: versioned, validated convex hull data with optional LOD and rig blocks |
+| Usually lives inside one viewer's collision path | Loads beside any visual asset as a sidecar |
 | Optimized for "can I walk around this splat now?" | Optimized for "can I ship this collision asset everywhere?" |
 
-The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines.
+The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines. In the browser, `@autarkis/chitin-web` exposes `parsePhys`, `createColliders`, `addToWorld`, and Three.js debug meshes so a viewer can attach Chitin collision with a few lines of runtime code.
 
 ## Components
 
