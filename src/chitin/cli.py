@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_inspect_parser(sub)
     _add_validate_parser(sub)
     _add_probe_parser(sub)
+    _add_convert_parser(sub)
 
     args = parser.parse_args(argv)
     if args.command == "extract":
@@ -36,6 +37,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_validate(args)
     elif args.command == "probe":
         _cmd_probe(args)
+    elif args.command == "convert":
+        _cmd_convert(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -139,6 +142,11 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         default=0.9,
         help="PCA eigenvalue ratio to classify octree cell as flat (0 = disabled, 1 = everything is flat)",
     )
+    p.add_argument(
+        "--auto-verify",
+        action="store_true",
+        help="Run raycast probe after extraction and print coverage summary",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
 
 
@@ -197,6 +205,10 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     elif pf.level == "yellow" and not args.quiet:
         print(f"chitin: warning: {pf.message}", file=sys.stderr)
 
+    if pf.hints and not args.quiet:
+        for hint in pf.hints:
+            print(f"chitin: hint: {hint}", file=sys.stderr)
+
     lod_concavities = None
     if args.lod_concavities:
         lod_concavities = [float(x.strip()) for x in args.lod_concavities.split(",")]
@@ -233,6 +245,25 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             f"chitin: {len(result.hulls)} hulls from "
             f"{result.source_vertex_count} source verts in {dt:.1f}s"
         )
+
+    if args.auto_verify and fmt == "phys":
+        from chitin.probe import probe
+
+        pr = probe(args.output, grid_resolution=32)
+        pct = pr.coverage * 100
+        print(
+            f"chitin: verify: {pct:.1f}% coverage "
+            f"({pr.hits}/{pr.total_rays} rays, "
+            f"{pr.gap_clusters} gap clusters, "
+            f"confidence={pr.confidence})"
+        )
+        if pr.confidence == "low":
+            print(
+                "chitin: verify: low coverage — consider "
+                "--concavity 0.01, --density-quantile 0.05, "
+                "or --thin-shell for environment scans",
+                file=sys.stderr,
+            )
 
     if not args.no_hook:
         hook_cmd = get_post_process_command(args.post_process)
@@ -302,6 +333,13 @@ def _check_ply(path: Path) -> None:
         print("type:       plain point cloud")
         print("path:       server  (pip install chitin[splat])")
         print("reason:     point cloud requires Poisson reconstruction (Open3D)")
+
+    from chitin.preflight import detect_environment_hints
+
+    hints = detect_environment_hints(path)
+    if hints:
+        for hint in hints:
+            print(f"hint:       {hint}")
 
 
 def _check_mesh(path: Path, suffix: str) -> None:
@@ -453,6 +491,41 @@ def _cmd_probe(args: argparse.Namespace) -> None:
 
     if result.confidence == "low":
         sys.exit(2)
+
+
+def _add_convert_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser(
+        "convert",
+        help="convert FBX to GLB via Blender headless (requires Blender on PATH)",
+    )
+    p.add_argument("input", type=Path, help="Input .fbx file")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Output .glb path (default: same name with .glb extension)",
+    )
+    p.add_argument("-q", "--quiet", action="store_true")
+
+
+def _cmd_convert(args: argparse.Namespace) -> None:
+    from chitin.convert import convert_fbx_to_glb
+
+    input_path = Path(args.input)
+    if input_path.suffix.lower() != ".fbx":
+        print("chitin: convert currently supports FBX input only", file=sys.stderr)
+        sys.exit(1)
+
+    output_path = args.output or input_path.with_suffix(".glb")
+
+    if not args.quiet:
+        print(f"chitin: {input_path} -> {output_path} (via Blender)")
+
+    convert_fbx_to_glb(input_path, output_path)
+
+    if not args.quiet:
+        print(f"chitin: wrote {output_path}")
 
 
 if __name__ == "__main__":

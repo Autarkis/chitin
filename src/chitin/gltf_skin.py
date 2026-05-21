@@ -116,15 +116,29 @@ def _read_accessor(gltf: dict, bin_data: bytes, accessor_idx: int) -> np.ndarray
 
     dtype = COMPONENT_TYPE_DTYPE[comp_type]
     n_components = TYPE_COUNT[acc_type]
+    comp_size = COMPONENT_TYPE_SIZE[comp_type]
 
     if bv_idx is None:
         return np.zeros((count, n_components), dtype=dtype)
 
     bv = gltf["bufferViews"][bv_idx]
     bv_offset = bv.get("byteOffset", 0)
+    byte_stride = bv.get("byteStride", 0)
     start = bv_offset + acc_offset
-    total = count * n_components
+    tight_stride = comp_size * n_components
 
+    if byte_stride and byte_stride != tight_stride:
+        if start + (count - 1) * byte_stride + tight_stride > len(bin_data):
+            return np.zeros((count, n_components), dtype=dtype)
+        buf = np.frombuffer(bin_data, dtype=np.uint8)
+        out = np.empty((count, n_components), dtype=dtype)
+        for i in range(count):
+            elem_start = start + i * byte_stride
+            elem_bytes = buf[elem_start : elem_start + tight_stride]
+            out[i] = np.frombuffer(elem_bytes.tobytes(), dtype=dtype)
+        return out
+
+    total = count * n_components
     arr = np.frombuffer(bin_data, dtype=dtype, count=total, offset=start)
     if n_components > 1:
         arr = arr.reshape(count, n_components)
@@ -144,12 +158,19 @@ def _read_accessor_mat4(
 
     bv = gltf["bufferViews"][bv_idx]
     bv_offset = bv.get("byteOffset", 0)
+    byte_stride = bv.get("byteStride", 0)
 
     start = bv_offset + acc_offset
     mat_size = 16 * 4
+    stride = byte_stride if byte_stride else mat_size
+
     matrices = []
     for i in range(count):
-        raw = bin_data[start + i * mat_size : start + (i + 1) * mat_size]
+        offset = start + i * stride
+        raw = bin_data[offset : offset + mat_size]
+        if len(raw) < mat_size:
+            matrices.append(np.eye(4, dtype=np.float64))
+            continue
         values = struct.unpack("<16f", raw)
         mat = np.array(values, dtype=np.float64).reshape(4, 4)
         matrices.append(mat)

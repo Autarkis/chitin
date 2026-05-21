@@ -21,6 +21,7 @@ class PreflightResult:
     level: str  # "green", "yellow", "red"
     message: str | None
     estimated_minutes: float | None
+    hints: list[str] | None = None
 
 
 def get_system_info() -> SystemInfo:
@@ -97,4 +98,79 @@ def check(path: Path, sys_info: SystemInfo | None = None) -> PreflightResult:
             estimated_minutes=est_minutes,
         )
 
-    return PreflightResult(level="green", message=None, estimated_minutes=est_minutes)
+    hints = detect_environment_hints(path)
+    return PreflightResult(
+        level="green", message=None, estimated_minutes=est_minutes, hints=hints
+    )
+
+
+def detect_environment_hints(path: Path) -> list[str] | None:
+    if path.suffix.lower() != ".ply":
+        return None
+    try:
+        from plyfile import PlyData
+
+        ply = PlyData.read(str(path))
+        vertex = ply["vertex"]
+        names = set(vertex.data.dtype.names)
+        if not all(c in names for c in ("x", "y", "z")):
+            return None
+
+        positions = _sample_positions(vertex, max_samples=20_000)
+        if len(positions) < 100:
+            return None
+
+        return _classify_point_distribution(positions)
+    except Exception:
+        return None
+
+
+def _sample_positions(vertex_data, max_samples: int):
+    import numpy as np
+
+    n = len(vertex_data)
+    if n <= max_samples:
+        idx = slice(None)
+    else:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(n, max_samples, replace=False)
+
+    x = np.array(vertex_data["x"][idx], dtype=np.float64)
+    y = np.array(vertex_data["y"][idx], dtype=np.float64)
+    z = np.array(vertex_data["z"][idx], dtype=np.float64)
+    return np.stack([x, y, z], axis=1)
+
+
+def _classify_point_distribution(positions) -> list[str] | None:
+    import numpy as np
+
+    bbox_min = positions.min(axis=0)
+    bbox_max = positions.max(axis=0)
+    extent = bbox_max - bbox_min
+    bbox_vol = float(np.prod(extent))
+    if bbox_vol <= 0:
+        return None
+
+    center = (bbox_min + bbox_max) / 2
+    half = extent / 2
+    half = np.where(half == 0, 1.0, half)
+    normalized = np.abs(positions - center) / half
+
+    shell_fraction = float(np.mean(np.max(normalized, axis=1) > 0.7))
+
+    aspect = extent / max(extent.max(), 1e-12)
+    is_flat = float(aspect.min()) < 0.15
+
+    hints = []
+    if shell_fraction > 0.6:
+        hints.append(
+            "point distribution looks like an environment scan "
+            "(hollow shell) — consider --thin-shell --proximity-filter 5.0"
+        )
+    if is_flat and not hints:
+        hints.append(
+            "scene is very flat — the flatness detector (--flatness-threshold) "
+            "should handle this, but consider --thin-shell for indoor scans"
+        )
+
+    return hints if hints else None
