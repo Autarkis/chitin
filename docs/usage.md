@@ -26,6 +26,8 @@ Supported inputs: `.ply`, `.obj`, `.stl`, `.off`, `.glb`, `.gltf`, `.fbx`, `.usd
 
 Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` (USD Physics)
 
+Use Chitin when the collision result needs to be a portable physics asset: checked into a build, validated in CI, loaded by multiple runtimes, or inspected independently from the visual source. If the only goal is immediate walk mode inside a splat viewer, a voxel collision pipeline may be enough. Chitin is for the next step: reusable convex hull artifacts with stable readers.
+
 **Options:**
 
 | Flag | Default | Description |
@@ -250,11 +252,11 @@ For PLY files without covariance attributes (plain point clouds, photogrammetry)
 
 When a splat scene exceeds `spatial_split_threshold` points (default 50K), chitin automatically partitions the scene into octree cells and processes each cell independently. This keeps each cell's point count manageable for Poisson reconstruction, avoids hitting the `max_decompose_vertices` decimation limit, and enables natural parallelism.
 
-Each cell is padded by a ghost zone (3x the median gaussian scale) so that boundary geometry is reconstructed in both adjacent cells. After per-cell decomposition, a reconciliation pass deduplicates hulls at boundaries using AABB IOU (threshold 0.5), keeping the larger hull when two overlap significantly.
+Each cell is padded by a ghost zone (3x the 95th-percentile splat radius in that cell) so that boundary geometry is reconstructed in both adjacent cells. Because padding is computed per cell, cells with small splats get tight ghost zones while cells with larger splats get wider ones. After per-cell decomposition, a reconciliation pass deduplicates hulls at boundaries using AABB IOU (threshold 0.5), keeping the larger hull when two overlap significantly.
 
 Poisson reconstruction depth is auto-selected per cell based on point count (`floor(log2(n) / 3)`, clamped to 4-7). This avoids over-resolution on small cells and under-resolution on dense ones. Each cell's Poisson step runs in a subprocess so that an Open3D segfault on one cell doesn't kill the entire pipeline -- the cell is skipped and remaining cells continue.
 
-The build plan tracks `cell_count`, `padding`, and `reconciled_hulls` for diagnostics.
+The build plan tracks `cell_count`, `padding_min`, `padding_median`, `padding_max`, and `reconciled_hulls` for diagnostics.
 
 ### Environment Scans
 

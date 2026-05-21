@@ -1,8 +1,19 @@
 # chitin
 
-Physics-ready colliders from scanned, generated, and rigged 3D assets.
+Open-source physics asset compiler for scanned, generated, splat, and rigged 3D assets.
 
-Chitin bridges the gap between visual capture (gaussian splats, photogrammetry, LiDAR) and physics simulation. Feed it a point cloud, mesh, or skinned model and get back portable convex hulls that any engine can load. The primary output is the `.phys` binary sidecar -- a compact format with readers for Python, TypeScript, C#, and C++.
+Chitin is a free MIT-licensed compiler that bridges the gap between visual capture (gaussian splats, photogrammetry, LiDAR) and physics simulation. Feed it a point cloud, mesh, or skinned model and get back portable convex hulls that any engine can load. The primary output is the `.phys` binary sidecar -- a compact format with readers for Python, TypeScript, C#, and C++.
+
+It is not a splat viewer feature or a single-engine import button. Viewer collision tools are great for making one splat scene walkable; Chitin's job is to turn messy 3D assets into deterministic, validated physics artifacts that can ship through web, engine, simulation, and CI pipelines.
+
+## Why Chitin
+
+- **Free MIT infrastructure**: audit it, vendor it, modify it, or run it offline without service lock-in.
+- **Portable artifact contract**: `.phys` stores quantized convex hulls, bind transforms, and collision LOD tiers instead of engine-owned caches or viewer-only collision data.
+- **Attachable to any viewer**: load a `.phys` sidecar next to a splat, mesh, or generated scene and feed the hulls into your runtime physics API.
+- **Broader input surface**: splats, point clouds, static meshes, USD assets, and experimental rigged GLB support.
+- **Thin runtime readers**: Python, TypeScript, C#, and C++ consumers load the same binary format while the heavy reconstruction/decomposition work stays in the compiler.
+- **Pipeline-friendly checks**: `chitin check`, `inspect`, and `validate` make collision generation scriptable and reviewable.
 
 ## Use cases
 
@@ -11,6 +22,12 @@ Chitin bridges the gap between visual capture (gaussian splats, photogrammetry, 
 - **Web/XR**: load `.phys` sidecars in the browser alongside your 3D viewer (Three.js + Rapier)
 - **Game engines**: import `.phys` directly in Unity or Unreal with included plugins
 - **Rigged characters**: per-bone convex hulls in bone-local space, ready for ragdoll or hit detection
+
+## Compared with viewer collision
+
+Splat viewer pipelines usually voxelize a gaussian splat, fill or carve navigable space, and feed that occupancy data to a specific viewer/runtime. That is the right shape for immediate walk mode.
+
+Chitin reconstructs surfaces and decomposes them into convex hulls. That is the right shape when the output needs to become a reusable physics asset: versioned, validated, loadable by multiple engines, and independent of the original viewer. A splat viewer can keep its visual format and load Chitin collision as a sidecar.
 
 ## Install
 
@@ -146,6 +163,23 @@ All integrations read the same `.phys` binary with identical dequantization.
 | Unity | `com.chitin.physics` | `integrations/unity/` |
 | Unreal Engine | ChitinImporter plugin | `integrations/unreal/` |
 
+### Web runtime snippet
+
+Use `@autarkis/chitin-web` anywhere you already have a browser physics world. The visual asset can be a splat, GLB, generated mesh, or anything else; the `.phys` file just needs to share the same coordinate space.
+
+```typescript
+import RAPIER from "@dimforge/rapier3d";
+import { parsePhys, addToWorld } from "@autarkis/chitin-web";
+
+const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
+const phys = parsePhys(buffer);
+
+// Adds fixed Rapier convex colliders at the visual scene origin.
+addToWorld(RAPIER, world, phys);
+```
+
+For other physics runtimes, use `parsePhys(buffer)` directly and pass each hull's vertices/indices to the engine's convex-collider API.
+
 ## Local build service
 
 A single-machine build server with content-addressed caching. Jobs run synchronously in the current process -- suitable for local/CI use, not production.
@@ -176,6 +210,7 @@ chitin-server download <job_id> -o ./output
 - **Environment scans require manual config.** Poisson reconstruction produces watertight meshes, which fills room/cave interiors with solid collision. The `--thin-shell` and `--proximity-filter` flags mitigate this but need to be opted into. Auto-detection of object vs. environment scans is not yet implemented.
 - **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes with tightly packed accessors. Interleaved `byteStride`, multiple primitives, and vertex reordering may produce incorrect bone segmentation.
 - **Flat surfaces over-decompose (mitigated).** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the Mip-NeRF 360 Garden scene this reduced hulls from 1,725 to 579 and build time from 27 min to 9 min. Scenes with unusual ground geometry may need threshold tuning or `--flatness-threshold 0` to disable.
+- **No sparse voxel collision output yet.** Chitin currently emits convex hull artifacts, not viewer-native SVO/voxel grids for walk-mode raycasts.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
 - **FBX skinning is not supported.** Static FBX meshes work via trimesh; skinned FBX requires a different code path.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.

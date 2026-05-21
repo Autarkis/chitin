@@ -175,12 +175,12 @@ def _dedup_overlapping_hulls(
     )
     discarded: set[int] = set()
     kept: list[Hull] = []
-    for i in order:
+    for pos, i in enumerate(order):
         if i in discarded:
             continue
         kept.append(hulls[i])
-        for j in order:
-            if j <= i or j in discarded:
+        for j in order[pos + 1 :]:
+            if j in discarded:
                 continue
             if _aabb_iou(hulls[i], hulls[j]) >= iou_threshold:
                 discarded.add(j)
@@ -196,19 +196,22 @@ def _extract_spatial(
     plan: BuildPlan,
 ) -> ExtractionResult:
     linear_scales = np.exp(scales) if config.splat_scale_is_log else scales
-    median_scale = np.median(linear_scales)
-    padding = median_scale * 3.0
+    max_radii = np.max(linear_scales, axis=1)
 
     cells = _octree_partition(positions, config.spatial_split_threshold)
     plan.step("spatial_partition")
     plan.detected["cell_count"] = len(cells)
-    plan.detected["padding"] = float(padding)
 
     source_count = plan.source_vertices or len(positions)
     all_hulls: list[Hull] = []
     lod_buckets: dict[int, list[Hull]] = {}
+    cell_paddings: list[float] = []
 
     for cell in cells:
+        cell_radii = max_radii[cell.indices]
+        cell_p95 = float(np.percentile(cell_radii, 95)) if len(cell_radii) > 0 else 0
+        padding = cell_p95 * 3.0
+        cell_paddings.append(padding)
         padded_min = cell.bounds_min - padding
         padded_max = cell.bounds_max + padding
         padded_mask = (
@@ -296,6 +299,10 @@ def _extract_spatial(
 
     plan.step("spatial_reconcile")
     plan.detected["reconciled_hulls"] = len(all_hulls)
+    if cell_paddings:
+        plan.detected["padding_min"] = float(np.min(cell_paddings))
+        plan.detected["padding_median"] = float(np.median(cell_paddings))
+        plan.detected["padding_max"] = float(np.max(cell_paddings))
 
     merged_lod_tiers = None
     if lod_buckets and config.lod_concavities:

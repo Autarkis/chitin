@@ -15,6 +15,20 @@ It takes messy, heterogeneous 3D input -- gaussian splats, photogrammetry scans,
 
 The format is documented in [phys.md](phys.md).
 
+## Positioning
+
+Chitin is free MIT-licensed infrastructure, but the strategic distinction is not "open source vs. closed." Adjacent splat tooling can be open source too. The important distinction is the contract Chitin produces.
+
+| Viewer collision pipeline | Chitin |
+|---------------------------|--------|
+| Starts from a splat viewer/editor workflow | Starts from an asset build pipeline |
+| Voxelizes occupancy for walk mode, raycasts, or broad-phase queries | Reconstructs surfaces and decomposes them into convex hulls |
+| Often depends on a seed point, fill/carve presets, and a specific runtime | Uses explicit compiler config, build diagnostics, and portable readers |
+| Emits viewer-oriented voxel data or a generated collision mesh | Emits `.phys`: versioned, validated convex hull data with optional LOD and rig blocks |
+| Optimized for "can I walk around this splat now?" | Optimized for "can I ship this collision asset everywhere?" |
+
+The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines.
+
 ## Components
 
 ```
@@ -64,7 +78,7 @@ Stages:
 1. **Input normalization** -- load any supported format into a common mesh/point cloud representation
 2. **Opacity filtering** -- for gaussian splats: discard points below threshold, keeping only physically present geometry
 3. **Normal derivation** -- for 3DGS data with scale/rotation: derive oriented normals from the covariance ellipsoid (shortest axis = surface normal). Falls back to KD-tree estimation for plain point clouds
-4. **Spatial partitioning** -- octree split for scenes exceeding 50K points. Ghost-zone padding (3x median gaussian scale) ensures boundary continuity across cells
+4. **Spatial partitioning** -- octree split for scenes exceeding 50K points. Per-cell ghost-zone padding (3x 95th-percentile splat radius) ensures boundary continuity without over-inflating cells that contain small splats
 5. **Splat inflation** -- optionally expand each gaussian center into disk samples along its two largest axes for better Poisson surface coverage
 6. **Surface reconstruction** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
 7. **Surface filtering** -- configurable density quantile strips low-confidence Poisson vertices. Proximity filter removes closure surfaces far from input data. Thin-shell extrusion prevents volume-fill on environment scans
@@ -134,6 +148,7 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 ## What chitin is not
 
 - Not a physics engine. It produces collider geometry; something else simulates it.
+- Not a splat viewer or walk-mode runtime. It compiles collider artifacts; viewer UX, seed picking, and camera navigation belong upstream or downstream.
 - Not a mesh optimizer. It does not simplify or retopologize visual meshes. Collision LOD tiers are fresh decompositions at different concavity thresholds, not decimations.
 - Not a cloud service (yet). The build service is local-first. Cloud is a deployment decision, not an architecture one.
 - Not a format converter. `.phys` is the primary output. JSON and USD are companions for ecosystems that need them.
