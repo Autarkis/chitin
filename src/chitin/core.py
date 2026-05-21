@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import trimesh
 
+from chitin.adapters import load
 from chitin.analyze import analyze_arrays
 from chitin.config import Config
 from chitin.plan import BuildPlan
@@ -28,32 +28,61 @@ def extract(
 ) -> ExtractionResult:
     path = Path(path)
     config = config or Config()
-    suffix = path.suffix.lower()
 
-    if suffix == ".ply":
-        return _extract_from_ply(path, config)
-    if suffix in (".obj", ".stl", ".off"):
-        plan = BuildPlan(input_kind=suffix.lstrip("."))
-        plan.step("parse")
-        mesh = trimesh.load(str(path), force="mesh")
-        mesh.visual = trimesh.visual.ColorVisuals()
-        verts = np.asarray(mesh.vertices, dtype=np.float32)
-        faces = np.asarray(mesh.faces, dtype=np.int32)
-        plan.collider_kind = "static"
-        plan.source_vertices = len(verts)
-        fmt = suffix.lstrip(".")
-        analysis = analyze_arrays(verts, format=fmt, face_count=len(faces))
-        resolved = resolve_config(config, analysis)
-        del mesh
-        return extract_from_mesh(
-            verts, faces, config=config, _plan=plan, _resolved=resolved
+    result = load(path)
+    plan = BuildPlan(input_kind=result.format)
+    plan.step("parse")
+    plan.detected.update(result.detected)
+
+    analysis = analyze_arrays(
+        result.positions,
+        result.opacity,
+        result.scales,
+        result.rots,
+        format=result.format,
+        face_count=len(result.faces) if result.faces is not None else None,
+        is_skinned=result.skin is not None,
+    )
+    resolved = resolve_config(config, analysis)
+
+    if result.skin is not None:
+        plan.collider_kind = "rigged"
+        return extract_from_rigged_mesh(
+            result.positions,
+            result.faces,
+            result.skin.joint_indices,
+            result.skin.joint_weights,
+            bone_names=result.skin.bone_names,
+            inverse_bind_matrices=result.skin.inverse_bind_matrices,
+            config=config,
+            _plan=plan,
+            _resolved=resolved,
         )
-    if suffix in (".glb", ".gltf", ".fbx"):
-        return _extract_from_skinned_or_static(path, config)
-    if suffix in (".usd", ".usda", ".usdc"):
-        return _extract_from_usd(path, config)
 
-    raise ValueError(f"Unsupported input format: {suffix}")
+    if result.faces is not None:
+        plan.collider_kind = "static"
+        plan.source_vertices = len(result.positions)
+        return extract_from_mesh(
+            result.positions,
+            result.faces,
+            config=config,
+            _plan=plan,
+            _resolved=resolved,
+        )
+
+    plan.collider_kind = "point_cloud"
+    if analysis.opacity_is_logit:
+        plan.detected["is_logit"] = True
+    return extract_from_arrays(
+        result.positions,
+        opacity=result.opacity,
+        normals=result.normals,
+        scales=result.scales,
+        rots=result.rots,
+        config=config,
+        _plan=plan,
+        _resolved=resolved,
+    )
 
 
 def extract_from_arrays(
@@ -282,214 +311,3 @@ def extract_from_rigged_mesh(
         bones=bones,
         build_plan=_plan,
     )
-
-
-# --- Adapters (move to adapters/ in Phase 3) ---
-
-
-def _extract_from_skinned_or_static(path: Path, config: Config) -> ExtractionResult:
-    from chitin.gltf_skin import parse_skin
-
-    suffix = path.suffix.lower().lstrip(".")
-    plan = BuildPlan(input_kind=suffix)
-    plan.step("parse")
-    plan.step("skin_detect")
-
-    skin_data = parse_skin(path)
-    loaded = trimesh.load(str(path))
-
-    has_skin_weights = (
-        skin_data is not None
-        and skin_data.joint_indices is not None
-        and skin_data.joint_weights is not None
-    )
-    if has_skin_weights and isinstance(loaded, trimesh.Scene):
-        plan.detected["is_skinned"] = True
-        plan.detected["bone_count"] = len(skin_data.joint_names)
-        mesh = loaded.to_geometry()
-        if isinstance(mesh, trimesh.Trimesh):
-            mesh.visual = trimesh.visual.ColorVisuals()
-            verts = np.asarray(mesh.vertices, dtype=np.float32)
-            faces = np.asarray(mesh.faces, dtype=np.int32)
-            analysis = analyze_arrays(
-                verts, format=suffix, face_count=len(faces), is_skinned=True
-            )
-            resolved = resolve_config(config, analysis)
-            return extract_from_rigged_mesh(
-                verts,
-                faces,
-                np.asarray(skin_data.joint_indices, dtype=np.int32),
-                np.asarray(skin_data.joint_weights, dtype=np.float64),
-                bone_names=skin_data.joint_names,
-                inverse_bind_matrices=skin_data.inverse_bind_matrices,
-                config=config,
-                _plan=plan,
-                _resolved=resolved,
-            )
-
-    plan.detected["is_skinned"] = False
-    plan.collider_kind = "static"
-
-    if isinstance(loaded, trimesh.Scene):
-        mesh = loaded.to_geometry()
-        if isinstance(mesh, trimesh.Trimesh):
-            mesh.visual = trimesh.visual.ColorVisuals()
-            verts = np.asarray(mesh.vertices, dtype=np.float32)
-            faces = np.asarray(mesh.faces, dtype=np.int32)
-            analysis = analyze_arrays(verts, format=suffix, face_count=len(faces))
-            resolved = resolve_config(config, analysis)
-            del mesh
-            return extract_from_mesh(
-                verts, faces, config=config, _plan=plan, _resolved=resolved
-            )
-        return ExtractionResult(
-            hulls=[], source_vertex_count=0, mesh_vertex_count=0, build_plan=plan
-        )
-
-    loaded.visual = trimesh.visual.ColorVisuals()
-    verts = np.asarray(loaded.vertices, dtype=np.float32)
-    faces = np.asarray(loaded.faces, dtype=np.int32)
-    analysis = analyze_arrays(verts, format=suffix, face_count=len(faces))
-    resolved = resolve_config(config, analysis)
-    del loaded
-    return extract_from_mesh(
-        verts, faces, config=config, _plan=plan, _resolved=resolved
-    )
-
-
-def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
-    from plyfile import PlyData
-
-    plan = BuildPlan(input_kind="ply", collider_kind="point_cloud")
-    plan.step("parse")
-
-    ply = PlyData.read(str(path))
-    vertex = ply["vertex"]
-    positions = np.column_stack([vertex["x"], vertex["y"], vertex["z"]]).astype(
-        np.float64
-    )
-
-    opacity = None
-    has_opacity = "opacity" in vertex.data.dtype.names
-    if has_opacity:
-        opacity = np.asarray(vertex["opacity"], dtype=np.float64)
-
-    has_scales = all(f"scale_{i}" in vertex.data.dtype.names for i in range(3))
-    has_rots = all(f"rot_{i}" in vertex.data.dtype.names for i in range(4))
-    has_covariance = has_scales and has_rots
-
-    normals = None
-    scales_arr = None
-    rots_arr = None
-    if has_covariance:
-        scales_arr = np.column_stack([vertex[f"scale_{i}"] for i in range(3)]).astype(
-            np.float64
-        )
-        rots_arr = np.column_stack([vertex[f"rot_{i}"] for i in range(4)]).astype(
-            np.float64
-        )
-    else:
-        has_normals = all(n in vertex.data.dtype.names for n in ("nx", "ny", "nz"))
-        if has_normals:
-            normals = np.column_stack(
-                [vertex["nx"], vertex["ny"], vertex["nz"]]
-            ).astype(np.float64)
-
-    analysis = analyze_arrays(positions, opacity, scales_arr, rots_arr, format="ply")
-    resolved = resolve_config(config, analysis)
-
-    plan.detected["has_opacity"] = has_opacity
-    plan.detected["is_logit"] = analysis.opacity_is_logit
-    plan.detected["has_normals"] = normals is not None or has_covariance
-    plan.detected["has_covariance"] = has_covariance
-
-    return extract_from_arrays(
-        positions,
-        opacity=opacity,
-        normals=normals,
-        scales=scales_arr,
-        rots=rots_arr,
-        config=config,
-        _plan=plan,
-        _resolved=resolved,
-    )
-
-
-def _extract_from_usd(path: Path, config: Config) -> ExtractionResult:
-    try:
-        from pxr import Usd, UsdGeom
-    except ImportError:
-        raise ImportError(
-            "USD input requires usd-core. Install with: pip install chitin[usd]"
-        )
-
-    suffix = path.suffix.lower().lstrip(".")
-    plan = BuildPlan(input_kind=suffix, collider_kind="static")
-    plan.step("parse")
-
-    stage = Usd.Stage.Open(str(path))
-    time_code = Usd.TimeCode.Default()
-    all_vertices = []
-    all_faces = []
-    vertex_offset = 0
-    mesh_count = 0
-
-    for prim in stage.Traverse():
-        if not prim.IsA(UsdGeom.Mesh):
-            continue
-        mesh = UsdGeom.Mesh(prim)
-        raw_points = mesh.GetPointsAttr().Get(time_code)
-        if raw_points is None or len(raw_points) == 0:
-            continue
-
-        mesh_count += 1
-        points = np.array(raw_points, dtype=np.float64)
-
-        xformable = UsdGeom.Xformable(prim)
-        world_xform = xformable.ComputeLocalToWorldTransform(time_code)
-        mat = np.array(world_xform, dtype=np.float64)
-        if not np.allclose(mat, np.eye(4)):
-            ones = np.ones((len(points), 1), dtype=np.float64)
-            homogeneous = np.hstack([points, ones])
-            points = (homogeneous @ mat)[:, :3]
-
-        face_counts = np.array(mesh.GetFaceVertexCountsAttr().Get(), dtype=np.int32)
-        face_indices = np.array(mesh.GetFaceVertexIndicesAttr().Get(), dtype=np.int32)
-
-        tris = []
-        idx = 0
-        for count in face_counts:
-            if count == 3:
-                tris.append(face_indices[idx : idx + 3] + vertex_offset)
-            elif count > 3:
-                for j in range(1, count - 1):
-                    tris.append(
-                        np.array(
-                            [
-                                face_indices[idx] + vertex_offset,
-                                face_indices[idx + j] + vertex_offset,
-                                face_indices[idx + j + 1] + vertex_offset,
-                            ],
-                            dtype=np.int32,
-                        )
-                    )
-            idx += count
-
-        all_vertices.append(points)
-        if tris:
-            all_faces.append(np.array(tris, dtype=np.int32))
-        vertex_offset += len(points)
-
-    plan.step("world_transform")
-    plan.detected["mesh_prim_count"] = mesh_count
-
-    if not all_vertices or not all_faces:
-        return ExtractionResult(
-            hulls=[], source_vertex_count=0, mesh_vertex_count=0, build_plan=plan
-        )
-
-    vertices = np.concatenate(all_vertices)
-    faces = np.concatenate(all_faces)
-    analysis = analyze_arrays(vertices, format=suffix, face_count=len(faces))
-    resolved = resolve_config(config, analysis)
-    return extract_from_mesh(vertices, faces, config, _plan=plan, _resolved=resolved)
