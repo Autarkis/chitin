@@ -175,6 +175,7 @@ chitin-server download <job_id> -o ./output
 
 - **Environment scans require manual config.** Poisson reconstruction produces watertight meshes, which fills room/cave interiors with solid collision. The `--thin-shell` and `--proximity-filter` flags mitigate this but need to be opted into. Auto-detection of object vs. environment scans is not yet implemented.
 - **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes with tightly packed accessors. Interleaved `byteStride`, multiple primitives, and vertex reordering may produce incorrect bone segmentation.
+- **Flat surfaces over-decompose (mitigated).** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the Mip-NeRF 360 Garden scene this reduced hulls from 1,725 to 579 and build time from 27 min to 9 min. Scenes with unusual ground geometry may need threshold tuning or `--flatness-threshold 0` to disable.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
 - **FBX skinning is not supported.** Static FBX meshes work via trimesh; skinned FBX requires a different code path.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.

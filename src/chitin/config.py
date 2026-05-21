@@ -23,3 +23,4 @@ class Config:
     surface_proximity_filter: float = 0.0
     thin_shell: bool = False
     thin_shell_thickness: float = 0.0
+    flatness_threshold: float = 0.9

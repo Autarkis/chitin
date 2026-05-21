@@ -130,6 +130,12 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         default=0.0,
         help="Shell thickness (0 = auto from mesh extent)",
     )
+    p.add_argument(
+        "--flatness-threshold",
+        type=float,
+        default=0.9,
+        help="PCA eigenvalue ratio to classify octree cell as flat (0 = disabled, 1 = everything is flat)",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
 
 
@@ -202,6 +208,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         surface_proximity_filter=args.proximity_filter,
         thin_shell=args.thin_shell,
         thin_shell_thickness=args.thin_shell_thickness,
+        flatness_threshold=args.flatness_threshold,
     )
 
     if not args.quiet:

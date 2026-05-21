@@ -42,6 +42,29 @@ reports/<key>/
   validate.txt    — chitin validate output
 ```
 
+## Results
+
+### Mip-NeRF 360 Garden (3DGS)
+
+773,074 gaussian splat vertices through the full pipeline (opacity filter, covariance normals, octree partition, Poisson per cell, density filter, IOU dedup, CoACD, quantize):
+
+| Metric | Value |
+|--------|-------|
+| Source vertices | 773,074 |
+| Octree cells | 31 |
+| Raw hulls (pre-dedup) | 2,181 |
+| Final hulls | 1,725 |
+| Dedup removed | 456 (21%) |
+| Output size | 2.4 MB |
+| Total vertices | 138,555 |
+| Total triangles | 270,210 |
+| Runtime | 27 min (M1 Pro, 16 cores) |
+| Validation | CLEAN |
+
+**Terrain explosion confirmed.** Cell 18 (ground plane, 115K triangles) produced 285 hulls alone -- 13% of the total budget from a single flat surface. At least 4 cells produced 100+ hulls from near-flat geometry, consuming ~40% of the hull budget on surfaces that could be represented by a single planar box each.
+
+The IOU dedup removed 21% of raw hulls at cell boundaries, working as designed. The remaining problem is not boundary duplication but over-decomposition of flat surfaces.
+
 ## What success looks like
 
 - Build completes without errors (subprocess isolation means individual cell crashes are tolerated, not fatal)

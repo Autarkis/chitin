@@ -254,9 +254,26 @@ def _extract_spatial(
         if len(cell_tris) < 4:
             continue
 
-        cell_result = _decompose_and_build(
-            cell_verts, cell_tris, len(cell_positions), len(cell_verts), config
+        is_flat, flat_normal = (
+            _is_flat_mesh(cell_verts, cell_tris, config.flatness_threshold)
+            if config.flatness_threshold > 0
+            else (False, None)
         )
+        if is_flat:
+            box_hull = _make_planar_box(cell_verts, flat_normal)
+            cell_result = ExtractionResult(
+                hulls=[box_hull],
+                source_vertex_count=len(cell_positions),
+                mesh_vertex_count=len(cell_verts),
+            )
+        else:
+            cell_result = _decompose_and_build(
+                cell_verts,
+                cell_tris,
+                len(cell_positions),
+                len(cell_verts),
+                config,
+            )
 
         strict_min = cell.bounds_min
         strict_max = cell.bounds_max
@@ -882,6 +899,109 @@ def _proximity_filter_mesh(
     new_tris = old_to_new[mesh_tris[tri_keep]]
 
     return new_verts, new_tris.astype(np.int32)
+
+
+def _is_flat_mesh(
+    vertices: np.ndarray, faces: np.ndarray, threshold: float = 0.9
+) -> tuple[bool, np.ndarray | None]:
+    v0, v1, v2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
+    face_normals = np.cross(v1 - v0, v2 - v0)
+    areas = np.linalg.norm(face_normals, axis=1, keepdims=True)
+    areas = np.where(areas == 0, 1e-12, areas)
+    face_normals = face_normals / areas
+
+    cov = (face_normals.T * areas.ravel()) @ face_normals / areas.sum()
+    eigenvalues = np.linalg.eigvalsh(cov)
+    dominant_ratio = eigenvalues[2] / max(eigenvalues.sum(), 1e-12)
+
+    if dominant_ratio < threshold:
+        return False, None
+
+    dominant_normal = np.linalg.eigh(cov)[1][:, 2]
+    return True, dominant_normal
+
+
+def _make_planar_box(vertices: np.ndarray, dominant_normal: np.ndarray) -> Hull:
+    n = dominant_normal / np.linalg.norm(dominant_normal)
+
+    abs_n = np.abs(n)
+    if abs_n[0] <= abs_n[1] and abs_n[0] <= abs_n[2]:
+        ref = np.array([1.0, 0.0, 0.0])
+    elif abs_n[1] <= abs_n[2]:
+        ref = np.array([0.0, 1.0, 0.0])
+    else:
+        ref = np.array([0.0, 0.0, 1.0])
+    u = np.cross(n, ref)
+    u /= np.linalg.norm(u)
+    v = np.cross(n, u)
+
+    center = vertices.mean(axis=0)
+    local = vertices - center
+    proj_u = local @ u
+    proj_v = local @ v
+    proj_n = local @ n
+
+    half_u = (proj_u.max() - proj_u.min()) / 2.0
+    half_v = (proj_v.max() - proj_v.min()) / 2.0
+    half_n = max((proj_n.max() - proj_n.min()) / 2.0, half_u * 0.02)
+    center_u = (proj_u.max() + proj_u.min()) / 2.0
+    center_v = (proj_v.max() + proj_v.min()) / 2.0
+    center_n = (proj_n.max() + proj_n.min()) / 2.0
+    center = center + u * center_u + v * center_v + n * center_n
+
+    corners = np.array(
+        [
+            center + u * s_u * half_u + v * s_v * half_v + n * s_n * half_n
+            for s_u in (-1, 1)
+            for s_v in (-1, 1)
+            for s_n in (-1, 1)
+        ],
+        dtype=np.float32,
+    )
+
+    indices = np.array(
+        [
+            0,
+            2,
+            6,
+            0,
+            6,
+            4,
+            1,
+            5,
+            7,
+            1,
+            7,
+            3,
+            0,
+            1,
+            3,
+            0,
+            3,
+            2,
+            4,
+            6,
+            7,
+            4,
+            7,
+            5,
+            0,
+            4,
+            5,
+            0,
+            5,
+            1,
+            2,
+            3,
+            7,
+            2,
+            7,
+            6,
+        ],
+        dtype=np.uint32,
+    )
+
+    return Hull(vertices=corners, indices=indices)
 
 
 def _vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
