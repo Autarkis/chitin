@@ -44,6 +44,7 @@ const phys = writePhys(result.hulls);
 ### Full pipeline: GLB to .phys in the browser
 
 ```typescript
+import RAPIER from "@dimforge/rapier3d";
 import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
 import { parsePhys, createColliders } from "@autarkis/chitin-web";
 
@@ -62,7 +63,7 @@ const physBuffer = writePhys(result.hulls);
 
 // 5. Read it back and create Rapier colliders
 const physFile = parsePhys(physBuffer);
-const colliders = createColliders(physFile, world);
+const { colliders } = createColliders(rapier, physFile);
 ```
 
 ## Config

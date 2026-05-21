@@ -127,6 +127,20 @@ def probe(
 ) -> ProbeResult:
     pf = read_phys(phys_path)
 
+    if not pf.hulls:
+        return ProbeResult(
+            grid_resolution=grid_resolution,
+            total_rays=0,
+            hits=0,
+            misses=0,
+            coverage=0.0,
+            gap_positions=np.empty((0, 2), dtype=np.float32),
+            scene_aabb_min=np.zeros(3),
+            scene_aabb_max=np.zeros(3),
+            capsule_radius=capsule_radius,
+            gap_clusters=0,
+        )
+
     all_mins = np.array([h.aabb_min for h in pf.hulls])
     all_maxs = np.array([h.aabb_max for h in pf.hulls])
     scene_min = all_mins.min(axis=0)
