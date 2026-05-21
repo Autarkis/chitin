@@ -167,7 +167,7 @@ def test_octree_partition_max_depth():
 
 
 def test_auto_poisson_depth():
-    from chitin.core import _auto_poisson_depth
+    from chitin.resolve import _auto_poisson_depth
 
     assert _auto_poisson_depth(0) == 4
     assert _auto_poisson_depth(1000) == 4

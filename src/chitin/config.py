@@ -24,4 +24,5 @@ class Config:
     thin_shell: bool = False
     thin_shell_thickness: float = 0.0
     flatness_threshold: float = 0.9
+    auto_environment: bool = True
     seam_repair: bool = True

@@ -46,6 +46,10 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--scene-name` | scene | Root prim name (USD output only). |
 | `--force` | off | Run even if preflight check flags the input as too large. |
 | `-q, --quiet` | off | Suppress progress output. |
+| `--flatness-threshold` | 0.9 | PCA eigenvalue ratio to classify octree cells as flat (0 = disabled). |
+| `--auto-verify` | off | Run raycast probe after extraction and print coverage summary. |
+| `--no-auto-environment` | off | Disable auto-detection of environment scans. |
+| `--no-seam-repair` | off | Disable seam repair pass at octree cell boundaries. |
 | `--no-hook` | off | Skip post-process hook. |
 
 **Examples:**
@@ -100,6 +104,14 @@ LOD 3 (concavity=0.500): 8 hulls
   ...
 ```
 
+### Check
+
+```bash
+chitin check <input>
+```
+
+Reports the input format, vertex/face counts, and which processing path is needed (server Python pipeline vs. browser WASM). For PLY files, detects opacity and covariance attributes. For meshes, checks manifold status.
+
 ### Validate
 
 ```bash
@@ -107,6 +119,30 @@ chitin validate <file.phys>
 ```
 
 Checks structural integrity: magic bytes, version, offset consistency, index bounds, AABB sanity, bind-pose block completeness, LOD block data sizes. Exits with code 1 if any errors are found.
+
+### Probe
+
+```bash
+chitin probe <file.phys> [--grid 64] [--capsule-radius 0.3] [-o results.json]
+```
+
+Raycast coverage probe. Fires a grid of downward rays through the scene AABB and reports what percentage hit collision geometry. Classifies gaps by capsule radius. Exits with code 2 on low confidence.
+
+### Sweep
+
+```bash
+chitin sweep <file.phys> [--grid 32] [--capsule-radius 0.3] [--capsule-height 1.8] [--step-height 0.3]
+```
+
+Capsule traversability test. Finds ground cells, builds an adjacency graph filtered by step height, flood-fills connected components, and reports what fraction of ground is reachable from the largest island. Rates results as excellent (>=95%), good (>=80%), fair (>=50%), or poor (<50%). Exits with code 2 on poor rating.
+
+### Convert
+
+```bash
+chitin convert <input.fbx> [-o output.glb]
+```
+
+Converts FBX to GLB via Blender headless (requires Blender on PATH). Useful as a preprocessing step for skinned FBX files before extraction.
 
 ## Python API
 
@@ -254,6 +290,9 @@ for hull in phys.hulls:
 | `surface_proximity_filter` | float | 0.0 | Max distance (as multiple of median NN distance) from input points. Removes Poisson closure geometry far from real data. 0 = disabled. |
 | `thin_shell` | bool | False | Extrude filtered surface into a thin watertight solid before CoACD. Prevents volume-fill on environment scans. |
 | `thin_shell_thickness` | float | 0.0 | Shell extrusion thickness. 0 = auto (2% of median mesh extent). |
+| `flatness_threshold` | float | 0.9 | PCA eigenvalue ratio to classify octree cells as flat. Flat cells get oriented boxes instead of CoACD. 0 = disabled. |
+| `auto_environment` | bool | True | Auto-detect environment scans and enable thin-shell + proximity filter. Set False to disable. |
+| `seam_repair` | bool | True | Re-merge octree cells at seam boundaries to eliminate height discontinuities. |
 
 ## Gaussian Splat Covariance
 
@@ -279,30 +318,43 @@ The build plan tracks `cell_count`, `padding_min`, `padding_median`, `padding_ma
 
 Poisson reconstruction produces watertight meshes. For object scans (a mug, a statue), this is correct -- the closed surface IS the collision boundary. For environment scans (a room, a cave, an outdoor scene), Poisson closes the open boundaries and CoACD decomposes the enclosed volume, filling walkable space with invisible collision blocks.
 
-Two mechanisms address this:
+Chitin auto-detects environment scans by checking whether fewer than 5% of points lie in the inner 50% of the scene AABB. When triggered, it enables both proximity filtering and thin-shell extrusion automatically. Use `--no-auto-environment` or `auto_environment=False` to disable.
+
+Two mechanisms address the closure problem:
 
 **Proximity filtering** (`surface_proximity_filter`): removes reconstructed mesh vertices that are far from any actual input point. Poisson's closure surfaces are artificial geometry with no nearby source data, so a distance threshold strips them while preserving real surfaces.
 
 **Thin-shell extrusion** (`thin_shell`): after filtering, extrudes the remaining surface into a thin watertight solid (inner + outer surface + stitched boundary edges). CoACD decomposes this thin slab instead of the full enclosed volume, producing collision hulls that follow the wall/floor/ceiling surfaces rather than filling the interior.
 
 ```bash
-# environment scan with both fixes
+# auto-detection handles most cases -- just run extract
+chitin extract room.ply -o room.phys
+
+# explicit environment config (if auto-detection is off or needs tuning)
 chitin extract room.ply -o room.phys \
     --density-quantile 0.3 \
     --proximity-filter 5.0 \
     --thin-shell
+
+# disable auto-detection for a scene that looks hollow but isn't
+chitin extract hollow-object.ply -o out.phys --no-auto-environment
 ```
 
 ```python
+# auto-detection (default)
+config = Config(concavity=0.05)
+
+# explicit environment config
 config = Config(
     concavity=0.05,
+    auto_environment=False,
     poisson_density_quantile=0.3,
     surface_proximity_filter=5.0,
     thin_shell=True,
 )
 ```
 
-For object scans, the defaults (no proximity filter, no thin shell) remain correct.
+For object scans, the defaults (no proximity filter, no thin shell) remain correct. Auto-detection is conservative: it only triggers for clearly hollow distributions.
 
 ## Concavity Tuning
 

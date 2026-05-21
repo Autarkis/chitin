@@ -196,23 +196,26 @@ chitin-server download <job_id> -o ./output
 1. Loads input (PLY, OBJ, STL, GLB, USD, or raw arrays)
 2. Filters by opacity for gaussian splat point clouds
 3. Derives oriented normals from gaussian covariance (scale + rotation) when available, falls back to KD-tree estimation
-4. Partitions large scenes into octree cells (threshold: 50K points) with ghost-zone overlap for boundary continuity
-5. Optionally inflates gaussian centers into disk samples along their two largest axes for better surface coverage
-6. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
-7. For environment scans: proximity-filters closure surfaces and optionally extrudes a thin shell to prevent interior volume fill
-8. Deduplicates cross-cell hulls by AABB IOU
-9. Decomposes into convex hulls (CoACD)
-10. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
-11. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
+4. Auto-detects environment scans (hollow-shell point distributions) and enables thin-shell + proximity filter. Use `--no-auto-environment` to disable
+5. Partitions large scenes into octree cells (threshold: 50K points) with ghost-zone overlap for boundary continuity
+6. Optionally inflates gaussian centers into disk samples along their two largest axes for better surface coverage
+7. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
+8. For environment scans: proximity-filters closure surfaces and optionally extrudes a thin shell to prevent interior volume fill
+9. PCA-based flatness detection replaces near-flat octree cells with oriented boxes instead of running CoACD
+10. Decomposes remaining cells into convex hulls (CoACD)
+11. Seam repair: detects height discontinuities at octree cell boundaries, merges affected cells, and re-extracts for seamless coverage
+12. Deduplicates cross-cell hulls by AABB IOU
+13. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
+14. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space
 
 ## Limitations
 
-- **Environment scans require manual config.** Poisson reconstruction produces watertight meshes, which fills room/cave interiors with solid collision. The `--thin-shell` and `--proximity-filter` flags mitigate this but need to be opted into. Auto-detection of object vs. environment scans is not yet implemented.
-- **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes with tightly packed accessors. Interleaved `byteStride`, multiple primitives, and vertex reordering may produce incorrect bone segmentation.
+- **Environment scan auto-detection can misfire.** Chitin auto-detects hollow-shell point distributions and enables `--thin-shell` and `--proximity-filter` automatically. Use `--no-auto-environment` to disable if the heuristic is wrong for your scene.
+- **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes. Interleaved `byteStride` is handled, but multiple primitives and vertex reordering may produce incorrect bone segmentation.
 - **Flat surfaces over-decompose (mitigated).** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the Mip-NeRF 360 Garden scene this reduced hulls from 1,725 to 579 and build time from 27 min to 9 min. Scenes with unusual ground geometry may need threshold tuning or `--flatness-threshold 0` to disable.
 - **No sparse voxel collision output yet.** Chitin currently emits convex hull artifacts, not viewer-native SVO/voxel grids for walk-mode raycasts.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
-- **FBX skinning is not supported.** Static FBX meshes work via trimesh; skinned FBX requires a different code path.
+- **FBX skinning is not directly supported.** Static FBX meshes work via trimesh. For skinned FBX, use `chitin convert` to convert to GLB via Blender headless, then extract from the GLB.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.
 
 ## License

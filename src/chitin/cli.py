@@ -151,6 +151,11 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Run raycast probe after extraction and print coverage summary",
     )
     p.add_argument(
+        "--no-auto-environment",
+        action="store_true",
+        help="Disable auto-detection of environment scans (thin-shell, proximity filter)",
+    )
+    p.add_argument(
         "--no-seam-repair",
         action="store_true",
         help="Disable seam repair pass (skip re-merging cells at octree boundaries)",
@@ -232,6 +237,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         thin_shell=args.thin_shell,
         thin_shell_thickness=args.thin_shell_thickness,
         flatness_threshold=args.flatness_threshold,
+        auto_environment=not args.no_auto_environment,
         seam_repair=not args.no_seam_repair,
     )
 

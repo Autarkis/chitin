@@ -1,9 +1,11 @@
 # Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 """Convex collision geometry from point clouds, meshes, and gaussian splats."""
 
+from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
 from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
+from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult
 
 
@@ -25,14 +27,19 @@ __all__ = [
     "BuildPlan",
     "Config",
     "ExtractionResult",
+    "InputAnalysis",
     "LodTier",
     "PhysBone",
     "PhysFile",
     "PhysHull",
+    "ResolvedConfig",
+    "analyze_arrays",
+    "analyze_input",
     "extract",
     "extract_from_arrays",
     "extract_from_mesh",
     "extract_from_rigged_mesh",
     "read_phys",
+    "resolve_config",
     "validate_phys",
 ]

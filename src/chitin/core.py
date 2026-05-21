@@ -4,21 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import math
 
 import coacd
 import numpy as np
 import trimesh
 
+from chitin.analyze import analyze_arrays
 from chitin.config import Config
 from chitin.plan import BuildPlan
+from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult, Hull, LodHulls
-
-
-def _auto_poisson_depth(n_points: int) -> int:
-    if n_points < 1:
-        return 4
-    return max(4, min(7, math.floor(math.log2(n_points) / 3)))
 
 
 def _quat_to_rotation_matrices(rots: np.ndarray) -> np.ndarray:
@@ -210,7 +205,7 @@ def _extract_cell_hulls(
     scales: np.ndarray | None,
     rots: np.ndarray | None,
     max_radii: np.ndarray,
-    config: Config,
+    config: ResolvedConfig,
 ) -> list[Hull]:
     strict_mask = np.all((positions >= bounds_min) & (positions <= bounds_max), axis=1)
     strict_radii = max_radii[strict_mask]
@@ -277,7 +272,7 @@ def _seam_repair_pass(
     scales: np.ndarray | None,
     rots: np.ndarray | None,
     max_radii: np.ndarray,
-    config: Config,
+    config: ResolvedConfig,
 ) -> list[Hull]:
     from chitin.sweep import find_hull_seam_snags
 
@@ -341,7 +336,7 @@ def _extract_spatial(
     normals: np.ndarray,
     scales: np.ndarray,
     rots: np.ndarray,
-    config: Config,
+    config: ResolvedConfig,
     plan: BuildPlan,
 ) -> ExtractionResult:
     linear_scales = np.exp(scales) if config.splat_scale_is_log else scales
@@ -514,42 +509,19 @@ def extract(
         faces = np.asarray(mesh.faces, dtype=np.int32)
         plan.collider_kind = "static"
         plan.source_vertices = len(verts)
+        fmt = suffix.lstrip(".")
+        analysis = analyze_arrays(verts, format=fmt, face_count=len(faces))
+        resolved = resolve_config(config, analysis)
         del mesh
-        return extract_from_mesh(verts, faces, config=config, _plan=plan)
+        return extract_from_mesh(
+            verts, faces, config=config, _plan=plan, _resolved=resolved
+        )
     if suffix in (".glb", ".gltf", ".fbx"):
         return _extract_from_skinned_or_static(path, config)
     if suffix in (".usd", ".usda", ".usdc"):
         return _extract_from_usd(path, config)
 
     raise ValueError(f"Unsupported input format: {suffix}")
-
-
-def _is_environment_scan(positions: np.ndarray) -> bool:
-    if len(positions) < 1000:
-        return False
-
-    scene_min = positions.min(axis=0)
-    scene_max = positions.max(axis=0)
-    extent = scene_max - scene_min
-    vol = float(np.prod(np.where(extent == 0, 1.0, extent)))
-    if vol < 10.0:
-        return False
-
-    center = (scene_min + scene_max) / 2
-    inner_extent = extent * 0.5
-    inner_min = center - inner_extent / 2
-    inner_max = center + inner_extent / 2
-
-    mask = (
-        (positions[:, 0] >= inner_min[0])
-        & (positions[:, 0] <= inner_max[0])
-        & (positions[:, 1] >= inner_min[1])
-        & (positions[:, 1] <= inner_max[1])
-        & (positions[:, 2] >= inner_min[2])
-        & (positions[:, 2] <= inner_max[2])
-    )
-    inner_ratio = mask.sum() / len(positions)
-    return bool(inner_ratio < 0.05)
 
 
 def extract_from_arrays(
@@ -560,6 +532,7 @@ def extract_from_arrays(
     rots: np.ndarray | None = None,
     config: Config | None = None,
     _plan: BuildPlan | None = None,
+    _resolved: ResolvedConfig | None = None,
 ) -> ExtractionResult:
     config = config or Config()
     positions = np.asarray(positions, dtype=np.float64)
@@ -569,36 +542,29 @@ def extract_from_arrays(
         _plan = BuildPlan(input_kind="arrays", collider_kind="point_cloud")
     _plan.source_vertices = source_count
 
-    if _is_environment_scan(positions):
-        _plan.detected["is_environment"] = True
-        updates = {}
-        if not config.thin_shell:
-            updates["thin_shell"] = True
-            _plan.detected["auto_thin_shell"] = True
-        if config.surface_proximity_filter == 0.0:
-            updates["surface_proximity_filter"] = 5.0
-            _plan.detected["auto_proximity_filter"] = True
-        if updates:
-            from chitin.config import Config as Cfg
+    if _resolved is None:
+        analysis = analyze_arrays(positions, opacity, scales, rots)
+        _resolved = resolve_config(config, analysis)
 
-            config = Cfg(**{**vars(config), **updates})
+    if _resolved.decisions.get("is_environment"):
+        _plan.detected["is_environment"] = True
 
     has_covariance = scales is not None and rots is not None
     if has_covariance:
         scales = np.asarray(scales, dtype=np.float64)
         rots = np.asarray(rots, dtype=np.float64)
         normals = _normals_from_covariance(
-            scales, rots, log_scale=config.splat_scale_is_log
+            scales, rots, log_scale=_resolved.splat_scale_is_log
         )
         _plan.detected["covariance_normals"] = True
 
     if opacity is not None:
         raw = np.asarray(opacity, dtype=np.float64).ravel()
-        if config.opacity_is_logit:
+        if _resolved.opacity_is_logit:
             activated = 1.0 / (1.0 + np.exp(-raw))
         else:
             activated = raw
-        mask = activated >= config.opacity_threshold
+        mask = activated >= _resolved.opacity_threshold
         positions = positions[mask]
         if normals is not None:
             normals = normals[mask]
@@ -610,18 +576,18 @@ def extract_from_arrays(
 
     raw_positions = positions
 
-    if has_covariance and config.splat_surface_ratio > 0:
-        if len(positions) > config.spatial_split_threshold:
+    if has_covariance and _resolved.splat_surface_ratio > 0:
+        if len(positions) > _resolved.spatial_split_threshold:
             _plan.source_vertices = source_count
-            return _extract_spatial(positions, normals, scales, rots, config, _plan)
+            return _extract_spatial(positions, normals, scales, rots, _resolved, _plan)
 
         pre_inflate_count = len(positions)
         positions = _inflate_splat_points(
             positions,
             scales,
             rots,
-            config.splat_surface_ratio,
-            log_scale=config.splat_scale_is_log,
+            _resolved.splat_surface_ratio,
+            log_scale=_resolved.splat_scale_is_log,
         )
         normals = np.tile(normals, (5, 1))
         _plan.step("splat_inflate")
@@ -641,7 +607,7 @@ def extract_from_arrays(
         _plan.step("normal_estimation")
     _plan.step("reconstruct")
 
-    result_mesh = _poisson_reconstruct(positions, normals, config)
+    result_mesh = _poisson_reconstruct(positions, normals, _resolved)
     vertices, triangles = result_mesh
 
     if len(triangles) < 4:
@@ -653,7 +619,7 @@ def extract_from_arrays(
         )
 
     vertices, triangles = _post_poisson_filter(
-        vertices, triangles, raw_positions, config
+        vertices, triangles, raw_positions, _resolved
     )
     if len(triangles) < 4:
         return ExtractionResult(
@@ -664,7 +630,7 @@ def extract_from_arrays(
         )
 
     result = _decompose_and_build(
-        vertices, triangles, source_count, len(vertices), config, _plan=_plan
+        vertices, triangles, source_count, len(vertices), _resolved, _plan=_plan
     )
     return result
 
@@ -674,6 +640,7 @@ def extract_from_mesh(
     faces: np.ndarray,
     config: Config | None = None,
     _plan: BuildPlan | None = None,
+    _resolved: ResolvedConfig | None = None,
 ) -> ExtractionResult:
     config = config or Config()
     vertices = np.asarray(vertices, dtype=np.float64)
@@ -681,6 +648,9 @@ def extract_from_mesh(
     if _plan is None:
         _plan = BuildPlan(input_kind="mesh", collider_kind="static")
     _plan.source_vertices = _plan.source_vertices or len(vertices)
+    if _resolved is None:
+        analysis = analyze_arrays(vertices, format="mesh", face_count=len(faces))
+        _resolved = resolve_config(config, analysis)
     if len(vertices) < 4 or len(faces) < 4:
         return ExtractionResult(
             hulls=[],
@@ -689,7 +659,7 @@ def extract_from_mesh(
             build_plan=_plan,
         )
     return _decompose_and_build(
-        vertices, faces, len(vertices), len(vertices), config, _plan=_plan
+        vertices, faces, len(vertices), len(vertices), _resolved, _plan=_plan
     )
 
 
@@ -702,6 +672,7 @@ def extract_from_rigged_mesh(
     inverse_bind_matrices: dict[int, np.ndarray] | None = None,
     config: Config | None = None,
     _plan: BuildPlan | None = None,
+    _resolved: ResolvedConfig | None = None,
 ) -> ExtractionResult:
     config = config or Config()
     vertices = np.asarray(vertices, dtype=np.float64)
@@ -717,6 +688,15 @@ def extract_from_rigged_mesh(
         len(bone_names) if bone_names else len(np.unique(joint_indices))
     )
 
+    if _resolved is None:
+        analysis = analyze_arrays(
+            vertices,
+            format="mesh",
+            face_count=len(faces),
+            is_skinned=True,
+        )
+        _resolved = resolve_config(config, analysis)
+
     source_count = len(vertices)
     _plan.step("segment_by_bone")
     segments = _segment_by_bone(vertices, faces, joint_indices, joint_weights)
@@ -726,7 +706,7 @@ def extract_from_rigged_mesh(
     total_mesh_verts = 0
     bones_skipped = 0
     for bone_idx, (seg_verts, seg_faces) in segments.items():
-        if len(seg_verts) < config.min_hull_vertices:
+        if len(seg_verts) < _resolved.min_hull_vertices:
             bones_skipped += 1
             continue
 
@@ -742,7 +722,7 @@ def extract_from_rigged_mesh(
             else f"bone_{bone_idx}"
         )
         result = _decompose_and_build(
-            seg_verts, seg_faces, len(seg_verts), len(seg_verts), config
+            seg_verts, seg_faces, len(seg_verts), len(seg_verts), _resolved
         )
         for hull in result.hulls:
             hull.bone_name = name
@@ -796,6 +776,10 @@ def _extract_from_skinned_or_static(path: Path, config: Config) -> ExtractionRes
             mesh.visual = trimesh.visual.ColorVisuals()
             verts = np.asarray(mesh.vertices, dtype=np.float32)
             faces = np.asarray(mesh.faces, dtype=np.int32)
+            analysis = analyze_arrays(
+                verts, format=suffix, face_count=len(faces), is_skinned=True
+            )
+            resolved = resolve_config(config, analysis)
             return extract_from_rigged_mesh(
                 verts,
                 faces,
@@ -805,6 +789,7 @@ def _extract_from_skinned_or_static(path: Path, config: Config) -> ExtractionRes
                 inverse_bind_matrices=skin_data.inverse_bind_matrices,
                 config=config,
                 _plan=plan,
+                _resolved=resolved,
             )
 
     plan.detected["is_skinned"] = False
@@ -816,8 +801,12 @@ def _extract_from_skinned_or_static(path: Path, config: Config) -> ExtractionRes
             mesh.visual = trimesh.visual.ColorVisuals()
             verts = np.asarray(mesh.vertices, dtype=np.float32)
             faces = np.asarray(mesh.faces, dtype=np.int32)
+            analysis = analyze_arrays(verts, format=suffix, face_count=len(faces))
+            resolved = resolve_config(config, analysis)
             del mesh
-            return extract_from_mesh(verts, faces, config=config, _plan=plan)
+            return extract_from_mesh(
+                verts, faces, config=config, _plan=plan, _resolved=resolved
+            )
         return ExtractionResult(
             hulls=[], source_vertex_count=0, mesh_vertex_count=0, build_plan=plan
         )
@@ -825,8 +814,12 @@ def _extract_from_skinned_or_static(path: Path, config: Config) -> ExtractionRes
     loaded.visual = trimesh.visual.ColorVisuals()
     verts = np.asarray(loaded.vertices, dtype=np.float32)
     faces = np.asarray(loaded.faces, dtype=np.int32)
+    analysis = analyze_arrays(verts, format=suffix, face_count=len(faces))
+    resolved = resolve_config(config, analysis)
     del loaded
-    return extract_from_mesh(verts, faces, config=config, _plan=plan)
+    return extract_from_mesh(
+        verts, faces, config=config, _plan=plan, _resolved=resolved
+    )
 
 
 def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
@@ -842,12 +835,9 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
     )
 
     opacity = None
-    is_logit = False
     has_opacity = "opacity" in vertex.data.dtype.names
     if has_opacity:
         opacity = np.asarray(vertex["opacity"], dtype=np.float64)
-        raw_range = opacity.max() - opacity.min()
-        is_logit = raw_range > 1.0 or opacity.min() < 0.0
 
     has_scales = all(f"scale_{i}" in vertex.data.dtype.names for i in range(3))
     has_rots = all(f"rot_{i}" in vertex.data.dtype.names for i in range(4))
@@ -870,14 +860,13 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
                 [vertex["nx"], vertex["ny"], vertex["nz"]]
             ).astype(np.float64)
 
+    analysis = analyze_arrays(positions, opacity, scales_arr, rots_arr, format="ply")
+    resolved = resolve_config(config, analysis)
+
     plan.detected["has_opacity"] = has_opacity
-    plan.detected["is_logit"] = is_logit
+    plan.detected["is_logit"] = analysis.opacity_is_logit
     plan.detected["has_normals"] = normals is not None or has_covariance
     plan.detected["has_covariance"] = has_covariance
-
-    cfg = config
-    if is_logit and not config.opacity_is_logit:
-        cfg = Config(**{**vars(config), "opacity_is_logit": True})
 
     return extract_from_arrays(
         positions,
@@ -885,8 +874,9 @@ def _extract_from_ply(path: Path, config: Config) -> ExtractionResult:
         normals=normals,
         scales=scales_arr,
         rots=rots_arr,
-        config=cfg,
+        config=config,
         _plan=plan,
+        _resolved=resolved,
     )
 
 
@@ -965,7 +955,9 @@ def _extract_from_usd(path: Path, config: Config) -> ExtractionResult:
 
     vertices = np.concatenate(all_vertices)
     faces = np.concatenate(all_faces)
-    return extract_from_mesh(vertices, faces, config, _plan=plan)
+    analysis = analyze_arrays(vertices, format=suffix, face_count=len(faces))
+    resolved = resolve_config(config, analysis)
+    return extract_from_mesh(vertices, faces, config, _plan=plan, _resolved=resolved)
 
 
 def _segment_by_bone(
@@ -1040,13 +1032,10 @@ def _poisson_reconstruct_inner(
 def _poisson_reconstruct(
     positions: np.ndarray,
     normals: np.ndarray | None,
-    config: Config,
+    config: ResolvedConfig,
     isolate: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     depth = config.poisson_depth
-    if depth is None:
-        depth = _auto_poisson_depth(len(positions))
-
     dq = config.poisson_density_quantile
 
     if not isolate:
@@ -1275,7 +1264,7 @@ def _post_poisson_filter(
     mesh_verts: np.ndarray,
     mesh_tris: np.ndarray,
     input_positions: np.ndarray,
-    config: Config,
+    config: ResolvedConfig,
 ) -> tuple[np.ndarray, np.ndarray]:
     if config.surface_proximity_filter > 0:
         mesh_verts, mesh_tris = _proximity_filter_mesh(
@@ -1382,7 +1371,7 @@ def _decompose_and_build(
     faces: np.ndarray,
     source_count: int,
     mesh_count: int,
-    config: Config,
+    config: ResolvedConfig,
     _plan: BuildPlan | None = None,
 ) -> ExtractionResult:
     pre_decimate_count = len(vertices)

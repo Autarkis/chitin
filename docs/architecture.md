@@ -50,8 +50,10 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
                      │   reconstruct        │
                      │   proximity filter   │
                      │   thin-shell (env)   │
-                     │   dedup (cross-cell) │
+                     │   flatness detect    │
                      │   decompose          │
+                     │   seam repair        │
+                     │   dedup (cross-cell) │
                      │   segment (bones)    │
                      │   quantize           │
                      │   validate           │
@@ -83,11 +85,13 @@ Stages:
 5. **Splat inflation** -- optionally expand each gaussian center into disk samples along its two largest axes for better Poisson surface coverage
 6. **Surface reconstruction** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
 7. **Surface filtering** -- configurable density quantile strips low-confidence Poisson vertices. Proximity filter removes closure surfaces far from input data. Thin-shell extrusion prevents volume-fill on environment scans
-8. **Cross-cell deduplication** -- AABB IOU dedup (threshold 0.5) removes duplicate hulls at octree cell boundaries
+8. **Flatness detection** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD, reducing hull count and build time
 9. **Convex decomposition** -- CoACD splits non-convex geometry into convex hulls
-10. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
-11. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)
-12. **Validation** -- structural checks before writing. Reject oversized hulls, degenerate AABBs, index overflow
+10. **Seam repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts for continuous coverage
+11. **Cross-cell deduplication** -- AABB IOU dedup (threshold 0.5) removes duplicate hulls at octree cell boundaries
+12. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
+13. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)
+14. **Validation** -- structural checks before writing. Reject oversized hulls, degenerate AABBs, index overflow
 
 The compiler does not make runtime decisions. It produces an artifact. Consumers decide how to use it.
 
@@ -140,7 +144,7 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 
 **Subprocess isolation for Poisson.** Open3D uses internal threads that deadlock under `fork()` on macOS. The subprocess approach (`.npz` file exchange) avoids this entirely and also contains segfaults: if one cell crashes, the parent gets a nonzero return code, skips the cell, and continues. The I/O cost is negligible compared to CoACD.
 
-**Environment scans are opt-in, not auto-detected.** Poisson creates watertight meshes, which fills concave environments with solid geometry. The proximity filter and thin-shell extrusion fix this, but require explicit configuration. Auto-detecting object vs. environment scans from normal orientation is feasible but noisy for mixed scenes (object on a table in a room). Better to let the user declare intent than guess wrong.
+**Environment scans are auto-detected with explicit opt-out.** Poisson creates watertight meshes, which fills concave environments with solid geometry. The proximity filter and thin-shell extrusion fix this. Chitin auto-detects hollow-shell point distributions (fewer than 5% of points in the inner 50% of the AABB) and enables both. Use `auto_environment=False` or `--no-auto-environment` to disable if the heuristic misfires on a particular scene.
 
 **CoACD compiles to WASM without OpenVDB.** CoACD uses OpenVDB only for manifold repair as a preprocessing step. Building with `-DWITH_3RD_PARTY_LIBS=OFF` drops OpenVDB, Boost, TBB, and spdlog -- leaving pure C++ with header-only deps (CDT, nanoflann, vendored Bullet quickhull). The result is a 558KB `.wasm` module that runs the full MCTS decomposition algorithm in the browser. The trade-off is that input meshes must be manifold; without OpenVDB there is no automatic repair.
 

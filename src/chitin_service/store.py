@@ -199,7 +199,7 @@ class Store:
             config=JobConfig(
                 concavity=cfg.get("concavity", 0.05),
                 opacity_threshold=cfg.get("opacity_threshold", 0.5),
-                poisson_depth=cfg.get("poisson_depth", 8),
+                poisson_depth=cfg.get("poisson_depth"),
                 min_hull_vertices=cfg.get("min_hull_vertices", 4),
                 max_hulls=cfg.get("max_hulls", 256),
                 opacity_is_logit=cfg.get("opacity_is_logit", False),

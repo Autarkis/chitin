@@ -87,7 +87,7 @@ async def submit_job(
     profile: str = "interactive",
     concavity: float = 0.05,
     opacity_threshold: float = 0.5,
-    poisson_depth: int = 8,
+    poisson_depth: int | None = None,
     min_hull_vertices: int = 4,
     max_hulls: int = 256,
     opacity_is_logit: bool = False,
