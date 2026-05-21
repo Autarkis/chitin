@@ -50,6 +50,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--auto-verify` | off | Run raycast probe after extraction and print coverage summary. |
 | `--no-auto-environment` | off | Disable auto-detection of environment scans. |
 | `--no-seam-repair` | off | Disable seam repair pass at octree cell boundaries. |
+| `-b, --bundle` | off | Write full artifact bundle (scene.phys + build-plan.json + analysis.json + resolved-config.json) to a directory instead of a single file. |
 | `--no-hook` | off | Skip post-process hook. |
 
 **Examples:**
@@ -68,6 +69,10 @@ chitin extract model.obj -o colliders.phys \
 
 # USD Physics output for Isaac Sim / Omniverse
 chitin extract scan.ply -o colliders.usda
+
+# full artifact bundle (phys + build plan + analysis + resolved config)
+chitin extract model.obj -o out.phys --bundle
+# writes model_bundle/ with scene.phys, build-plan.json, analysis.json, resolved-config.json
 ```
 
 ### Inspect

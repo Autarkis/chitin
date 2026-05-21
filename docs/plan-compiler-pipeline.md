@@ -4,33 +4,68 @@ The goal is to make Chitin explain every decision it made. One config schema, on
 
 The current smell: `core.py` is 1,457 lines where detection, policy, reconstruction, decomposition, seam repair, environment heuristics, and reporting all happen. The service has drifted independently -- `poisson_depth=8` is hardcoded in three places (`chitin_service/models.py:63`, `app.py:90`, `store.py:202`) while core.py auto-selects depth from point count. That drift should be architecturally impossible.
 
-## Current state
+## Current state — COMPLETE (2026-05-21)
+
+All six phases shipped. core.py went from 1,457 lines to 322. result.py went from 282 to 55. All 58 tests pass.
 
 ```
 src/chitin/
-  core.py          1457 lines. Input adapters, pipeline, policy, all inline.
-  config.py         Frozen dataclass. User-facing knobs only.
-  plan.py           BuildPlan: step names + detected dict. Lightweight.
-  result.py         Hull, ExtractionResult, exporters (to_phys, to_json, to_usd).
-  probe.py          Raycast coverage. Own ray-triangle intersection.
-  sweep.py          Capsule traversability. Own ray-triangle intersection.
-  phys.py           .phys reader + validator.
-  cli.py            Argparse, dispatch.
-  gltf_skin.py      GLB binary skin parser.
-  preflight.py       Size/format preflight checks.
-  convert.py         FBX -> GLB via Blender.
-  hooks.py           Post-process hook runner.
-  _poisson_worker.py Subprocess isolation for Open3D.
+  core.py          322 lines. Orchestration only: extract, extract_from_arrays,
+                    extract_from_mesh, extract_from_rigged_mesh.
+  analyze.py       InputAnalysis dataclass + analyze_arrays().
+  resolve.py       ResolvedConfig dataclass + resolve_config(). Single policy locus.
+  config.py        Frozen dataclass. User-facing knobs only.
+  plan.py          BuildPlan: step names + detected dict. Lightweight.
+  result.py        Hull, BoneInfo, LodHulls, ExtractionResult (data only, thin delegates to exporters).
+  phys.py          .phys reader + validator.
+  cli.py           Argparse, dispatch. --bundle/-b flag for artifact bundles.
+  gltf_skin.py     GLB binary skin parser.
+  preflight.py     Size/format preflight checks.
+  convert.py       FBX -> GLB via Blender.
+  hooks.py         Post-process hook runner.
+  _poisson_worker.py  Subprocess isolation for Open3D.
+
+  adapters/
+    __init__.py    SkinData, AdapterResult, load() dispatcher.
+    ply.py         PLY adapter (positions, opacity, covariance).
+    gltf.py        GLTF/GLB/FBX adapter (skin detection via gltf_skin).
+    usd.py         USD adapter (world transform, fan triangulation).
+    mesh.py        OBJ/STL/OFF adapter via trimesh.
+
+  stages/
+    reconstruct.py Poisson reconstruction + subprocess isolation.
+    filter.py      Proximity filter, density filter, thin-shell extrusion.
+    flatness.py    PCA flat-cell detection, oriented box generation.
+    decompose.py   CoACD wrapper, LOD tiers, walkable hulls, dedup.
+    repair.py      Seam repair at octree cell boundaries.
+    segment.py     Bone segmentation for rigged assets.
+    splat.py       Covariance normals, inflation, octree partition, spatial extract.
+
+  verify/
+    raycast.py     Shared Moller-Trumbore ray-triangle intersection.
+    probe.py       Raycast coverage probe.
+    sweep.py       Capsule traversability sweep.
+    seam.py        Seam snag detection (used by stages/repair.py).
+
+  exporters/
+    phys.py        .phys binary packing + int16 quantization.
+    json.py        JSON debug companion.
+    usd.py         USD Physics output.
+    bundle.py      Full artifact bundle (phys + build-plan + analysis + resolved-config).
 
 src/chitin_service/
-  models.py        JobConfig with hardcoded poisson_depth=8.
-  app.py           FastAPI endpoint with hardcoded poisson_depth=8.
-  store.py         SQLite persistence with hardcoded poisson_depth=8 fallback.
-  worker.py        Job execution wrapper.
+  models.py        JobConfig. poisson_depth defaults to None (auto-resolved).
+  app.py           FastAPI endpoint. poisson_depth passed through, not hardcoded.
+  store.py         SQLite persistence. poisson_depth nullable, auto on None.
+  worker.py        Job execution wrapper. Writes report.json, not full bundle.
   cli.py           Service CLI.
 ```
 
-Public API surface: `extract`, `extract_from_arrays`, `extract_from_mesh`, `extract_from_rigged_mesh`, `Config`, `ExtractionResult`, `BuildPlan`, `read_phys`, `validate_phys`.
+Public API surface unchanged: `extract`, `extract_from_arrays`, `extract_from_mesh`, `extract_from_rigged_mesh`, `Config`, `ExtractionResult`, `BuildPlan`, `read_phys`, `validate_phys`.
+
+The service still has hardcoded `poisson_depth=8` in three places — the next step is wiring it through `resolve_config()`.
+
+## Pre-refactor state (for reference)
 
 ## Phased plan
 
@@ -211,7 +246,7 @@ output/
   sweep.json           # traversability results (if --auto-verify)
 ```
 
-The CLI gets `--bundle` / `-b` to produce the directory instead of a single file. The service always produces the full bundle (it already has artifact storage).
+The CLI gets `--bundle` / `-b` to produce the directory instead of a single file. The service writes requested artifacts plus `report.json` per job; it does not yet produce the full bundle (build-plan.json, analysis.json, resolved-config.json as separate artifacts). Wiring `export_bundle` into the service worker is a follow-up.
 
 `build-plan.json` is the key artifact. It answers "why did Chitin do what it did?" with machine-readable evidence. This is the property that makes Chitin trustworthy in CI pipelines: you can diff build plans across runs and catch regressions in the compiler's own decisions, not just in the output geometry.
 

@@ -40,28 +40,33 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
                      └─────────┬───────────┘
                                │
                      ┌─────────▼───────────┐
-                     │   chitin compiler    │
-                     │                      │
-                     │   normalize          │
-                     │   filter (opacity)   │
-                     │   derive normals     │
-                     │   octree partition   │
-                     │   inflate (splats)   │
+                     │   adapters/          │
+                     │   ply, gltf, usd,    │
+                     │   mesh (OBJ/STL/OFF) │
+                     └─────────┬───────────┘
+                               │
+                  analyze() + resolve()
+                               │
+                     ┌─────────▼───────────┐
+                     │   stages/            │
                      │   reconstruct        │
-                     │   proximity filter   │
-                     │   thin-shell (env)   │
-                     │   flatness detect    │
+                     │   filter             │
+                     │   flatness           │
                      │   decompose          │
-                     │   seam repair        │
-                     │   dedup (cross-cell) │
-                     │   segment (bones)    │
-                     │   quantize           │
-                     │   validate           │
+                     │   repair             │
+                     │   segment (rigged)   │
+                     │   splat (covariance) │
                      └─────────┬───────────┘
                                │
                      ┌─────────▼───────────┐
-                     │   .phys sidecar      │
-                     │   (+ JSON, USD)      │
+                     │   verify/            │
+                     │   probe, sweep, seam │
+                     └─────────┬───────────┘
+                               │
+                     ┌─────────▼───────────┐
+                     │   exporters/         │
+                     │   .phys, JSON, USD   │
+                     │   bundle (artifact)  │
                      └─────────┬───────────┘
                                │
               ┌────────────────┼────────────────┐
@@ -77,21 +82,27 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
 
 The compiler kernel is a deterministic pipeline. Same input bytes + same config = same output bytes. This is what makes caching work.
 
-Stages:
-1. **Input normalization** -- load any supported format into a common mesh/point cloud representation
-2. **Opacity filtering** -- for gaussian splats: discard points below threshold, keeping only physically present geometry
-3. **Normal derivation** -- for 3DGS data with scale/rotation: derive oriented normals from the covariance ellipsoid (shortest axis = surface normal). Falls back to KD-tree estimation for plain point clouds
-4. **Spatial partitioning** -- octree split for scenes exceeding 50K points. Per-cell ghost-zone padding (3x 95th-percentile splat radius) ensures boundary continuity without over-inflating cells that contain small splats
-5. **Splat inflation** -- optionally expand each gaussian center into disk samples along its two largest axes for better Poisson surface coverage
-6. **Surface reconstruction** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
-7. **Surface filtering** -- configurable density quantile strips low-confidence Poisson vertices. Proximity filter removes closure surfaces far from input data. Thin-shell extrusion prevents volume-fill on environment scans
-8. **Flatness detection** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD, reducing hull count and build time
-9. **Convex decomposition** -- CoACD splits non-convex geometry into convex hulls
-10. **Seam repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts for continuous coverage
-11. **Cross-cell deduplication** -- AABB IOU dedup (threshold 0.5) removes duplicate hulls at octree cell boundaries
-12. **Bone segmentation** -- for rigged assets: assign each vertex to its dominant bone, generate per-bone hulls in bone-local space
-13. **Quantization** -- int16 per-axis quantization against per-hull AABBs (65536 levels, ~0.001% error for typical meshes)
-14. **Validation** -- structural checks before writing. Reject oversized hulls, degenerate AABBs, index overflow
+The compiler is organized into four module groups:
+
+**`adapters/`** -- input loading. Each adapter (PLY, GLTF/FBX, USD, OBJ/STL/OFF) returns an `AdapterResult` with positions, faces, normals, covariance data, opacity, and optional skin data. The pipeline never sees the source format.
+
+**`stages/`** -- the processing pipeline. Each stage takes typed input + a frozen `ResolvedConfig`, returns typed output, and appends to the `BuildPlan`:
+
+1. **reconstruct** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
+2. **filter** -- proximity filter removes closure surfaces far from input data. Density quantile strips low-confidence Poisson vertices. Thin-shell extrusion prevents volume-fill on environment scans
+3. **flatness** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD
+4. **decompose** -- CoACD convex decomposition, LOD tier generation, walkable hull extraction, cross-cell AABB IOU deduplication
+5. **repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
+6. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
+7. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
+
+**`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does capsule traversability analysis. `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
+
+**`exporters/`** -- output serialization. `.phys` binary packing, JSON debug companion, USD Physics output, and artifact bundle (build-plan.json + analysis.json + resolved-config.json).
+
+**`analyze.py` + `resolve.py`** -- the spine. `analyze_arrays()` produces an `InputAnalysis` (facts about the input: format, opacity, covariance, density, skinning). `resolve_config()` turns user `Config` + `InputAnalysis` into a frozen `ResolvedConfig` with a `decisions` dict explaining every auto-override. No downstream code mutates config after this point.
+
+**`core.py`** -- orchestration only (~320 lines). `extract()` dispatches: load adapter -> analyze -> resolve -> pipeline. `extract_from_arrays()`, `extract_from_mesh()`, `extract_from_rigged_mesh()` are the public entry points for direct API use.
 
 The compiler does not make runtime decisions. It produces an artifact. Consumers decide how to use it.
 
