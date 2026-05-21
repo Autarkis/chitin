@@ -130,6 +130,18 @@ def _read_accessor(gltf: dict, bin_data: bytes, accessor_idx: int) -> np.ndarray
     if byte_stride and byte_stride != tight_stride:
         if start + (count - 1) * byte_stride + tight_stride > len(bin_data):
             return np.zeros((count, n_components), dtype=dtype)
+
+        if byte_stride % comp_size == 0:
+            arr = np.ndarray(
+                shape=(count, n_components),
+                dtype=dtype,
+                buffer=bin_data,
+                offset=start,
+                strides=(byte_stride, comp_size),
+            )
+            return arr.copy()
+
+        # Fallback for unaligned byte strides (rare)
         buf = np.frombuffer(bin_data, dtype=np.uint8)
         out = np.empty((count, n_components), dtype=dtype)
         for i in range(count):
@@ -165,6 +177,20 @@ def _read_accessor_mat4(
     stride = byte_stride if byte_stride else mat_size
 
     matrices = []
+
+    if stride % 4 == 0:
+        total_bytes_needed = (count - 1) * stride + mat_size
+        if start + total_bytes_needed <= len(bin_data):
+            arr = np.ndarray(
+                shape=(count, 4, 4),
+                dtype=np.float32,
+                buffer=bin_data,
+                offset=start,
+                strides=(stride, 16, 4),
+            )
+            return [mat.astype(np.float64) for mat in arr]
+
+    # Fallback for unaligned or truncated
     for i in range(count):
         offset = start + i * stride
         raw = bin_data[offset : offset + mat_size]

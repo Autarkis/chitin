@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_inspect_parser(sub)
     _add_validate_parser(sub)
     _add_probe_parser(sub)
+    _add_sweep_parser(sub)
     _add_convert_parser(sub)
 
     args = parser.parse_args(argv)
@@ -37,6 +38,8 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_validate(args)
     elif args.command == "probe":
         _cmd_probe(args)
+    elif args.command == "sweep":
+        _cmd_sweep(args)
     elif args.command == "convert":
         _cmd_convert(args)
     else:
@@ -147,6 +150,11 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Run raycast probe after extraction and print coverage summary",
     )
+    p.add_argument(
+        "--no-seam-repair",
+        action="store_true",
+        help="Disable seam repair pass (skip re-merging cells at octree boundaries)",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
 
 
@@ -224,6 +232,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         thin_shell=args.thin_shell,
         thin_shell_thickness=args.thin_shell_thickness,
         flatness_threshold=args.flatness_threshold,
+        seam_repair=not args.no_seam_repair,
     )
 
     if not args.quiet:
@@ -490,6 +499,85 @@ def _cmd_probe(args: argparse.Namespace) -> None:
             print(f"wrote:      {args.output}")
 
     if result.confidence == "low":
+        sys.exit(2)
+
+
+def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
+    p = sub.add_parser(
+        "sweep", help="capsule traversability test for collision quality"
+    )
+    p.add_argument("file", type=Path, help="path to .phys file")
+    p.add_argument(
+        "--grid",
+        type=int,
+        default=32,
+        help="Grid resolution per axis (default: 32)",
+    )
+    p.add_argument(
+        "--capsule-radius",
+        type=float,
+        default=0.3,
+        help="Capsule radius in meters (default: 0.3)",
+    )
+    p.add_argument(
+        "--capsule-height",
+        type=float,
+        default=1.8,
+        help="Capsule height in meters (default: 1.8)",
+    )
+    p.add_argument(
+        "--step-height",
+        type=float,
+        default=0.3,
+        help="Max traversable step height in meters (default: 0.3)",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Write detailed results to JSON",
+    )
+    p.add_argument("-q", "--quiet", action="store_true")
+
+
+def _cmd_sweep(args: argparse.Namespace) -> None:
+    import time
+
+    from chitin.sweep import sweep
+
+    if not args.quiet:
+        print(
+            f"chitin sweep: {args.file} "
+            f"({args.grid}x{args.grid} grid, "
+            f"capsule {args.capsule_radius}m x {args.capsule_height}m)"
+        )
+
+    t0 = time.monotonic()
+    result = sweep(
+        args.file,
+        grid_resolution=args.grid,
+        capsule_radius=args.capsule_radius,
+        capsule_height=args.capsule_height,
+        step_height=args.step_height,
+    )
+    dt = time.monotonic() - t0
+
+    pct = result.traversability * 100
+    print(f"ground:     {result.ground_cells}/{result.total_cells} cells")
+    print(f"traversable: {pct:.1f}% (largest island: {result.largest_component} cells)")
+    print(f"islands:    {result.connected_components}")
+    if result.seam_snags:
+        print(f"seam snags: {len(result.seam_snags)}")
+    print(f"rating:     {result.rating}")
+    print(f"time:       {dt:.2f}s")
+
+    if args.output:
+        result.to_json(args.output)
+        if not args.quiet:
+            print(f"wrote:      {args.output}")
+
+    if result.rating == "poor":
         sys.exit(2)
 
 

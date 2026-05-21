@@ -187,6 +187,155 @@ def _dedup_overlapping_hulls(
     return kept
 
 
+def _uf_find(parent: dict[int, int], x: int) -> int:
+    if x not in parent:
+        parent[x] = x
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+
+
+def _uf_union(parent: dict[int, int], a: int, b: int) -> None:
+    ra, rb = _uf_find(parent, a), _uf_find(parent, b)
+    if ra != rb:
+        parent[rb] = ra
+
+
+def _extract_cell_hulls(
+    bounds_min: np.ndarray,
+    bounds_max: np.ndarray,
+    positions: np.ndarray,
+    normals: np.ndarray,
+    scales: np.ndarray | None,
+    rots: np.ndarray | None,
+    max_radii: np.ndarray,
+    config: Config,
+) -> list[Hull]:
+    strict_mask = np.all((positions >= bounds_min) & (positions <= bounds_max), axis=1)
+    strict_radii = max_radii[strict_mask]
+    if len(strict_radii) == 0:
+        return []
+    padding = float(np.percentile(strict_radii, 95)) * 3.0
+
+    padded_min = bounds_min - padding
+    padded_max = bounds_max + padding
+    padded_mask = np.all((positions >= padded_min) & (positions <= padded_max), axis=1)
+    cell_positions = positions[padded_mask]
+    cell_normals = normals[padded_mask]
+
+    if len(cell_positions) < 100:
+        return []
+
+    raw_cell_positions = cell_positions
+    if scales is not None and rots is not None and config.splat_surface_ratio > 0:
+        cell_scales = scales[padded_mask]
+        cell_rots = rots[padded_mask]
+        cell_positions = _inflate_splat_points(
+            cell_positions,
+            cell_scales,
+            cell_rots,
+            config.splat_surface_ratio,
+            log_scale=config.splat_scale_is_log,
+        )
+        cell_normals = np.tile(cell_normals, (5, 1))
+
+    result_mesh = _poisson_reconstruct(
+        cell_positions, cell_normals, config, isolate=True
+    )
+    if result_mesh is None:
+        return []
+    verts, tris = result_mesh
+    if len(tris) < 4:
+        return []
+
+    verts, tris = _post_poisson_filter(verts, tris, raw_cell_positions, config)
+    if len(tris) < 4:
+        return []
+
+    is_flat, flat_normal = (
+        _is_flat_mesh(verts, tris, config.flatness_threshold)
+        if config.flatness_threshold > 0
+        else (False, None)
+    )
+    if is_flat:
+        hull = _make_planar_box(verts, flat_normal)
+        if _aabb_overlaps_bounds(hull, bounds_min, bounds_max):
+            return [hull]
+        return []
+
+    result = _decompose_and_build(verts, tris, len(cell_positions), len(verts), config)
+    return [h for h in result.hulls if _aabb_overlaps_bounds(h, bounds_min, bounds_max)]
+
+
+def _seam_repair_pass(
+    all_hulls: list[Hull],
+    cells: list[_OctreeCell],
+    hull_cell_map: list[int],
+    positions: np.ndarray,
+    normals: np.ndarray,
+    scales: np.ndarray | None,
+    rots: np.ndarray | None,
+    max_radii: np.ndarray,
+    config: Config,
+) -> list[Hull]:
+    from chitin.sweep import find_hull_seam_snags
+
+    snags = find_hull_seam_snags(all_hulls)
+    if not snags:
+        return all_hulls
+
+    cell_sizes = np.array([c.bounds_max - c.bounds_min for c in cells])
+    margin = float(np.median(cell_sizes)) * 0.1
+
+    parent: dict[int, int] = {}
+    for sx, _sy, sz in snags:
+        nearby = []
+        for ci, cell in enumerate(cells):
+            if (
+                cell.bounds_min[0] - margin <= sx <= cell.bounds_max[0] + margin
+                and cell.bounds_min[2] - margin <= sz <= cell.bounds_max[2] + margin
+            ):
+                nearby.append(ci)
+        if len(nearby) >= 2:
+            root = _uf_find(parent, nearby[0])
+            for ci in nearby[1:]:
+                _uf_union(parent, root, ci)
+
+    groups: dict[int, list[int]] = {}
+    for ci in parent:
+        root = _uf_find(parent, ci)
+        groups.setdefault(root, []).append(ci)
+    merge_groups = [g for g in groups.values() if len(g) >= 2]
+
+    if not merge_groups:
+        return all_hulls
+
+    cells_to_repair = set()
+    for g in merge_groups:
+        cells_to_repair.update(g)
+
+    remove_set = {i for i, ci in enumerate(hull_cell_map) if ci in cells_to_repair}
+    new_hulls = [h for i, h in enumerate(all_hulls) if i not in remove_set]
+
+    for group in merge_groups:
+        merged_min = np.min([cells[ci].bounds_min for ci in group], axis=0)
+        merged_max = np.max([cells[ci].bounds_max for ci in group], axis=0)
+        repaired = _extract_cell_hulls(
+            merged_min,
+            merged_max,
+            positions,
+            normals,
+            scales,
+            rots,
+            max_radii,
+            config,
+        )
+        new_hulls.extend(repaired)
+
+    return new_hulls
+
+
 def _extract_spatial(
     positions: np.ndarray,
     normals: np.ndarray,
@@ -204,10 +353,11 @@ def _extract_spatial(
 
     source_count = plan.source_vertices or len(positions)
     all_hulls: list[Hull] = []
+    hull_cell_map: list[int] = []
     lod_buckets: dict[int, list[Hull]] = {}
     cell_paddings: list[float] = []
 
-    for cell in cells:
+    for cell_idx, cell in enumerate(cells):
         cell_radii = max_radii[cell.indices]
         cell_p95 = float(np.percentile(cell_radii, 95)) if len(cell_radii) > 0 else 0
         padding = cell_p95 * 3.0
@@ -284,6 +434,7 @@ def _extract_spatial(
         for hull in cell_result.hulls:
             if _aabb_overlaps_bounds(hull, strict_min, strict_max):
                 all_hulls.append(hull)
+                hull_cell_map.append(cell_idx)
 
         if cell_result.lod_tiers:
             for tier_idx, tier in enumerate(cell_result.lod_tiers):
@@ -292,6 +443,23 @@ def _extract_spatial(
                 for hull in tier.hulls:
                     if _aabb_overlaps_bounds(hull, strict_min, strict_max):
                         lod_buckets[tier_idx].append(hull)
+
+    if config.seam_repair and len(cells) > 1:
+        pre_repair = len(all_hulls)
+        all_hulls = _seam_repair_pass(
+            all_hulls,
+            cells,
+            hull_cell_map,
+            positions,
+            normals,
+            scales,
+            rots,
+            max_radii,
+            config,
+        )
+        repaired_count = pre_repair - len(all_hulls)
+        if repaired_count != 0:
+            plan.detected["seam_repair_delta"] = len(all_hulls) - pre_repair
 
     all_hulls = _dedup_overlapping_hulls(all_hulls)
     for tier_idx in lod_buckets:
@@ -356,6 +524,34 @@ def extract(
     raise ValueError(f"Unsupported input format: {suffix}")
 
 
+def _is_environment_scan(positions: np.ndarray) -> bool:
+    if len(positions) < 1000:
+        return False
+
+    scene_min = positions.min(axis=0)
+    scene_max = positions.max(axis=0)
+    extent = scene_max - scene_min
+    vol = float(np.prod(np.where(extent == 0, 1.0, extent)))
+    if vol < 10.0:
+        return False
+
+    center = (scene_min + scene_max) / 2
+    inner_extent = extent * 0.5
+    inner_min = center - inner_extent / 2
+    inner_max = center + inner_extent / 2
+
+    mask = (
+        (positions[:, 0] >= inner_min[0])
+        & (positions[:, 0] <= inner_max[0])
+        & (positions[:, 1] >= inner_min[1])
+        & (positions[:, 1] <= inner_max[1])
+        & (positions[:, 2] >= inner_min[2])
+        & (positions[:, 2] <= inner_max[2])
+    )
+    inner_ratio = mask.sum() / len(positions)
+    return bool(inner_ratio < 0.05)
+
+
 def extract_from_arrays(
     positions: np.ndarray,
     opacity: np.ndarray | None = None,
@@ -372,6 +568,20 @@ def extract_from_arrays(
     if _plan is None:
         _plan = BuildPlan(input_kind="arrays", collider_kind="point_cloud")
     _plan.source_vertices = source_count
+
+    if _is_environment_scan(positions):
+        _plan.detected["is_environment"] = True
+        updates = {}
+        if not config.thin_shell:
+            updates["thin_shell"] = True
+            _plan.detected["auto_thin_shell"] = True
+        if config.surface_proximity_filter == 0.0:
+            updates["surface_proximity_filter"] = 5.0
+            _plan.detected["auto_proximity_filter"] = True
+        if updates:
+            from chitin.config import Config as Cfg
+
+            config = Cfg(**{**vars(config), **updates})
 
     has_covariance = scales is not None and rots is not None
     if has_covariance:
@@ -1101,6 +1311,72 @@ def _maybe_decimate(
     )
 
 
+def _extract_walkable_hulls(
+    vertices: np.ndarray, faces: np.ndarray
+) -> tuple[list[Hull], np.ndarray]:
+    v0, v1, v2 = vertices[faces[:, 0]], vertices[faces[:, 1]], vertices[faces[:, 2]]
+    face_normals = np.cross(v1 - v0, v2 - v0)
+    areas = np.linalg.norm(face_normals, axis=1, keepdims=True)
+    areas = np.where(areas == 0, 1e-12, areas)
+    face_normals /= areas
+
+    hist = np.abs(face_normals).sum(axis=0)
+    up_axis_idx = np.argmax(hist)
+    up_axis = np.zeros(3)
+    up_axis[up_axis_idx] = 1.0
+    if (face_normals @ up_axis).sum() < 0:
+        up_axis = -up_axis
+
+    dot = face_normals @ up_axis
+    walkable_mask = dot >= np.cos(np.radians(35.0))
+
+    if not np.any(walkable_mask):
+        return [], faces
+
+    walkable_faces = faces[walkable_mask]
+    unwalkable_faces = faces[~walkable_mask]
+
+    tm = trimesh.Trimesh(vertices=vertices, faces=walkable_faces, process=False)
+    try:
+        components = trimesh.graph.connected_components(tm.face_adjacency)
+    except Exception:
+        return [], faces
+
+    hulls = []
+    keep_unwalkable = [unwalkable_faces]
+
+    for comp in components:
+        if len(comp) < 200:
+            keep_unwalkable.append(walkable_faces[comp])
+            continue
+
+        comp_faces = walkable_faces[comp]
+        comp_verts = vertices[np.unique(comp_faces)]
+
+        cv0, cv1, cv2 = (
+            vertices[comp_faces[:, 0]],
+            vertices[comp_faces[:, 1]],
+            vertices[comp_faces[:, 2]],
+        )
+        comp_normals = np.cross(cv1 - cv0, cv2 - cv0)
+        avg_normal = comp_normals.mean(axis=0)
+        norm = np.linalg.norm(avg_normal)
+        if norm > 0:
+            avg_normal /= norm
+        else:
+            avg_normal = up_axis
+
+        box_hull = _make_planar_box(comp_verts, avg_normal)
+        hulls.append(box_hull)
+
+    final_unwalkable = (
+        np.vstack(keep_unwalkable)
+        if keep_unwalkable
+        else np.array([], dtype=np.int32).reshape(0, 3)
+    )
+    return hulls, final_unwalkable
+
+
 def _decompose_and_build(
     vertices: np.ndarray,
     faces: np.ndarray,
@@ -1119,6 +1395,22 @@ def _decompose_and_build(
         _plan.step("decompose")
         _plan.processed_vertices = _plan.processed_vertices or len(vertices)
 
+    is_env = _plan is not None and _plan.detected.get("is_environment", False)
+    env_hulls = []
+    if is_env:
+        env_hulls, faces = _extract_walkable_hulls(vertices, faces)
+        if env_hulls and _plan is not None:
+            _plan.detected["walkable_hulls"] = len(env_hulls)
+
+    if len(faces) < 4:
+        return ExtractionResult(
+            hulls=env_hulls,
+            source_vertex_count=source_count,
+            mesh_vertex_count=mesh_count,
+            build_plan=_plan,
+            lod_tiers=None,
+        )
+
     tm = trimesh.Trimesh(vertices=vertices, faces=faces)
     coacd_mesh = coacd.Mesh(tm.vertices, tm.faces)
 
@@ -1130,7 +1422,7 @@ def _decompose_and_build(
         max_convex_hull=config.max_hulls,
     )
 
-    hulls = []
+    hulls = env_hulls.copy()
     for verts, tris in parts:
         verts = np.asarray(verts, dtype=np.float32)
         tris = np.asarray(tris, dtype=np.uint32).ravel()
@@ -1148,7 +1440,7 @@ def _decompose_and_build(
                 preprocess_resolution=config.coacd_preprocess_resolution,
                 max_convex_hull=config.max_hulls,
             )
-            lod_hulls = []
+            lod_hulls = env_hulls.copy()
             for verts, tris in lod_parts:
                 verts = np.asarray(verts, dtype=np.float32)
                 tris = np.asarray(tris, dtype=np.uint32).ravel()
