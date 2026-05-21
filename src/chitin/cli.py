@@ -262,7 +262,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         )
 
     if args.auto_verify and fmt == "phys":
-        from chitin.probe import probe
+        from chitin.verify.probe import probe
 
         pr = probe(args.output, grid_resolution=32)
         pct = pr.coverage * 100
@@ -481,7 +481,7 @@ def _add_probe_parser(sub: argparse._SubParsersAction) -> None:
 def _cmd_probe(args: argparse.Namespace) -> None:
     import time
 
-    from chitin.probe import probe
+    from chitin.verify.probe import probe
 
     if not args.quiet:
         print(f"chitin probe: {args.file} ({args.grid}x{args.grid} grid)")
@@ -550,7 +550,7 @@ def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
 def _cmd_sweep(args: argparse.Namespace) -> None:
     import time
 
-    from chitin.sweep import sweep
+    from chitin.verify.sweep import sweep
 
     if not args.quiet:
         print(

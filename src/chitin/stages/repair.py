@@ -106,7 +106,7 @@ def seam_repair_pass(
     max_radii: np.ndarray,
     config: ResolvedConfig,
 ) -> list[Hull]:
-    from chitin.sweep import find_hull_seam_snags
+    from chitin.verify.seam import find_hull_seam_snags
 
     snags = find_hull_seam_snags(all_hulls)
     if not snags:
