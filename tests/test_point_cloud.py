@@ -68,7 +68,7 @@ def test_all_zero_normals_triggers_estimation(sphere_points):
 
 
 def test_normals_from_covariance_identity_quat():
-    from chitin.core import _normals_from_covariance
+    from chitin.stages.splat import normals_from_covariance
 
     scales = np.array(
         [
@@ -79,7 +79,7 @@ def test_normals_from_covariance_identity_quat():
     )
     rots = np.array([[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], dtype=np.float64)
 
-    normals = _normals_from_covariance(scales, rots, log_scale=True)
+    normals = normals_from_covariance(scales, rots, log_scale=True)
 
     np.testing.assert_allclose(np.abs(normals[0]), [0, 0, 1], atol=1e-10)
     np.testing.assert_allclose(np.abs(normals[1]), [1, 0, 0], atol=1e-10)
@@ -87,57 +87,57 @@ def test_normals_from_covariance_identity_quat():
 
 
 def test_normals_from_covariance_unit_length():
-    from chitin.core import _normals_from_covariance
+    from chitin.stages.splat import normals_from_covariance
 
     rng = np.random.default_rng(99)
     scales = rng.standard_normal((200, 3))
     rots = rng.standard_normal((200, 4))
 
-    normals = _normals_from_covariance(scales, rots, log_scale=True)
+    normals = normals_from_covariance(scales, rots, log_scale=True)
     lengths = np.linalg.norm(normals, axis=1)
     np.testing.assert_allclose(lengths, 1.0, atol=1e-10)
 
 
 def test_normals_from_covariance_linear_scale():
-    from chitin.core import _normals_from_covariance
+    from chitin.stages.splat import normals_from_covariance
 
     scales = np.array([[5.0, 5.0, 0.1]], dtype=np.float64)
     rots = np.array([[1, 0, 0, 0]], dtype=np.float64)
 
-    normals = _normals_from_covariance(scales, rots, log_scale=False)
+    normals = normals_from_covariance(scales, rots, log_scale=False)
     np.testing.assert_allclose(np.abs(normals[0]), [0, 0, 1], atol=1e-10)
 
 
 def test_inflate_splat_points_count():
-    from chitin.core import _inflate_splat_points
+    from chitin.stages.splat import inflate_splat_points
 
     positions = np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float64)
     scales = np.array([[np.log(1.0), np.log(1.0), np.log(0.1)]] * 2, dtype=np.float64)
     rots = np.array([[1, 0, 0, 0]] * 2, dtype=np.float64)
 
-    inflated = _inflate_splat_points(positions, scales, rots, surface_ratio=0.2)
+    inflated = inflate_splat_points(positions, scales, rots, surface_ratio=0.2)
     assert len(inflated) == 10  # 2 originals * 5 (center + 4 disk samples)
     np.testing.assert_array_equal(inflated[:2], positions)
 
 
 def test_octree_partition_small_set():
-    from chitin.core import _octree_partition
+    from chitin.stages.splat import octree_partition
 
     rng = np.random.default_rng(7)
     positions = rng.uniform(-10, 10, (100, 3))
 
-    cells = _octree_partition(positions, max_points=200)
+    cells = octree_partition(positions, max_points=200)
     assert len(cells) == 1
     assert len(cells[0].indices) == 100
 
 
 def test_octree_partition_splits():
-    from chitin.core import _octree_partition
+    from chitin.stages.splat import octree_partition
 
     rng = np.random.default_rng(7)
     positions = rng.uniform(-10, 10, (1000, 3))
 
-    cells = _octree_partition(positions, max_points=200)
+    cells = octree_partition(positions, max_points=200)
     assert len(cells) > 1
 
     all_indices = np.concatenate([c.indices for c in cells])
@@ -146,12 +146,12 @@ def test_octree_partition_splits():
 
 
 def test_octree_partition_bounds_cover_points():
-    from chitin.core import _octree_partition
+    from chitin.stages.splat import octree_partition
 
     rng = np.random.default_rng(7)
     positions = rng.uniform(-5, 5, (500, 3))
 
-    cells = _octree_partition(positions, max_points=100)
+    cells = octree_partition(positions, max_points=100)
     for cell in cells:
         pts = positions[cell.indices]
         assert np.all(pts >= cell.bounds_min - 1e-10)
@@ -159,10 +159,10 @@ def test_octree_partition_bounds_cover_points():
 
 
 def test_octree_partition_max_depth():
-    from chitin.core import _octree_partition
+    from chitin.stages.splat import octree_partition
 
     positions = np.zeros((100, 3), dtype=np.float64)
-    cells = _octree_partition(positions, max_points=10, max_depth=2)
+    cells = octree_partition(positions, max_points=10, max_depth=2)
     assert all(len(c.indices) <= 100 for c in cells)
 
 
@@ -179,38 +179,38 @@ def test_auto_poisson_depth():
 
 
 def test_aabb_iou_identical():
-    from chitin.core import _aabb_iou
+    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
 
     verts = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32)
     idx = np.array([0, 1, 0], dtype=np.uint32)
     h = Hull(vertices=verts, indices=idx)
-    assert abs(_aabb_iou(h, h) - 1.0) < 1e-10
+    assert abs(aabb_iou(h, h) - 1.0) < 1e-10
 
 
 def test_aabb_iou_no_overlap():
-    from chitin.core import _aabb_iou
+    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
     b = Hull(vertices=np.array([[5, 5, 5], [6, 6, 6]], dtype=np.float32), indices=idx)
-    assert _aabb_iou(a, b) == 0.0
+    assert aabb_iou(a, b) == 0.0
 
 
 def test_aabb_iou_partial():
-    from chitin.core import _aabb_iou
+    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [2, 2, 2]], dtype=np.float32), indices=idx)
     b = Hull(vertices=np.array([[1, 1, 1], [3, 3, 3]], dtype=np.float32), indices=idx)
-    iou = _aabb_iou(a, b)
+    iou = aabb_iou(a, b)
     assert 0.0 < iou < 1.0
 
 
 def test_dedup_removes_duplicate():
-    from chitin.core import _dedup_overlapping_hulls
+    from chitin.stages.decompose import dedup_overlapping_hulls
     from chitin.result import Hull
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
@@ -219,18 +219,18 @@ def test_dedup_removes_duplicate():
         vertices=np.array([[0.05, 0.05, 0.05], [0.95, 0.95, 0.95]], dtype=np.float32),
         indices=idx,
     )
-    result = _dedup_overlapping_hulls([a, b], iou_threshold=0.5)
+    result = dedup_overlapping_hulls([a, b], iou_threshold=0.5)
     assert len(result) == 1
 
 
 def test_dedup_keeps_distinct():
-    from chitin.core import _dedup_overlapping_hulls
+    from chitin.stages.decompose import dedup_overlapping_hulls
     from chitin.result import Hull
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
     b = Hull(vertices=np.array([[5, 5, 5], [6, 6, 6]], dtype=np.float32), indices=idx)
-    result = _dedup_overlapping_hulls([a, b], iou_threshold=0.5)
+    result = dedup_overlapping_hulls([a, b], iou_threshold=0.5)
     assert len(result) == 2
 
 
@@ -262,10 +262,10 @@ def _orient_quats_to_sphere(pts):
 
 
 def test_covariance_normals_match_sphere_surface():
-    from chitin.core import _normals_from_covariance
+    from chitin.stages.splat import normals_from_covariance
 
     pts, scales, rots = _sphere_with_covariance(200)
-    derived = _normals_from_covariance(scales, rots, log_scale=True)
+    derived = normals_from_covariance(scales, rots, log_scale=True)
     expected = pts / np.linalg.norm(pts, axis=1, keepdims=True)
     dots = np.abs(np.sum(derived * expected, axis=1))
     assert np.mean(dots) > 0.99
@@ -329,7 +329,7 @@ def test_spatial_split_triggered():
 
 
 def test_proximity_filter_removes_distant_vertices():
-    from chitin.core import _proximity_filter_mesh
+    from chitin.stages.filter import proximity_filter_mesh
 
     input_pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float64)
     mesh_verts = np.array(
@@ -337,7 +337,7 @@ def test_proximity_filter_removes_distant_vertices():
     )
     mesh_tris = np.array([[0, 1, 2], [1, 2, 3]], dtype=np.int32)
 
-    filtered_verts, filtered_tris = _proximity_filter_mesh(
+    filtered_verts, filtered_tris = proximity_filter_mesh(
         mesh_verts, mesh_tris, input_pts, max_distance_ratio=3.0
     )
     assert len(filtered_verts) == 3
@@ -345,12 +345,12 @@ def test_proximity_filter_removes_distant_vertices():
 
 
 def test_extrude_thin_shell_doubles_geometry():
-    from chitin.core import _extrude_thin_shell
+    from chitin.stages.filter import extrude_thin_shell
 
     verts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]], dtype=np.float64)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
 
-    ext_verts, ext_faces = _extrude_thin_shell(verts, faces, thickness=0.1)
+    ext_verts, ext_faces = extrude_thin_shell(verts, faces, thickness=0.1)
     assert len(ext_verts) == 8
     assert len(ext_faces) > 4
 
