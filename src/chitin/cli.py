@@ -160,6 +160,12 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Disable seam repair pass (skip re-merging cells at octree boundaries)",
     )
+    p.add_argument(
+        "-b",
+        "--bundle",
+        action="store_true",
+        help="Write artifact bundle (build-plan.json, analysis.json, resolved-config.json) alongside output",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
 
 
@@ -248,12 +254,20 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     result = extract(args.input, config)
     dt = time.monotonic() - t0
 
-    if fmt == "usd":
-        result.to_usd(args.output, scene_name=args.scene_name)
-    elif fmt == "json":
-        result.to_json(args.output)
-    elif fmt == "phys":
-        result.to_phys(args.output)
+    if args.bundle:
+        from chitin.exporters.bundle import export_bundle
+
+        bundle_dir = args.output.parent / (args.output.stem + "_bundle")
+        export_bundle(result, bundle_dir, fmt=fmt, scene_name=args.scene_name)
+        if not args.quiet:
+            print(f"chitin: bundle written to {bundle_dir}/")
+    else:
+        if fmt == "usd":
+            result.to_usd(args.output, scene_name=args.scene_name)
+        elif fmt == "json":
+            result.to_json(args.output)
+        elif fmt == "phys":
+            result.to_phys(args.output)
 
     if not args.quiet:
         print(
@@ -261,10 +275,11 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             f"{result.source_vertex_count} source verts in {dt:.1f}s"
         )
 
+    phys_path = (bundle_dir / "scene.phys") if args.bundle else args.output
     if args.auto_verify and fmt == "phys":
         from chitin.verify.probe import probe
 
-        pr = probe(args.output, grid_resolution=32)
+        pr = probe(phys_path, grid_resolution=32)
         pct = pr.coverage * 100
         print(
             f"chitin: verify: {pct:.1f}% coverage "
@@ -279,6 +294,8 @@ def _cmd_extract(args: argparse.Namespace) -> None:
                 "or --thin-shell for environment scans",
                 file=sys.stderr,
             )
+        if args.bundle:
+            pr.to_json(bundle_dir / "probe.json")
 
     if not args.no_hook:
         hook_cmd = get_post_process_command(args.post_process)

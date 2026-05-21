@@ -47,7 +47,7 @@ def extract(
 
     if result.skin is not None:
         plan.collider_kind = "rigged"
-        return extract_from_rigged_mesh(
+        out = extract_from_rigged_mesh(
             result.positions,
             result.faces,
             result.skin.joint_indices,
@@ -58,22 +58,28 @@ def extract(
             _plan=plan,
             _resolved=resolved,
         )
+        out.analysis = analysis
+        out.resolved = resolved
+        return out
 
     if result.faces is not None:
         plan.collider_kind = "static"
         plan.source_vertices = len(result.positions)
-        return extract_from_mesh(
+        out = extract_from_mesh(
             result.positions,
             result.faces,
             config=config,
             _plan=plan,
             _resolved=resolved,
         )
+        out.analysis = analysis
+        out.resolved = resolved
+        return out
 
     plan.collider_kind = "point_cloud"
     if analysis.opacity_is_logit:
         plan.detected["is_logit"] = True
-    return extract_from_arrays(
+    out = extract_from_arrays(
         result.positions,
         opacity=result.opacity,
         normals=result.normals,
@@ -83,6 +89,9 @@ def extract(
         _plan=plan,
         _resolved=resolved,
     )
+    out.analysis = analysis
+    out.resolved = resolved
+    return out
 
 
 def extract_from_arrays(
