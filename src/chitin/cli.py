@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
 import argparse
@@ -107,11 +106,6 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--no-hook", action="store_true", help="Skip post-process hook")
     p.add_argument(
-        "--cloud",
-        action="store_true",
-        help="Submit job to chitin cloud service instead of running locally",
-    )
-    p.add_argument(
         "--force",
         action="store_true",
         help="Run locally even when preflight check says the input is too large",
@@ -201,10 +195,6 @@ def _infer_format(path: Path) -> str | None:
 
 
 def _cmd_extract(args: argparse.Namespace) -> None:
-    if args.cloud:
-        print("chitin: cloud service is not yet available", file=sys.stderr)
-        sys.exit(1)
-
     fmt = args.format or _infer_format(args.output)
     if fmt is None:
         print(
@@ -217,7 +207,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     if pf.level == "red" and not args.force:
         print(f"chitin: {pf.message}", file=sys.stderr)
         print(
-            "chitin: use --force to run anyway, or --cloud to offload",
+            "chitin: use --force to run anyway",
             file=sys.stderr,
         )
         sys.exit(1)

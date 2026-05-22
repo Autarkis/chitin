@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

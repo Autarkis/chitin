@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -131,6 +130,78 @@ def octree_partition(
     return cells
 
 
+def _process_single_cell(
+    cell_positions: np.ndarray,
+    cell_normals: np.ndarray,
+    cell_scales: np.ndarray,
+    cell_rots: np.ndarray,
+    strict_min: np.ndarray,
+    strict_max: np.ndarray,
+    config: ResolvedConfig,
+) -> tuple[list[Hull], list[tuple[int, list[Hull]]]] | None:
+    raw_cell_positions = cell_positions
+    if config.splat_surface_ratio > 0:
+        cell_positions = inflate_splat_points(
+            cell_positions,
+            cell_scales,
+            cell_rots,
+            config.splat_surface_ratio,
+            log_scale=config.splat_scale_is_log,
+        )
+        cell_normals = np.tile(cell_normals, (5, 1))
+
+    cell_result_mesh = poisson_reconstruct(
+        cell_positions, cell_normals, config, isolate=True
+    )
+    if cell_result_mesh is None:
+        return None
+    cell_verts, cell_tris = cell_result_mesh
+
+    if len(cell_tris) < 4:
+        return None
+
+    cell_verts, cell_tris = post_poisson_filter(
+        cell_verts, cell_tris, raw_cell_positions, config
+    )
+    if len(cell_tris) < 4:
+        return None
+
+    flat, flat_normal = (
+        is_flat_mesh(cell_verts, cell_tris, config.flatness_threshold)
+        if config.flatness_threshold > 0
+        else (False, None)
+    )
+    if flat:
+        box_hull = make_planar_box(cell_verts, flat_normal)
+        cell_result = ExtractionResult(
+            hulls=[box_hull],
+            source_vertex_count=len(cell_positions),
+            mesh_vertex_count=len(cell_verts),
+        )
+    else:
+        cell_result = decompose_and_build(
+            cell_verts,
+            cell_tris,
+            len(cell_positions),
+            len(cell_verts),
+            config,
+        )
+
+    hulls = [
+        h for h in cell_result.hulls if aabb_overlaps_bounds(h, strict_min, strict_max)
+    ]
+    lod_entries: list[tuple[int, list[Hull]]] = []
+    if cell_result.lod_tiers:
+        for tier_idx, tier in enumerate(cell_result.lod_tiers):
+            tier_hulls = [
+                h for h in tier.hulls if aabb_overlaps_bounds(h, strict_min, strict_max)
+            ]
+            if tier_hulls:
+                lod_entries.append((tier_idx, tier_hulls))
+
+    return hulls, lod_entries
+
+
 def extract_spatial(
     positions: np.ndarray,
     normals: np.ndarray,
@@ -139,6 +210,9 @@ def extract_spatial(
     config: ResolvedConfig,
     plan: BuildPlan,
 ) -> ExtractionResult:
+    import os
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
     linear_scales = np.exp(scales) if config.splat_scale_is_log else scales
     max_radii = np.max(linear_scales, axis=1)
 
@@ -152,6 +226,11 @@ def extract_spatial(
     lod_buckets: dict[int, list[Hull]] = {}
     cell_paddings: list[float] = []
 
+    cell_tasks: list[
+        tuple[
+            int, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+        ]
+    ] = []
     for cell_idx, cell in enumerate(cells):
         cell_radii = max_radii[cell.indices]
         cell_p95 = float(np.percentile(cell_radii, 95)) if len(cell_radii) > 0 else 0
@@ -168,76 +247,54 @@ def extract_spatial(
             & (positions[:, 2] <= padded_max[2])
         )
         cell_positions = positions[padded_mask]
+        if len(cell_positions) < 100:
+            continue
         cell_normals = normals[padded_mask]
         cell_scales = scales[padded_mask]
         cell_rots = rots[padded_mask]
-
-        if len(cell_positions) < 100:
-            continue
-
-        raw_cell_positions = cell_positions
-        if config.splat_surface_ratio > 0:
-            cell_positions = inflate_splat_points(
+        cell_tasks.append(
+            (
+                cell_idx,
                 cell_positions,
+                cell_normals,
                 cell_scales,
                 cell_rots,
-                config.splat_surface_ratio,
-                log_scale=config.splat_scale_is_log,
+                cell.bounds_min.copy(),
+                cell.bounds_max.copy(),
             )
-            cell_normals = np.tile(cell_normals, (5, 1))
-
-        cell_result_mesh = poisson_reconstruct(
-            cell_positions, cell_normals, config, isolate=True
         )
-        if cell_result_mesh is None:
-            continue
-        cell_verts, cell_tris = cell_result_mesh
 
-        if len(cell_tris) < 4:
-            continue
+    max_workers = min(os.cpu_count() or 1, len(cell_tasks), 8)
+    plan.detected["parallel_workers"] = max_workers
 
-        cell_verts, cell_tris = post_poisson_filter(
-            cell_verts, cell_tris, raw_cell_positions, config
-        )
-        if len(cell_tris) < 4:
-            continue
-
-        flat, flat_normal = (
-            is_flat_mesh(cell_verts, cell_tris, config.flatness_threshold)
-            if config.flatness_threshold > 0
-            else (False, None)
-        )
-        if flat:
-            box_hull = make_planar_box(cell_verts, flat_normal)
-            cell_result = ExtractionResult(
-                hulls=[box_hull],
-                source_vertex_count=len(cell_positions),
-                mesh_vertex_count=len(cell_verts),
-            )
-        else:
-            cell_result = decompose_and_build(
-                cell_verts,
-                cell_tris,
-                len(cell_positions),
-                len(cell_verts),
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for cell_idx, c_pos, c_norm, c_sc, c_rot, s_min, s_max in cell_tasks:
+            f = executor.submit(
+                _process_single_cell,
+                c_pos,
+                c_norm,
+                c_sc,
+                c_rot,
+                s_min,
+                s_max,
                 config,
             )
+            futures[f] = cell_idx
 
-        strict_min = cell.bounds_min
-        strict_max = cell.bounds_max
-
-        for hull in cell_result.hulls:
-            if aabb_overlaps_bounds(hull, strict_min, strict_max):
+        for future in as_completed(futures):
+            cell_idx = futures[future]
+            result = future.result()
+            if result is None:
+                continue
+            hulls, lod_entries = result
+            for hull in hulls:
                 all_hulls.append(hull)
                 hull_cell_map.append(cell_idx)
-
-        if cell_result.lod_tiers:
-            for tier_idx, tier in enumerate(cell_result.lod_tiers):
+            for tier_idx, tier_hulls in lod_entries:
                 if tier_idx not in lod_buckets:
                     lod_buckets[tier_idx] = []
-                for hull in tier.hulls:
-                    if aabb_overlaps_bounds(hull, strict_min, strict_max):
-                        lod_buckets[tier_idx].append(hull)
+                lod_buckets[tier_idx].extend(tier_hulls)
 
     if config.seam_repair and len(cells) > 1:
         from chitin.stages.repair import seam_repair_pass

@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import struct
 from pathlib import Path
 
@@ -111,6 +110,42 @@ def test_validate_truncated(tmp_path):
     assert any("too small" in i.message for i in issues)
 
 
+def test_validate_rejects_unknown_version(tmp_path):
+    path = tmp_path / "future.phys"
+    path.write_bytes(b"PHYS" + struct.pack("<HHIIIIII", 999, 0, 0, 0, 0, 32, 32, 32))
+
+    issues = validate_phys(path)
+    assert any("unsupported version" in i.message for i in issues)
+
+    with pytest.raises(ValueError, match="unsupported .*version"):
+        read_phys(path)
+
+
+def test_validate_rejects_unknown_flags(tmp_path):
+    path = tmp_path / "flags.phys"
+    path.write_bytes(b"PHYS" + struct.pack("<HHIIIIII", 3, 0x8000, 0, 0, 0, 32, 32, 32))
+
+    issues = validate_phys(path)
+    assert any("unknown flags" in i.message for i in issues)
+
+    with pytest.raises(ValueError, match="unknown flags"):
+        read_phys(path)
+
+
+def test_validate_rejects_trailing_bytes(tmp_path):
+    path = tmp_path / "trailing.phys"
+    path.write_bytes(
+        b"PHYS" + struct.pack("<HHIIIIII", 3, 0, 0, 0, 0, 32, 32, 32) + b"junk"
+    )
+
+    issues = validate_phys(path)
+    assert any("trailing bytes" in i.message for i in issues)
+    assert any(i.severity == "error" for i in issues)
+
+    with pytest.raises(ValueError, match="trailing bytes"):
+        read_phys(path)
+
+
 @needs_core
 def test_validate_bad_offsets(box_mesh, tmp_path):
     verts, faces = box_mesh
@@ -124,6 +159,9 @@ def test_validate_bad_offsets(box_mesh, tmp_path):
 
     issues = validate_phys(path)
     assert any("hull_table_offset" in i.message for i in issues)
+
+    with pytest.raises(ValueError, match="hull_table_offset"):
+        read_phys(path)
 
 
 @needs_core

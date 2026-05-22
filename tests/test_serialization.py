@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import json
 import struct
 

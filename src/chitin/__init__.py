@@ -1,5 +1,11 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 """Convex collision geometry from point clouds, meshes, and gaussian splats."""
+
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("chitin")
+except PackageNotFoundError:
+    __version__ = "0.1.0"
 
 from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
@@ -23,6 +29,7 @@ def __getattr__(name):
 
 
 __all__ = [
+    "__version__",
     "BoneInfo",
     "BuildPlan",
     "Config",

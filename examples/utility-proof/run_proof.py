@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 """Run chitin against utility-proof datasets and produce structured reports.
 
 Usage:

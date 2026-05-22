@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from chitin.verify.seam import find_hull_seam_snags
 from chitin.verify.sweep import SweepResult, sweep
 

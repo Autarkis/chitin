@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
 import os
@@ -82,7 +81,7 @@ def check(path: Path, sys_info: SystemInfo | None = None) -> PreflightResult:
             message=(
                 f"{vertex_count:,} vertices needs ~{ram_needed:.1f}GB RAM "
                 f"but only {info.ram_gb:.1f}GB available — "
-                f"use --cloud or reduce input size"
+                f"use --force to run anyway, or reduce input size"
             ),
             estimated_minutes=est_minutes,
         )
@@ -93,7 +92,7 @@ def check(path: Path, sys_info: SystemInfo | None = None) -> PreflightResult:
             message=(
                 f"{vertex_count:,} vertices on {info.cores} cores / "
                 f"{info.ram_gb:.1f}GB RAM — estimated {est_minutes:.0f}+ min, "
-                f"consider --cloud for large inputs"
+                f"this may take a while"
             ),
             estimated_minutes=est_minutes,
         )

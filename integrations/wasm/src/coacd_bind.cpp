@@ -1,4 +1,3 @@
-// Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 #include <emscripten/bind.h>
 #include <coacd.h>
 #include <vector>

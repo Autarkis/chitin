@@ -63,7 +63,7 @@ src/chitin_service/
 
 Public API surface unchanged: `extract`, `extract_from_arrays`, `extract_from_mesh`, `extract_from_rigged_mesh`, `Config`, `ExtractionResult`, `BuildPlan`, `read_phys`, `validate_phys`.
 
-The service still has hardcoded `poisson_depth=8` in three places — the next step is wiring it through `resolve_config()`.
+Service `poisson_depth` defaults to `None` (auto-resolved). The service worker writes `report.json` per job but doesn't yet produce the full artifact bundle — wiring `export_bundle` into the worker is a follow-up.
 
 ## Pre-refactor state (for reference)
 

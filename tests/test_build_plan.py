@@ -1,6 +1,12 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import numpy as np
 import pytest
+
+from chitin import (
+    Config,
+    extract_from_arrays,
+    extract_from_mesh,
+    extract_from_rigged_mesh,
+)
 
 try:
     import open3d  # noqa: F401
@@ -9,13 +15,6 @@ try:
 except ImportError:
     _HAS_OPEN3D = False
 requires_open3d = pytest.mark.skipif(not _HAS_OPEN3D, reason="requires chitin[splat]")
-
-from chitin import (
-    Config,
-    extract_from_arrays,
-    extract_from_mesh,
-    extract_from_rigged_mesh,
-)
 
 
 def test_mesh_plan(box_mesh):

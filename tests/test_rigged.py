@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 import numpy as np
 
 from chitin import Config, extract_from_rigged_mesh

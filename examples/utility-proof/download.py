@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 """Download utility-proof datasets from datasets.toml manifest.
 
 Usage:

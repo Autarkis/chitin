@@ -9,7 +9,7 @@ It takes messy, heterogeneous 3D input -- gaussian splats, photogrammetry scans,
 `.phys` is the contract. A binary sidecar that is:
 
 - **Explicit**: every hull, bone assignment, and quantization parameter is inspectable. No opaque engine-specific blobs.
-- **Versioned**: format version in the header, layout invariants documented, readers reject unknown versions.
+- **Versioned**: format version in the header, layout invariants documented, and the Python/TypeScript readers reject unknown versions and flags.
 - **Portable**: identical dequantization in Python, TypeScript, C#, and C++. Author once, ship everywhere.
 - **Validated**: `chitin validate` checks structural integrity, offset consistency, index bounds, AABB sanity, and bind-pose block completeness before anything touches a physics engine.
 
@@ -166,5 +166,12 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 - Not a physics engine. It produces collider geometry; something else simulates it.
 - Not a splat viewer or walk-mode runtime. It compiles collider artifacts; viewer UX, seed picking, and camera navigation belong upstream or downstream.
 - Not a mesh optimizer. It does not simplify or retopologize visual meshes. Collision LOD tiers are fresh decompositions at different concavity thresholds, not decimations.
-- Not a cloud service (yet). The build service is local-first. Cloud is a deployment decision, not an architecture one.
 - Not a format converter. `.phys` is the primary output. JSON and USD are companions for ecosystems that need them.
+
+## Maturity
+
+The Python compiler, `.phys` format, and Python/TypeScript readers are tested on every change with golden fixtures. The Python/TypeScript readers reject unknown versions, unknown flags, and trailing data after known blocks. Config validation fails fast on invalid inputs before reaching CoACD or Open3D.
+
+The build service (`chitin-service`) is alpha: synchronous, single-process, exposes a subset of compiler knobs, and does not yet produce the full artifact bundle. The Unity reader (`com.chitin.physics`) and Unreal importer (`ChitinImporter`) parse the happy path but do not enforce the full set of structural invariants that the Python validator checks. Cross-runtime conformance tests are planned but not yet in place.
+
+Rigged GLTF support is experimental (single-primitive, packed accessors). FBX ingest routes through `chitin convert` (Blender headless).

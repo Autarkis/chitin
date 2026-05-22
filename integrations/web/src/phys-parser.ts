@@ -2,6 +2,10 @@ const MAGIC = 0x53594850; // "PHYS" little-endian
 const HEADER_SIZE = 32;
 const FLAG_HAS_BONES = 0x01;
 const FLAG_HAS_BIND_POSES = 0x02;
+const FLAG_HAS_LOD = 0x04;
+const KNOWN_FLAGS = FLAG_HAS_BONES | FLAG_HAS_BIND_POSES | FLAG_HAS_LOD;
+const LOD_TIER_HEADER_SIZE = 24;
+const SUPPORTED_VERSIONS = new Set([2, 3]);
 
 export interface PhysHull {
   vertices: Float32Array; // (N*3) dequantized xyz
@@ -23,10 +27,16 @@ export interface PhysFile {
   bones: PhysBone[];
   hasBones: boolean;
   hasBindPoses: boolean;
+  hasLod: boolean;
 }
 
 export function parsePhys(buffer: ArrayBuffer): PhysFile {
   const view = new DataView(buffer);
+  const byteLength = buffer.byteLength;
+
+  if (byteLength < HEADER_SIZE) {
+    throw new Error(`file too small: ${byteLength} bytes`);
+  }
 
   const magic = view.getUint32(0, true);
   if (magic !== MAGIC) {
@@ -42,14 +52,36 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
   const vertexDataOff = view.getUint32(24, true);
   const indexDataOff = view.getUint32(28, true);
 
+  if (!SUPPORTED_VERSIONS.has(version)) {
+    throw new Error(`unsupported .phys version ${version}`);
+  }
+  const unknownFlags = flags & ~KNOWN_FLAGS;
+  if (unknownFlags !== 0) {
+    throw new Error(`unknown flags 0x${unknownFlags.toString(16)}`);
+  }
+
   const hasBones = (flags & FLAG_HAS_BONES) !== 0;
   const hasBindPoses = (flags & FLAG_HAS_BIND_POSES) !== 0;
+  const hasLod = (flags & FLAG_HAS_LOD) !== 0;
   const descSize = hasBones ? 44 : 40;
+
+  const expectedVertexOff = hullTableOff + hullCount * descSize;
+  const expectedIndexOff = vertexDataOff + totalVerts * 6;
+  if (hullTableOff !== HEADER_SIZE) {
+    throw new Error(`bad hull table offset: ${hullTableOff}`);
+  }
+  if (vertexDataOff !== expectedVertexOff) {
+    throw new Error(`bad vertex data offset: ${vertexDataOff}`);
+  }
+  if (indexDataOff !== expectedIndexOff) {
+    throw new Error(`bad index data offset: ${indexDataOff}`);
+  }
 
   const hulls: PhysHull[] = [];
 
   for (let i = 0; i < hullCount; i++) {
     const off = hullTableOff + i * descSize;
+    requireBytes(byteLength, off, descSize, `hull ${i} descriptor`);
     const vOff = view.getUint32(off, true);
     const vCount = view.getUint32(off + 4, true);
     const iOff = view.getUint32(off + 8, true);
@@ -74,6 +106,7 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
 
     const vertices = new Float32Array(vCount * 3);
     const qOff = vertexDataOff + vOff * 6;
+    requireBytes(byteLength, qOff, vCount * 6, `hull ${i} vertices`);
     for (let v = 0; v < vCount; v++) {
       for (let c = 0; c < 3; c++) {
         const q = view.getInt16(qOff + (v * 3 + c) * 2, true);
@@ -84,6 +117,7 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     }
 
     const idxOff = indexDataOff + iOff * 2;
+    requireBytes(byteLength, idxOff, iCount * 2, `hull ${i} indices`);
     const indices = new Uint16Array(iCount);
     for (let t = 0; t < iCount; t++) {
       indices[t] = view.getUint16(idxOff + t * 2, true);
@@ -93,25 +127,64 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
   }
 
   const bones: PhysBone[] = [];
+  let nextBlockOff = indexDataOff + totalIdx * 2;
   if (hasBindPoses) {
-    let bOff = indexDataOff + totalIdx * 2;
+    let bOff = nextBlockOff;
+    requireBytes(byteLength, bOff, 4, "bone count");
     const boneCount = view.getUint32(bOff, true);
     bOff += 4;
     const decoder = new TextDecoder("utf-8");
 
     for (let b = 0; b < boneCount; b++) {
+      requireBytes(byteLength, bOff, 64, `bone ${b} bind transform`);
       const bindTransform = new Float32Array(16);
       for (let f = 0; f < 16; f++) {
         bindTransform[f] = view.getFloat32(bOff + f * 4, true);
       }
       bOff += 64;
+      requireBytes(byteLength, bOff, 2, `bone ${b} name length`);
       const nameLen = view.getUint16(bOff, true);
       bOff += 2;
+      requireBytes(byteLength, bOff, nameLen, `bone ${b} name`);
       const name = decoder.decode(new Uint8Array(buffer, bOff, nameLen));
       bOff += nameLen;
       bones.push({ name, bindTransform });
     }
+    nextBlockOff = bOff;
   }
 
-  return { version, flags, hulls, bones, hasBones, hasBindPoses };
+  if (hasLod) {
+    requireBytes(byteLength, nextBlockOff, 4, "LOD tier count");
+    const tierCount = view.getUint32(nextBlockOff, true);
+    nextBlockOff += 4;
+    for (let tier = 0; tier < tierCount; tier++) {
+      requireBytes(
+        byteLength,
+        nextBlockOff,
+        LOD_TIER_HEADER_SIZE,
+        `LOD tier ${tier} header`
+      );
+      const dataSize = view.getUint32(nextBlockOff + 16, true);
+      nextBlockOff += LOD_TIER_HEADER_SIZE;
+      requireBytes(byteLength, nextBlockOff, dataSize, `LOD tier ${tier} data`);
+      nextBlockOff += dataSize;
+    }
+  }
+
+  if (byteLength !== nextBlockOff) {
+    throw new Error(`${byteLength - nextBlockOff} trailing bytes after end of data`);
+  }
+
+  return { version, flags, hulls, bones, hasBones, hasBindPoses, hasLod };
+}
+
+function requireBytes(
+  byteLength: number,
+  offset: number,
+  size: number,
+  label: string
+): void {
+  if (offset < 0 || size < 0 || offset + size > byteLength) {
+    throw new Error(`${label} truncated`);
+  }
 }

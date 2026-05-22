@@ -11,12 +11,25 @@ function loadFixture(path = FIXTURE): ArrayBuffer {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 }
 
+function makeHeader(version = 3, flags = 0, extraBytes = 0): ArrayBuffer {
+  const buf = new ArrayBuffer(32 + extraBytes);
+  const view = new DataView(buf);
+  view.setUint32(0, 0x53594850, true);
+  view.setUint16(4, version, true);
+  view.setUint16(6, flags, true);
+  view.setUint32(20, 32, true);
+  view.setUint32(24, 32, true);
+  view.setUint32(28, 32, true);
+  return buf;
+}
+
 describe("parsePhys", () => {
   it("reads header correctly", () => {
     const phys = parsePhys(loadFixture());
     expect(phys.version).toBe(2);
     expect(phys.hasBones).toBe(true);
     expect(phys.hasBindPoses).toBe(true);
+    expect(phys.hasLod).toBe(false);
     expect(phys.hulls).toHaveLength(1);
     expect(phys.bones).toHaveLength(1);
   });
@@ -95,5 +108,27 @@ describe("parsePhys", () => {
     const bad = new ArrayBuffer(32);
     new Uint8Array(bad).set([0x4e, 0x4f, 0x50, 0x45]); // "NOPE"
     expect(() => parsePhys(bad)).toThrow("bad magic");
+  });
+
+  it("rejects unknown versions", () => {
+    expect(() => parsePhys(makeHeader(999))).toThrow("unsupported .phys version");
+  });
+
+  it("rejects unknown flags", () => {
+    expect(() => parsePhys(makeHeader(3, 0x8000))).toThrow("unknown flags");
+  });
+
+  it("rejects trailing bytes", () => {
+    expect(() => parsePhys(makeHeader(3, 0, 4))).toThrow("trailing bytes");
+  });
+
+  it("skips LOD blocks structurally", () => {
+    const buf = makeHeader(3, 0x04, 4);
+    const view = new DataView(buf);
+    view.setUint32(32, 0, true); // zero additional LOD tiers
+
+    const phys = parsePhys(buf);
+    expect(phys.hasLod).toBe(true);
+    expect(phys.hulls).toHaveLength(0);
   });
 });

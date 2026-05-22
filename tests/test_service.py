@@ -1,5 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
-
 import pytest
 import trimesh
 from fastapi.testclient import TestClient

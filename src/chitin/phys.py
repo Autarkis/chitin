@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 from __future__ import annotations
 
 import struct
@@ -12,6 +11,8 @@ HEADER_SIZE = 32
 FLAG_HAS_BONES = 0x01
 FLAG_HAS_BIND_POSES = 0x02
 FLAG_HAS_LOD = 0x04
+KNOWN_FLAGS = FLAG_HAS_BONES | FLAG_HAS_BIND_POSES | FLAG_HAS_LOD
+SUPPORTED_VERSIONS = {2, 3}
 
 LOD_TIER_HEADER_SIZE = 24
 
@@ -110,8 +111,39 @@ def read_phys(path: str | Path) -> PhysFile:
         index_data_off,
     ) = struct.unpack_from("<HHIIIIII", data, 4)
 
+    if version not in SUPPORTED_VERSIONS:
+        raise ValueError(
+            f"unsupported .phys version {version} "
+            f"(supported: {sorted(SUPPORTED_VERSIONS)})"
+        )
+
+    unknown_flags = flags & ~KNOWN_FLAGS
+    if unknown_flags:
+        raise ValueError(f"unknown flags 0x{unknown_flags:04x} in .phys header")
+
     has_bones = bool(flags & FLAG_HAS_BONES)
     desc_size = _descriptor_size(flags)
+
+    if hull_table_off != HEADER_SIZE:
+        raise ValueError(
+            f"hull_table_offset {hull_table_off} != expected {HEADER_SIZE}"
+        )
+
+    expected_vertex_off = hull_table_off + hull_count * desc_size
+    if vertex_data_off != expected_vertex_off:
+        raise ValueError(
+            f"vertex_data_offset {vertex_data_off} != expected {expected_vertex_off}"
+        )
+
+    expected_index_off = vertex_data_off + total_verts * 6
+    if index_data_off != expected_index_off:
+        raise ValueError(
+            f"index_data_offset {index_data_off} != expected {expected_index_off}"
+        )
+
+    expected_min = index_data_off + total_idx * 2
+    if len(data) < expected_min:
+        raise ValueError(f"file truncated: {len(data)} bytes < minimum {expected_min}")
 
     hulls: list[PhysHull] = []
     off = hull_table_off
@@ -228,6 +260,12 @@ def read_phys(path: str | Path) -> PhysFile:
 
             lod_tiers.append(LodTier(concavity=t_concavity, hulls=tier_hulls))
             lod_off += t_data_size
+        next_block_off = lod_off
+
+    if len(data) > next_block_off:
+        raise ValueError(
+            f"{len(data) - next_block_off} trailing bytes after end of data"
+        )
 
     return PhysFile(
         version=version, flags=flags, hulls=hulls, bones=bones, lod_tiers=lod_tiers
@@ -263,6 +301,20 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
         vertex_data_off,
         index_data_off,
     ) = struct.unpack_from("<HHIIIIII", data, 4)
+
+    if version not in SUPPORTED_VERSIONS:
+        issues.append(
+            ValidationIssue(
+                "error",
+                f"unsupported version {version} "
+                f"(supported: {sorted(SUPPORTED_VERSIONS)})",
+            )
+        )
+        return issues
+
+    unknown_flags = flags & ~KNOWN_FLAGS
+    if unknown_flags:
+        issues.append(ValidationIssue("error", f"unknown flags 0x{unknown_flags:04x}"))
 
     has_bones = bool(flags & FLAG_HAS_BONES)
     desc_size = _descriptor_size(flags)
@@ -564,5 +616,16 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
                 )
 
             lod_off += t_data_size
+
+        next_block_off = lod_off
+
+    if len(data) > next_block_off:
+        trailing = len(data) - next_block_off
+        issues.append(
+            ValidationIssue(
+                "error",
+                f"{trailing} trailing bytes after end of data",
+            )
+        )
 
     return issues

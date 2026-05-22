@@ -1,5 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
-
 from fastapi.testclient import TestClient
 
 from chitin_service.app import app, set_store

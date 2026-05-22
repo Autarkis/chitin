@@ -1,4 +1,3 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
 """Subprocess worker for crash-isolated Poisson reconstruction."""
 
 import sys
