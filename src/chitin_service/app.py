@@ -166,11 +166,19 @@ async def submit_job(
     )
     store.create_job(job)
 
-    store.save_input(job_id, data, filename)
+    input_path = store.save_input(job_id, data, filename)
     job.transition(JobStatus.UPLOADED)
     store.update_job(job)
 
-    job.transition(JobStatus.PREFLIGHTED, "passed")
+    from chitin.preflight import check as preflight_check
+
+    pf = preflight_check(input_path)
+    if pf.level == "red":
+        job.transition(JobStatus.REJECTED, pf.message)
+        store.update_job(job)
+        raise HTTPException(413, pf.message)
+
+    job.transition(JobStatus.PREFLIGHTED, pf.level)
     store.update_job(job)
 
     job.transition(JobStatus.QUEUED)

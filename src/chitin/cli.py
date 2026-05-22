@@ -293,104 +293,76 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             run_post_process(hook_cmd, args.input, quiet=args.quiet)
 
 
-MESH_EXTENSIONS = {".obj", ".stl", ".off", ".glb", ".gltf", ".fbx"}
-SKINNED_EXTENSIONS = {".glb", ".gltf", ".fbx"}
-
-
 def _cmd_check(args: argparse.Namespace) -> None:
+    from chitin.analyze import analyze_input
+
     path = Path(args.input)
     if not path.exists():
         print(f"chitin: {path} not found", file=sys.stderr)
         sys.exit(1)
 
-    suffix = path.suffix.lower()
     file_size = path.stat().st_size
     print(f"file:       {path.name}")
-    print(f"format:     {suffix.lstrip('.')}")
+    print(f"format:     {path.suffix.lower().lstrip('.')}")
     print(f"size:       {file_size / 1024:.0f} KB")
 
-    if suffix == ".ply":
-        _check_ply(path)
-    elif suffix in MESH_EXTENSIONS:
-        _check_mesh(path, suffix)
-    elif suffix in (".usd", ".usda", ".usdc"):
-        print("type:       mesh (USD)")
-        print("path:       server  (pip install chitin)")
-        print("reason:     USD input requires Python pipeline")
-    else:
-        print(f"chitin: unsupported format: {suffix}", file=sys.stderr)
+    try:
+        analysis = analyze_input(path)
+    except ValueError as e:
+        print(f"chitin: {e}", file=sys.stderr)
         sys.exit(1)
 
+    _print_analysis(analysis)
 
-def _check_ply(path: Path) -> None:
-    from plyfile import PlyData
 
-    ply = PlyData.read(str(path))
-    vertex = ply["vertex"]
-    n_verts = len(vertex.data)
-    names = set(vertex.data.dtype.names)
+def _print_analysis(analysis) -> None:
+    from chitin.analyze import InputAnalysis
 
-    has_faces = "face" in {e.name for e in ply.elements} and len(ply["face"].data) > 0
-    has_opacity = "opacity" in names
-    has_scales = all(f"scale_{i}" in names for i in range(3))
-    has_rots = all(f"rot_{i}" in names for i in range(4))
-    has_covariance = has_scales and has_rots
-    is_splat = has_covariance or has_opacity
+    a: InputAnalysis = analysis
 
-    print(f"vertices:   {n_verts:,}")
-    if has_faces:
-        print(f"faces:      {len(ply['face'].data):,}")
-    print(f"opacity:    {'yes' if has_opacity else 'no'}")
-    print(f"covariance: {'yes (scale + rotation)' if has_covariance else 'no'}")
+    print(f"vertices:   {a.point_count:,}")
+    if a.face_count is not None:
+        print(f"faces:      {a.face_count:,}")
+    if a.has_opacity or a.has_covariance:
+        print(f"opacity:    {'yes' if a.has_opacity else 'no'}")
+        print(f"covariance: {'yes (scale + rotation)' if a.has_covariance else 'no'}")
+    if a.is_manifold is not None:
+        print(f"manifold:   {'yes' if a.is_manifold else 'no'}")
+
+    is_splat = a.has_covariance or a.has_opacity
+    needs_poisson = is_splat or (a.face_count is None and not is_splat)
 
     if is_splat:
         print("type:       gaussian splat point cloud")
         print("path:       server  (pip install chitin[splat])")
         print("reason:     splat data requires Poisson reconstruction (Open3D)")
-    elif has_faces:
-        n_faces = len(ply["face"].data)
-        print("type:       mesh")
-        _print_mesh_recommendation(n_verts, n_faces)
-    else:
+    elif a.face_count is None:
         print("type:       plain point cloud")
         print("path:       server  (pip install chitin[splat])")
         print("reason:     point cloud requires Poisson reconstruction (Open3D)")
-
-    from chitin.preflight import detect_environment_hints
-
-    hints = detect_environment_hints(path)
-    if hints:
-        for hint in hints:
-            print(f"hint:       {hint}")
-
-
-def _check_mesh(path: Path, suffix: str) -> None:
-    import trimesh
-
-    loaded = trimesh.load(str(path), force="mesh")
-    n_verts = len(loaded.vertices)
-    n_faces = len(loaded.faces)
-    is_skinned = suffix in SKINNED_EXTENSIONS
-
-    print(f"vertices:   {n_verts:,}")
-    print(f"faces:      {n_faces:,}")
-
-    if is_skinned:
+    elif a.is_skinned:
         print("type:       mesh (possibly rigged)")
-
-    is_watertight = getattr(loaded, "is_watertight", False)
-    print(f"manifold:   {'yes' if is_watertight else 'no'}")
-
-    if is_skinned and not is_watertight:
+        if not a.is_manifold:
+            print("path:       server  (pip install chitin)")
+            print("reason:     rigged or non-manifold mesh needs Python pipeline")
+        else:
+            _print_mesh_path(a.is_manifold)
+    elif a.format in ("usd", "usda", "usdc"):
+        print("type:       mesh (USD)")
         print("path:       server  (pip install chitin)")
-        print("reason:     rigged or non-manifold mesh needs Python pipeline")
+        print("reason:     USD input requires Python pipeline")
     else:
-        _print_mesh_recommendation(n_verts, n_faces, is_watertight)
+        print("type:       mesh")
+        _print_mesh_path(a.is_manifold or False)
+
+    if a.is_environment_likely:
+        print(
+            "hint:       point distribution looks like an environment scan "
+            "(hollow shell) — consider --thin-shell --proximity-filter 5.0"
+        )
 
 
-def _print_mesh_recommendation(
-    n_verts: int, n_faces: int, is_watertight: bool = False
-) -> None:
+def _print_mesh_path(is_watertight: bool) -> None:
     if is_watertight:
         print("path:       either")
         print("  server:   pip install chitin")
