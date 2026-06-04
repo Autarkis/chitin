@@ -208,6 +208,12 @@ def extract_from_arrays(
         vertices, triangles, source_count, len(vertices), _resolved, _plan=_plan
     )
 
+    if not _plan.detected.get("is_environment"):
+        from chitin.stages.occlusion import cull_occluded_hulls
+
+        result.hulls, occlusion_culled = cull_occluded_hulls(result.hulls)
+        _plan.detected["occlusion_culled"] = occlusion_culled
+
     from chitin.verify.coverage import coverage_report
 
     _plan.step("coverage")

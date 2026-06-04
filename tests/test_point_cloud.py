@@ -344,6 +344,72 @@ def _orient_quats_to_sphere(pts):
     return rots
 
 
+def _box_hull(center=(0.0, 0.0, 0.0), half=(1.0, 1.0, 1.0)):
+    from chitin.result import Hull
+
+    c = np.asarray(center, dtype=np.float32)
+    h = np.broadcast_to(np.asarray(half, dtype=np.float32), (3,))
+    signs = np.array(
+        [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)],
+        dtype=np.float32,
+    )
+    verts = c + h * signs
+    faces = np.array(
+        [
+            [0, 1, 3],
+            [0, 3, 2],
+            [4, 5, 7],
+            [4, 7, 6],
+            [0, 1, 5],
+            [0, 5, 4],
+            [2, 3, 7],
+            [2, 7, 6],
+            [0, 2, 6],
+            [0, 6, 4],
+            [1, 3, 7],
+            [1, 7, 5],
+        ],
+        dtype=np.uint32,
+    )
+    return Hull(vertices=verts, indices=faces.ravel())
+
+
+@requires_open3d
+def test_occlusion_culls_hull_buried_in_union():
+    from chitin.stages.occlusion import cull_occluded_hulls
+
+    # Two overlapping slabs whose union buries the small box; neither slab
+    # contains it alone, so single-hull containment culling cannot remove it.
+    slab_a = _box_hull(center=(-0.65, 0.0, 0.0), half=(1.35, 2.0, 2.0))
+    slab_b = _box_hull(center=(0.65, 0.0, 0.0), half=(1.35, 2.0, 2.0))
+    buried = _box_hull(half=(0.6, 0.6, 0.6))
+    distant = _box_hull(center=(10.0, 0.0, 0.0))
+
+    kept, culled = cull_occluded_hulls([slab_a, slab_b, buried, distant])
+    assert culled == 1
+    assert all(h is not buried for h in kept)
+    assert any(h is distant for h in kept)
+
+
+@requires_open3d
+def test_occlusion_keeps_separated_hulls():
+    from chitin.stages.occlusion import cull_occluded_hulls
+
+    hulls = [_box_hull(center=(i * 5.0, 0.0, 0.0)) for i in range(4)]
+    kept, culled = cull_occluded_hulls(hulls)
+    assert culled == 0
+    assert len(kept) == 4
+
+
+def test_occlusion_noop_on_single_hull():
+    from chitin.stages.occlusion import cull_occluded_hulls
+
+    hulls = [_box_hull()]
+    kept, culled = cull_occluded_hulls(hulls)
+    assert kept == hulls
+    assert culled == 0
+
+
 def _flip_half_quats(rots, rng):
     """Compose a 180-degree local-x rotation onto a random half of the
     quaternions, flipping the sign of the derived minor-axis normal."""

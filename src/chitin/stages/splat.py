@@ -400,6 +400,14 @@ def extract_spatial(
     pre_consolidate = len(all_hulls)
     all_hulls = consolidate_near_contained_hulls(all_hulls)
     plan.detected["consolidated"] = pre_consolidate - len(all_hulls)
+
+    if not plan.detected.get("is_environment"):
+        from chitin.stages.occlusion import cull_occluded_hulls
+
+        all_hulls, occlusion_culled = cull_occluded_hulls(all_hulls)
+        plan.detected["occlusion_culled"] = occlusion_culled
+        for tier_idx in lod_buckets:
+            lod_buckets[tier_idx], _ = cull_occluded_hulls(lod_buckets[tier_idx])
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx] = cull_contained_hulls(lod_buckets[tier_idx])
         lod_buckets[tier_idx] = consolidate_near_contained_hulls(lod_buckets[tier_idx])
