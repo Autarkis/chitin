@@ -143,6 +143,12 @@ def extract_from_arrays(
         _plan.step("opacity_filter")
         _plan.detected["filtered_vertices"] = int(mask.sum())
 
+    if has_covariance and normals is not None:
+        from chitin.stages.splat import orient_normals_consistently
+
+        normals = orient_normals_consistently(positions, normals)
+        _plan.step("orient_normals")
+
     raw_positions = positions
 
     if has_covariance and _resolved.splat_surface_ratio > 0:

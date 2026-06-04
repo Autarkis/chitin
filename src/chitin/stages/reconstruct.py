@@ -9,6 +9,10 @@ from chitin.resolve import ResolvedConfig
 _POISSON_WORKER_SCRIPT = Path(__file__).parent.parent / "_poisson_worker.py"
 
 
+class PoissonWorkerError(RuntimeError):
+    """Isolated Poisson worker failed; message carries exit code and stderr tail."""
+
+
 def poisson_reconstruct_inner(
     positions: np.ndarray,
     normals: np.ndarray | None,
@@ -53,7 +57,7 @@ def poisson_reconstruct(
     normals: np.ndarray | None,
     config: ResolvedConfig,
     isolate: bool = False,
-) -> tuple[np.ndarray, np.ndarray] | None:
+) -> tuple[np.ndarray, np.ndarray]:
     depth = config.poisson_depth
     dq = config.poisson_density_quantile
 
@@ -77,14 +81,29 @@ def poisson_reconstruct(
             save_dict["normals"] = normals
         np.savez(in_path, **save_dict)
 
-        result = subprocess.run(
-            [sys.executable, str(_POISSON_WORKER_SCRIPT), str(in_path), str(out_path)],
-            capture_output=True,
-            timeout=300,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(_POISSON_WORKER_SCRIPT),
+                    str(in_path),
+                    str(out_path),
+                ],
+                capture_output=True,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PoissonWorkerError("worker timeout after 300s") from exc
 
         if result.returncode != 0 or not out_path.exists():
-            return None
+            stderr_tail = ""
+            if result.stderr:
+                lines = result.stderr.decode(errors="replace").strip().splitlines()
+                if lines:
+                    stderr_tail = lines[-1][:160]
+            raise PoissonWorkerError(
+                f"worker exit {result.returncode}: {stderr_tail or 'no stderr'}"
+            )
 
         data = np.load(out_path)
         return data["vertices"], data["triangles"]

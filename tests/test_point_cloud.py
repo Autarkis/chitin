@@ -344,6 +344,64 @@ def _orient_quats_to_sphere(pts):
     return rots
 
 
+def _flip_half_quats(rots, rng):
+    """Compose a 180-degree local-x rotation onto a random half of the
+    quaternions, flipping the sign of the derived minor-axis normal."""
+    flipped = rots.copy()
+    mask = rng.random(len(rots)) < 0.5
+    w, x, y, z = rots[mask].T
+    flipped[mask] = np.column_stack([-x, w, z, -y])
+    return flipped, mask
+
+
+def test_flip_half_quats_flips_covariance_normals():
+    from chitin.stages.splat import normals_from_covariance
+
+    pts, scales, rots = _sphere_with_covariance(200)
+    rng = np.random.default_rng(11)
+    flipped_rots, mask = _flip_half_quats(rots, rng)
+
+    base = normals_from_covariance(scales, rots, log_scale=True)
+    flipped = normals_from_covariance(scales, flipped_rots, log_scale=True)
+    dots = np.sum(base * flipped, axis=1)
+    np.testing.assert_allclose(dots[mask], -1.0, atol=1e-9)
+    np.testing.assert_allclose(dots[~mask], 1.0, atol=1e-9)
+
+
+@requires_open3d
+def test_orient_normals_consistently_fixes_mixed_signs():
+    from chitin.stages.splat import orient_normals_consistently
+
+    rng = np.random.default_rng(5)
+    pts = rng.standard_normal((500, 3))
+    pts = pts / np.linalg.norm(pts, axis=1, keepdims=True)
+    signs = np.where(rng.random(500) < 0.5, 1.0, -1.0)
+    mixed = pts * signs[:, np.newaxis]
+
+    oriented = orient_normals_consistently(pts, mixed)
+
+    # directions preserved, only signs may change
+    dots = np.sum(oriented * pts, axis=1)
+    np.testing.assert_allclose(np.abs(dots), 1.0, atol=1e-9)
+    # consistent: nearly all agree (global polarity is arbitrary)
+    frac_outward = float((dots > 0).mean())
+    assert frac_outward > 0.95 or frac_outward < 0.05
+
+
+@requires_open3d
+def test_mixed_sign_covariance_normals_still_extracts():
+    pts, scales, rots = _sphere_with_covariance(500)
+    rng = np.random.default_rng(11)
+    flipped_rots, _ = _flip_half_quats(rots, rng)
+
+    r = extract_from_arrays(
+        pts, scales=scales, rots=flipped_rots, config=Config(concavity=0.5)
+    )
+    assert len(r.hulls) >= 1
+    assert "orient_normals" in r.build_plan.pipeline
+    assert r.build_plan.detected["coverage"]["covered_fraction"] > 0.7
+
+
 def test_covariance_normals_match_sphere_surface():
     from chitin.stages.splat import normals_from_covariance
 
@@ -434,12 +492,17 @@ def test_spatial_plan_records_stage_deltas_and_coverage():
         assert key in detected
         assert detected[key] >= 0
 
+    reasons = detected.get("cell_failure_reasons", {})
+    assert sum(reasons.values()) == detected["cells_failed"]
+
     assert "coverage" in r.build_plan.pipeline
     coverage = detected["coverage"]
     assert coverage["input_count"] == 2000
     assert 0.0 <= coverage["covered_fraction"] <= 1.0
     assert coverage["cell_count"] > 1
-    assert 0.0 <= coverage["worst_decile_fraction"] <= coverage["covered_fraction"] + 1e-9
+    assert (
+        0.0 <= coverage["worst_decile_fraction"] <= coverage["covered_fraction"] + 1e-9
+    )
 
 
 @requires_open3d

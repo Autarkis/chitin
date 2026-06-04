@@ -7,7 +7,7 @@ from chitin.result import Hull
 from chitin.stages.decompose import aabb_overlaps_bounds
 from chitin.stages.filter import post_poisson_filter
 from chitin.stages.flatness import is_flat_mesh, make_planar_box
-from chitin.stages.reconstruct import poisson_reconstruct
+from chitin.stages.reconstruct import PoissonWorkerError, poisson_reconstruct
 from chitin.stages.splat import OctreeCell, inflate_splat_points
 
 
@@ -64,10 +64,11 @@ def extract_cell_hulls(
         )
         cell_normals = np.tile(cell_normals, (5, 1))
 
-    result_mesh = poisson_reconstruct(
-        cell_positions, cell_normals, config, isolate=True
-    )
-    if result_mesh is None:
+    try:
+        result_mesh = poisson_reconstruct(
+            cell_positions, cell_normals, config, isolate=True
+        )
+    except PoissonWorkerError:
         return []
     verts, tris = result_mesh
     if len(tris) < 4:

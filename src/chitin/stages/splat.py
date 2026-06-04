@@ -14,7 +14,7 @@ from chitin.stages.decompose import (
 )
 from chitin.stages.filter import post_poisson_filter
 from chitin.stages.flatness import is_flat_mesh, make_planar_box
-from chitin.stages.reconstruct import poisson_reconstruct
+from chitin.stages.reconstruct import PoissonWorkerError, poisson_reconstruct
 
 
 def quat_to_rotation_matrices(rots: np.ndarray) -> np.ndarray:
@@ -47,6 +47,31 @@ def normals_from_covariance(
     norms = np.linalg.norm(normals, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
     return normals / norms
+
+
+def orient_normals_consistently(
+    positions: np.ndarray, normals: np.ndarray, k: int = 10
+) -> np.ndarray:
+    """Sign-correct normals via consistent tangent-plane propagation.
+
+    Covariance normals carry the splat's minor-axis direction but an
+    arbitrary sign, and Poisson reconstruction is sensitive to flips.
+    Keeps the directions, flips signs only (Hoppe et al. 1992 MST
+    propagation, via Open3D). No-op when open3d is unavailable.
+    """
+    try:
+        import open3d as o3d
+    except ImportError:
+        return normals
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(positions)
+    pcd.normals = o3d.utility.Vector3dVector(normals)
+    pcd.orient_normals_consistent_tangent_plane(k)
+    oriented = np.asarray(pcd.normals)
+    flip = np.einsum("ij,ij->i", oriented, normals) < 0
+    out = normals.copy()
+    out[flip] = -out[flip]
+    return out
 
 
 def inflate_splat_points(
@@ -138,7 +163,9 @@ def _process_single_cell(
     strict_min: np.ndarray,
     strict_max: np.ndarray,
     config: ResolvedConfig,
-) -> tuple[list[Hull], list[tuple[int, list[Hull]]]] | None:
+) -> tuple[list[Hull], list[tuple[int, list[Hull]]]] | str:
+    """Process one padded octree cell. Returns (hulls, lod_entries) on
+    success, or a failure-reason string for the build plan."""
     raw_cell_positions = cell_positions
     if config.splat_surface_ratio > 0:
         cell_positions = inflate_splat_points(
@@ -150,21 +177,22 @@ def _process_single_cell(
         )
         cell_normals = np.tile(cell_normals, (5, 1))
 
-    cell_result_mesh = poisson_reconstruct(
-        cell_positions, cell_normals, config, isolate=True
-    )
-    if cell_result_mesh is None:
-        return None
+    try:
+        cell_result_mesh = poisson_reconstruct(
+            cell_positions, cell_normals, config, isolate=True
+        )
+    except PoissonWorkerError as exc:
+        return f"poisson_failed: {exc}"
     cell_verts, cell_tris = cell_result_mesh
 
     if len(cell_tris) < 4:
-        return None
+        return "too_few_triangles"
 
     cell_verts, cell_tris = post_poisson_filter(
         cell_verts, cell_tris, raw_cell_positions, config
     )
     if len(cell_tris) < 4:
-        return None
+        return "filtered_out"
 
     flat, flat_normal = (
         is_flat_mesh(cell_verts, cell_tris, config.flatness_threshold)
@@ -270,6 +298,8 @@ def extract_spatial(
     plan.detected["parallel_workers"] = max_workers
     plan.detected["cells_skipped_sparse"] = cells_skipped_sparse
     cells_failed = 0
+    failure_reasons: dict[str, int] = {}
+    failed_cells: list[tuple[int, str]] = []
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -289,8 +319,8 @@ def extract_spatial(
         for future in as_completed(futures):
             cell_idx = futures[future]
             result = future.result()
-            if result is None:
-                cells_failed += 1
+            if isinstance(result, str):
+                failed_cells.append((cell_idx, result))
                 continue
             hulls, lod_entries = result
             for hull in hulls:
@@ -320,7 +350,38 @@ def extract_spatial(
         if repaired_count != 0:
             plan.detected["seam_repair_delta"] = len(all_hulls) - pre_repair
 
+    # Serial retry for poisson failures: worker segfaults are sporadic and
+    # load-dependent, so a second attempt without pool contention usually
+    # succeeds. Other failure kinds are deterministic; don't retry those.
+    task_by_idx = {t[0]: t for t in cell_tasks}
+    cells_retried = 0
+    for cell_idx, reason in failed_cells:
+        retried = None
+        if reason.startswith("poisson_failed") and cell_idx in task_by_idx:
+            cells_retried += 1
+            _, c_pos, c_norm, c_sc, c_rot, s_min, s_max = task_by_idx[cell_idx]
+            retried = _process_single_cell(
+                c_pos, c_norm, c_sc, c_rot, s_min, s_max, config
+            )
+        if retried is None or isinstance(retried, str):
+            final_reason = retried if isinstance(retried, str) else reason
+            cells_failed += 1
+            failure_reasons[final_reason] = failure_reasons.get(final_reason, 0) + 1
+            continue
+        retry_hulls, retry_lod_entries = retried
+        for hull in retry_hulls:
+            all_hulls.append(hull)
+            hull_cell_map.append(cell_idx)
+        for tier_idx, tier_hulls in retry_lod_entries:
+            if tier_idx not in lod_buckets:
+                lod_buckets[tier_idx] = []
+            lod_buckets[tier_idx].extend(tier_hulls)
+    if cells_retried:
+        plan.detected["cells_retried"] = cells_retried
+
     plan.detected["cells_failed"] = cells_failed
+    if failure_reasons:
+        plan.detected["cell_failure_reasons"] = failure_reasons
 
     pre_dedup = len(all_hulls)
     all_hulls = dedup_overlapping_hulls(all_hulls)

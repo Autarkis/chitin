@@ -46,6 +46,8 @@ Also fix the planar-box eigenvector sign in `stages/flatness.py` (orient against
 
 Success: phase 1 coverage and slack improve (or hold) on garden; add a synthetic two-sided-wall fixture that currently produces flipped normals.
 
+Status (2026-06-04): shipped. Garden coverage 87.5% to 95.9%, worst cell 14% to 59%. Orientation also fixed 3 of 8 silently-failing octree cells. The planar-box eigenvector sign in `stages/flatness.py` turned out to be a non-issue -- the box is symmetric along the normal. Follow-up finding: the remaining cell failures were sporadic Open3D worker segfaults under pool contention (exit -11); a serial retry pass after the pool drains recovers all of them, taking garden to 98.3% coverage with zero failed cells.
+
 ## Phase 3 -- union-occlusion hull culling
 
 `cull_contained_hulls` only removes a hull when a single other hull contains it. Scan-derived geometry produces junk hulls buried inside the union of several hulls -- never collidable, not contained by any one neighbor. The consolidation numbers (278 to 140) say this redundancy is large.
@@ -68,6 +70,10 @@ The evidence pass found zero tests for seam detection/repair, flatness detection
 - two-cell seam scene (exercises `verify/seam.py` and `stages/repair.py`)
 - hollow-shell environment scene (exercises auto-detection at the 5% boundary)
 - regression tests for the dedup ordering (2453f6d) and AABB reconciliation (bde64f0) fixes, which currently have one trivial test between them
+
+## Determinism (added 2026-06-04)
+
+Three identical garden builds produced 700 / 904 / 910 hulls. Part of that was the sporadic worker segfaults (now retried), but architecture.md promises "same input bytes + same config = same output bytes" and the coverage metric makes the gap measurable for the first time. Needs its own investigation: candidate sources are Open3D Poisson thread scheduling, `as_completed` ordering feeding the reconcile passes, and CoACD internals. Not blocking phases 3-4; tracked here so it doesn't get lost.
 
 ## Non-goals
 
