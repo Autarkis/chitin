@@ -411,6 +411,48 @@ def test_spatial_split_triggered():
     assert "reconciled_hulls" in r.build_plan.detected
 
 
+@requires_open3d
+def test_spatial_plan_records_stage_deltas_and_coverage():
+    rng = np.random.default_rng(42)
+    pts, scales, rots = _sphere_with_covariance(2000, rng=rng)
+    pts = pts * 5.0
+
+    r = extract_from_arrays(
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(concavity=0.5, spatial_split_threshold=500),
+    )
+    detected = r.build_plan.detected
+    for key in (
+        "dedup_removed",
+        "containment_culled",
+        "consolidated",
+        "cells_skipped_sparse",
+        "cells_failed",
+    ):
+        assert key in detected
+        assert detected[key] >= 0
+
+    assert "coverage" in r.build_plan.pipeline
+    coverage = detected["coverage"]
+    assert coverage["input_count"] == 2000
+    assert 0.0 <= coverage["covered_fraction"] <= 1.0
+    assert coverage["cell_count"] > 1
+    assert 0.0 <= coverage["worst_decile_fraction"] <= coverage["covered_fraction"] + 1e-9
+
+
+@requires_open3d
+def test_non_spatial_plan_records_coverage(sphere_points):
+    r = extract_from_arrays(
+        sphere_points, normals=sphere_points, config=Config(concavity=0.5)
+    )
+    coverage = r.build_plan.detected["coverage"]
+    assert coverage["input_count"] == len(sphere_points)
+    assert 0.0 <= coverage["covered_fraction"] <= 1.0
+    assert "coverage" in r.build_plan.pipeline
+
+
 def test_proximity_filter_removes_distant_vertices():
     from chitin.stages.filter import proximity_filter_mesh
 

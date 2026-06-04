@@ -201,6 +201,11 @@ def extract_from_arrays(
     result = decompose_and_build(
         vertices, triangles, source_count, len(vertices), _resolved, _plan=_plan
     )
+
+    from chitin.verify.coverage import coverage_report
+
+    _plan.step("coverage")
+    _plan.detected["coverage"] = coverage_report(result.hulls, raw_positions)
     return result
 
 
@@ -227,9 +232,15 @@ def extract_from_mesh(
             mesh_vertex_count=len(vertices),
             build_plan=_plan,
         )
-    return decompose_and_build(
+    result = decompose_and_build(
         vertices, faces, len(vertices), len(vertices), _resolved, _plan=_plan
     )
+
+    from chitin.verify.coverage import coverage_report
+
+    _plan.step("coverage")
+    _plan.detected["coverage"] = coverage_report(result.hulls, vertices)
+    return result
 
 
 def extract_from_rigged_mesh(

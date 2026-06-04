@@ -231,6 +231,7 @@ def extract_spatial(
             int, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
         ]
     ] = []
+    cells_skipped_sparse = 0
     for cell_idx, cell in enumerate(cells):
         cell_radii = max_radii[cell.indices]
         cell_p95 = float(np.percentile(cell_radii, 95)) if len(cell_radii) > 0 else 0
@@ -248,6 +249,7 @@ def extract_spatial(
         )
         cell_positions = positions[padded_mask]
         if len(cell_positions) < 100:
+            cells_skipped_sparse += 1
             continue
         cell_normals = normals[padded_mask]
         cell_scales = scales[padded_mask]
@@ -266,6 +268,8 @@ def extract_spatial(
 
     max_workers = min(os.cpu_count() or 1, len(cell_tasks), 8)
     plan.detected["parallel_workers"] = max_workers
+    plan.detected["cells_skipped_sparse"] = cells_skipped_sparse
+    cells_failed = 0
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -286,6 +290,7 @@ def extract_spatial(
             cell_idx = futures[future]
             result = future.result()
             if result is None:
+                cells_failed += 1
                 continue
             hulls, lod_entries = result
             for hull in hulls:
@@ -315,7 +320,11 @@ def extract_spatial(
         if repaired_count != 0:
             plan.detected["seam_repair_delta"] = len(all_hulls) - pre_repair
 
+    plan.detected["cells_failed"] = cells_failed
+
+    pre_dedup = len(all_hulls)
     all_hulls = dedup_overlapping_hulls(all_hulls)
+    plan.detected["dedup_removed"] = pre_dedup - len(all_hulls)
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx] = dedup_overlapping_hulls(lod_buckets[tier_idx])
 
@@ -324,14 +333,25 @@ def extract_spatial(
         cull_contained_hulls,
     )
 
+    pre_cull = len(all_hulls)
     all_hulls = cull_contained_hulls(all_hulls)
+    plan.detected["containment_culled"] = pre_cull - len(all_hulls)
+    pre_consolidate = len(all_hulls)
     all_hulls = consolidate_near_contained_hulls(all_hulls)
+    plan.detected["consolidated"] = pre_consolidate - len(all_hulls)
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx] = cull_contained_hulls(lod_buckets[tier_idx])
         lod_buckets[tier_idx] = consolidate_near_contained_hulls(lod_buckets[tier_idx])
 
     plan.step("spatial_reconcile")
     plan.detected["reconciled_hulls"] = len(all_hulls)
+
+    from chitin.verify.coverage import coverage_report
+
+    plan.step("coverage")
+    plan.detected["coverage"] = coverage_report(
+        all_hulls, positions, cell_indices=[cell.indices for cell in cells]
+    )
     if cell_paddings:
         plan.detected["padding_min"] = float(np.min(cell_paddings))
         plan.detected["padding_median"] = float(np.median(cell_paddings))

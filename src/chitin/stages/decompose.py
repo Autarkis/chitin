@@ -8,6 +8,8 @@ from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig
 from chitin.result import ExtractionResult, Hull, LodHulls
 from chitin.stages.flatness import make_planar_box
+from chitin.verify.convex import outward_face_planes as _outward_face_planes
+from chitin.verify.convex import points_inside as _per_vertex_inside
 
 
 def aabb_overlaps_bounds(
@@ -60,29 +62,6 @@ def dedup_overlapping_hulls(
             if aabb_iou(hulls[i], hulls[j]) >= iou_threshold:
                 discarded.add(j)
     return kept
-
-
-def _outward_face_planes(hull: Hull):
-    faces = hull.indices.reshape(-1, 3)
-    v = hull.vertices.astype(np.float64)
-    centroid = v.mean(axis=0)
-    v0 = v[faces[:, 0]]
-    normals = np.cross(v[faces[:, 1]] - v0, v[faces[:, 2]] - v0)
-    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
-    lengths = np.where(lengths < 1e-12, 1.0, lengths)
-    normals = normals / lengths
-    face_centers = (v0 + v[faces[:, 1]] + v[faces[:, 2]]) / 3.0
-    outward = np.einsum("ij,ij->i", normals, face_centers - centroid)
-    normals[outward < 0] *= -1
-    d = np.einsum("ij,ij->i", normals, v0)
-    return normals, d
-
-
-def _per_vertex_inside(
-    normals: np.ndarray, d: np.ndarray, points: np.ndarray, tol: float = 1e-4
-) -> np.ndarray:
-    dots = points.astype(np.float64) @ normals.T
-    return np.all(dots <= d[np.newaxis, :] + tol, axis=1)
 
 
 def _aabb_overlaps(a_min, a_max, b_min, b_max) -> bool:
@@ -302,6 +281,8 @@ def decompose_and_build(
         if len(vertices) < pre_decimate_count:
             _plan.decimated = True
             _plan.step("decimate")
+            _plan.detected["decimated_from"] = pre_decimate_count
+            _plan.detected["decimated_to"] = len(vertices)
         _plan.step("decompose")
         _plan.processed_vertices = _plan.processed_vertices or len(vertices)
 
