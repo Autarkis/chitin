@@ -233,6 +233,43 @@ def test_dedup_keeps_distinct():
     assert len(result) == 2
 
 
+def test_dedup_order_independent():
+    # Regression for the greedy-iteration ordering bug (2453f6d): identical
+    # duplicates must collapse to one hull regardless of input order, and
+    # distinct hulls must all survive regardless of input order.
+    from itertools import permutations
+
+    from chitin.result import Hull
+    from chitin.stages.decompose import dedup_overlapping_hulls
+
+    idx = np.array([0, 1, 0], dtype=np.uint32)
+
+    def mk(lo, hi):
+        return Hull(vertices=np.array([lo, hi], dtype=np.float32), indices=idx)
+
+    dup_a = mk([0, 0, 0], [1, 1, 1])
+    dup_b = mk([0.02, 0.02, 0.02], [1.02, 1.02, 1.02])
+    dup_c = mk([0.04, 0.04, 0.04], [1.04, 1.04, 1.04])
+    for perm in permutations([dup_a, dup_b, dup_c]):
+        assert len(dedup_overlapping_hulls(list(perm), iou_threshold=0.5)) == 1
+
+    far_a = mk([0, 0, 0], [1, 1, 1])
+    far_b = mk([5, 5, 5], [6, 6, 6])
+    far_c = mk([10, 10, 10], [11, 11, 11])
+    for perm in permutations([far_a, far_b, far_c]):
+        assert len(dedup_overlapping_hulls(list(perm), iou_threshold=0.5)) == 3
+
+
+@requires_open3d
+def test_sphere_coverage_floor(sphere_points):
+    # Coverage floor on the standard sphere fixture: a regression in
+    # reconstruction or reconcile that reopens holes should trip this.
+    r = extract_from_arrays(
+        sphere_points, normals=sphere_points, config=Config(concavity=0.5)
+    )
+    assert r.build_plan.detected["coverage"]["covered_fraction"] >= 0.8
+
+
 def test_cull_removes_contained_hull():
     from chitin.stages.decompose import cull_contained_hulls
     from chitin.result import Hull

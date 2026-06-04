@@ -17,6 +17,41 @@ def box_mesh():
 
 
 @pytest.fixture
+def box_hull():
+    """Factory for axis-aligned box Hulls with valid triangle faces."""
+    from chitin.result import Hull
+
+    def make(center=(0.0, 0.0, 0.0), half=(1.0, 1.0, 1.0)):
+        c = np.asarray(center, dtype=np.float32)
+        h = np.broadcast_to(np.asarray(half, dtype=np.float32), (3,))
+        signs = np.array(
+            [[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)],
+            dtype=np.float32,
+        )
+        verts = c + h * signs
+        faces = np.array(
+            [
+                [0, 1, 3],
+                [0, 3, 2],
+                [4, 5, 7],
+                [4, 7, 6],
+                [0, 1, 5],
+                [0, 5, 4],
+                [2, 3, 7],
+                [2, 7, 6],
+                [0, 2, 6],
+                [0, 6, 4],
+                [1, 3, 7],
+                [1, 7, 5],
+            ],
+            dtype=np.uint32,
+        )
+        return Hull(vertices=verts, indices=faces.ravel())
+
+    return make
+
+
+@pytest.fixture
 def sphere_points():
     rng = np.random.default_rng(42)
     pts = rng.standard_normal((500, 3))
