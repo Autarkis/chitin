@@ -62,6 +62,144 @@ def dedup_overlapping_hulls(
     return kept
 
 
+def _outward_face_planes(hull: Hull):
+    faces = hull.indices.reshape(-1, 3)
+    v = hull.vertices.astype(np.float64)
+    centroid = v.mean(axis=0)
+    v0 = v[faces[:, 0]]
+    normals = np.cross(v[faces[:, 1]] - v0, v[faces[:, 2]] - v0)
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    lengths = np.where(lengths < 1e-12, 1.0, lengths)
+    normals = normals / lengths
+    face_centers = (v0 + v[faces[:, 1]] + v[faces[:, 2]]) / 3.0
+    outward = np.einsum("ij,ij->i", normals, face_centers - centroid)
+    normals[outward < 0] *= -1
+    d = np.einsum("ij,ij->i", normals, v0)
+    return normals, d
+
+
+def _per_vertex_inside(
+    normals: np.ndarray, d: np.ndarray, points: np.ndarray, tol: float = 1e-4
+) -> np.ndarray:
+    dots = points.astype(np.float64) @ normals.T
+    return np.all(dots <= d[np.newaxis, :] + tol, axis=1)
+
+
+def _aabb_overlaps(a_min, a_max, b_min, b_max) -> bool:
+    return bool(np.all(a_min <= b_max + 1e-6) and np.all(b_min <= a_max + 1e-6))
+
+
+def cull_contained_hulls(hulls: list[Hull]) -> list[Hull]:
+    if len(hulls) <= 1:
+        return hulls
+    volumes = []
+    for h in hulls:
+        mn, mx = h.vertices.min(axis=0), h.vertices.max(axis=0)
+        volumes.append(float(np.prod(np.maximum(mx - mn, 1e-10))))
+    order = sorted(range(len(hulls)), key=lambda i: volumes[i], reverse=True)
+    contained: set[int] = set()
+    for pos, i in enumerate(order):
+        if i in contained:
+            continue
+        normals, d = _outward_face_planes(hulls[i])
+        for j in order[pos + 1 :]:
+            if j in contained:
+                continue
+            inside = _per_vertex_inside(normals, d, hulls[j].vertices)
+            if np.all(inside):
+                contained.add(j)
+    return [h for idx, h in enumerate(hulls) if idx not in contained]
+
+
+def consolidate_near_contained_hulls(
+    hulls: list[Hull],
+    volume_pct_threshold: float = 0.005,
+    containment_ratio: float = 0.7,
+    shallow_protrusion: float = 0.15,
+    moderate_protrusion: float = 0.30,
+) -> list[Hull]:
+    if len(hulls) <= 1:
+        return hulls
+
+    aabb_data = []
+    volumes = []
+    for h in hulls:
+        mn, mx = h.vertices.min(axis=0), h.vertices.max(axis=0)
+        aabb_data.append((mn, mx))
+        volumes.append(float(np.prod(np.maximum(mx - mn, 1e-10))))
+
+    scene_min = np.min([a[0] for a in aabb_data], axis=0)
+    scene_max = np.max([a[1] for a in aabb_data], axis=0)
+    scene_vol = float(np.prod(scene_max - scene_min))
+    if scene_vol <= 0:
+        return hulls
+
+    vol_threshold = volume_pct_threshold * scene_vol
+    order = sorted(range(len(hulls)), key=lambda i: volumes[i], reverse=True)
+
+    planes_cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    absorbed: set[int] = set()
+
+    for small_idx in order:
+        if small_idx in absorbed or volumes[small_idx] >= vol_threshold:
+            continue
+        s_mn, s_mx = aabb_data[small_idx]
+        small_extent = float(np.linalg.norm(s_mx - s_mn))
+        if small_extent < 1e-10:
+            absorbed.add(small_idx)
+            continue
+
+        for large_idx in order:
+            if large_idx == small_idx or large_idx in absorbed:
+                continue
+            if volumes[large_idx] <= volumes[small_idx]:
+                break
+
+            l_mn, l_mx = aabb_data[large_idx]
+            if not _aabb_overlaps(s_mn, s_mx, l_mn, l_mx):
+                continue
+
+            if large_idx not in planes_cache:
+                planes_cache[large_idx] = _outward_face_planes(hulls[large_idx])
+            normals, d = planes_cache[large_idx]
+
+            small_verts = hulls[small_idx].vertices.astype(np.float64)
+            inside = _per_vertex_inside(normals, d, small_verts)
+            frac = inside.sum() / len(inside)
+            if frac < containment_ratio:
+                continue
+
+            outside_pts = small_verts[~inside]
+            if len(outside_pts) == 0:
+                absorbed.add(small_idx)
+                break
+
+            violations = outside_pts @ normals.T - d[np.newaxis, :]
+            max_protrusion = float(violations.max())
+            prot_ratio = max_protrusion / small_extent
+
+            if prot_ratio < shallow_protrusion:
+                absorbed.add(small_idx)
+                break
+
+            if prot_ratio < moderate_protrusion:
+                large_centroid = hulls[large_idx].vertices.mean(axis=0)
+                small_centroid = hulls[small_idx].vertices.mean(axis=0)
+                sep = small_centroid - large_centroid
+                sep_len = float(np.linalg.norm(sep))
+                if sep_len < 1e-10:
+                    absorbed.add(small_idx)
+                    break
+                sep_norm = sep / sep_len
+                max_face = int(violations.max(axis=0).argmax())
+                alignment = abs(float(np.dot(normals[max_face], sep_norm)))
+                if alignment < 0.7:
+                    absorbed.add(small_idx)
+                    break
+
+    return [h for idx, h in enumerate(hulls) if idx not in absorbed]
+
+
 def maybe_decimate(
     vertices: np.ndarray, faces: np.ndarray, max_vertices: int
 ) -> tuple[np.ndarray, np.ndarray]:

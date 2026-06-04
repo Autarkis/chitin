@@ -319,6 +319,17 @@ def extract_spatial(
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx] = dedup_overlapping_hulls(lod_buckets[tier_idx])
 
+    from chitin.stages.decompose import (
+        consolidate_near_contained_hulls,
+        cull_contained_hulls,
+    )
+
+    all_hulls = cull_contained_hulls(all_hulls)
+    all_hulls = consolidate_near_contained_hulls(all_hulls)
+    for tier_idx in lod_buckets:
+        lod_buckets[tier_idx] = cull_contained_hulls(lod_buckets[tier_idx])
+        lod_buckets[tier_idx] = consolidate_near_contained_hulls(lod_buckets[tier_idx])
+
     plan.step("spatial_reconcile")
     plan.detected["reconciled_hulls"] = len(all_hulls)
     if cell_paddings:

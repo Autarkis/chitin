@@ -233,6 +233,90 @@ def test_dedup_keeps_distinct():
     assert len(result) == 2
 
 
+def test_cull_removes_contained_hull():
+    from chitin.stages.decompose import cull_contained_hulls
+    from chitin.result import Hull
+
+    outer_v = np.array([[0, 0, 0], [2, 0, 0], [0, 2, 0], [0, 0, 2]], dtype=np.float32)
+    outer_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    inner_v = np.array(
+        [[0.3, 0.3, 0.3], [0.6, 0.3, 0.3], [0.3, 0.6, 0.3], [0.3, 0.3, 0.6]],
+        dtype=np.float32,
+    )
+    inner_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    outer = Hull(vertices=outer_v, indices=outer_i)
+    inner = Hull(vertices=inner_v, indices=inner_i)
+    result = cull_contained_hulls([outer, inner])
+    assert len(result) == 1
+    assert result[0] is outer
+
+
+def test_cull_keeps_non_contained():
+    from chitin.stages.decompose import cull_contained_hulls
+    from chitin.result import Hull
+
+    a_v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+    a_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    b_v = np.array([[5, 5, 5], [6, 5, 5], [5, 6, 5], [5, 5, 6]], dtype=np.float32)
+    b_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    a = Hull(vertices=a_v, indices=a_i)
+    b = Hull(vertices=b_v, indices=b_i)
+    result = cull_contained_hulls([a, b])
+    assert len(result) == 2
+
+
+def test_consolidate_absorbs_shallow_protrusion():
+    from chitin.stages.decompose import consolidate_near_contained_hulls
+    from chitin.result import Hull
+
+    outer_v = np.array(
+        [[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32
+    )
+    outer_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    inner_v = np.array(
+        [[0.5, 0.5, 0.5], [0.8, 0.5, 0.5], [0.5, 0.8, 0.5], [0.5, 0.5, 0.85]],
+        dtype=np.float32,
+    )
+    inner_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    outer = Hull(vertices=outer_v, indices=outer_i)
+    inner = Hull(vertices=inner_v, indices=inner_i)
+    result = consolidate_near_contained_hulls([outer, inner])
+    assert len(result) == 1
+    assert result[0] is outer
+
+
+def test_consolidate_keeps_significant_protrusion():
+    from chitin.stages.decompose import consolidate_near_contained_hulls
+    from chitin.result import Hull
+
+    outer_v = np.array(
+        [[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32
+    )
+    outer_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    inner_v = np.array(
+        [[-2, -2, -2], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32
+    )
+    inner_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    outer = Hull(vertices=outer_v, indices=outer_i)
+    inner = Hull(vertices=inner_v, indices=inner_i)
+    result = consolidate_near_contained_hulls([outer, inner])
+    assert len(result) == 2
+
+
+def test_consolidate_ignores_large_hulls():
+    from chitin.stages.decompose import consolidate_near_contained_hulls
+    from chitin.result import Hull
+
+    a_v = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32)
+    a_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    b_v = np.array([[1, 1, 1], [8, 1, 1], [1, 8, 1], [1, 1, 8]], dtype=np.float32)
+    b_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
+    a = Hull(vertices=a_v, indices=a_i)
+    b = Hull(vertices=b_v, indices=b_i)
+    result = consolidate_near_contained_hulls([a, b])
+    assert len(result) == 2
+
+
 def _sphere_with_covariance(n, rng=None):
     rng = rng or np.random.default_rng(42)
     pts = rng.standard_normal((n, 3))

@@ -14,6 +14,23 @@ The base install handles mesh inputs with just trimesh + CoACD. The `[splat]` ex
 
 Requires Python 3.12. The base install works on 3.13+; `chitin[splat]` requires open3d which does not yet have a 3.13 wheel.
 
+## Which flags do I need?
+
+Most inputs work with defaults. Use `chitin check <file>` to see what chitin detects about your input, then pick a recipe:
+
+| Input type | Example command | Notes |
+|------------|----------------|-------|
+| Gaussian splat (PLY with covariance) | `chitin extract scene.ply -o scene.phys` | Defaults handle opacity filtering, covariance normals, and spatial partitioning. Add `--opacity-threshold 0.5` if you want stricter filtering. |
+| Room / environment scan | `chitin extract room.ply -o room.phys` | Auto-detected: chitin enables `--thin-shell` and `--proximity-filter` when it detects a hollow-shell distribution. Use `--no-auto-environment` to disable. |
+| Clean mesh (OBJ, GLB, STL) | `chitin extract model.obj -o model.phys` | Just works. Adjust `--concavity` to trade hull count for fit (lower = tighter). |
+| Large mesh (200K+ verts) | `chitin extract big.obj -o big.phys` | Auto-decimates above `--max-decompose-vertices` (200K default). |
+| Multi-LOD | `chitin extract model.obj -o model.phys --lod-concavities 0.1,0.3,0.5` | LOD 0 uses `--concavity`, additional tiers at each threshold. Output is v3 `.phys`. |
+| Rigged character (GLB) | `chitin extract character.glb -o character.phys` | Experimental. Per-bone hulls in bone-local space. Single-primitive GLB only. |
+| Skinned FBX | `chitin convert model.fbx -o model.glb && chitin extract model.glb -o model.phys` | Convert to GLB via Blender headless first. |
+| USD scene | `chitin extract scene.usda -o colliders.usda` | Requires `pip install chitin[usd]`. |
+
+If you're unsure, start with defaults and inspect the result with `chitin inspect output.phys` and `chitin probe output.phys`.
+
 ## CLI
 
 ### Extract
@@ -255,6 +272,89 @@ const phys = parsePhys(buffer);
 
 addToWorld(RAPIER, world, phys);
 scene.add(createDebugMeshes(phys));
+```
+
+### Web quickstart: PLY to walkable browser scene
+
+End-to-end from a gaussian splat scan to collision working in Three.js + Rapier:
+
+**Step 1: Generate collision**
+
+```bash
+pip install chitin[splat]    # requires Python 3.12
+chitin extract scene.ply -o scene.phys
+chitin inspect scene.phys    # verify hull count looks reasonable
+```
+
+**Step 2: Load in your Three.js scene**
+
+```typescript
+import RAPIER from "@dimforge/rapier3d-compat";
+import { parsePhys, addToWorld, createDebugMeshes } from "@autarkis/chitin-web";
+
+// after RAPIER.init() and world creation:
+const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
+const phys = parsePhys(buffer);
+
+addToWorld(RAPIER, world, phys);          // fixed convex colliders
+scene.add(createDebugMeshes(phys));       // green wireframe overlay for debugging
+```
+
+The visual splat loads however your viewer handles it. The `.phys` sidecar just needs to share the same coordinate space -- no coupling between the two loaders.
+
+A complete working example (Three.js + Rapier + capsule walk controller + Playwright tests) lives in [`integrations/walktest/`](../integrations/walktest/). Build and run it with:
+
+```bash
+cd integrations/walktest
+npm install && npm run build
+npx serve harness    # open http://localhost:3000
+```
+
+Then call `__walktest.loadPhys("/path/to/scene.phys")` from the browser console.
+
+### Unity quickstart: drag-and-drop .phys import
+
+The `com.chitin.physics` package includes a `ScriptedImporter` that auto-imports `.phys` files as GameObjects with convex MeshColliders.
+
+**Step 1: Install the UPM package**
+
+In Unity's Package Manager, choose "Add package from disk" and select `integrations/unity/package.json`. Or add to your `Packages/manifest.json`:
+
+```json
+{
+  "dependencies": {
+    "com.chitin.physics": "file:../../integrations/unity"
+  }
+}
+```
+
+**Step 2: Import**
+
+Drag a `.phys` file into your Unity project's Assets folder. The importer creates:
+- A root GameObject (`<name>_colliders`)
+- One child per hull, each with a convex `MeshCollider`
+- For rigged assets: child objects grouped under bone-named parents with bind transforms applied
+
+No code required for the basic case. For runtime loading:
+
+```csharp
+using Chitin;
+
+byte[] data = File.ReadAllBytes("scene.phys");
+PhysAsset phys = PhysReader.Read(data);
+
+foreach (PhysHull hull in phys.hulls)
+{
+    var mesh = new Mesh();
+    mesh.SetVertices(hull.vertices);
+    mesh.SetTriangles(hull.triangles, 0);
+    mesh.RecalculateNormals();
+
+    var go = new GameObject($"hull");
+    var mc = go.AddComponent<MeshCollider>();
+    mc.sharedMesh = mesh;
+    mc.convex = true;
+}
 ```
 
 ### World-space reconstruction (rigged)

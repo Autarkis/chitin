@@ -163,9 +163,7 @@ All integrations read the same `.phys` binary with identical dequantization.
 | Unity | `com.chitin.physics` | `integrations/unity/` |
 | Unreal Engine | ChitinImporter plugin | `integrations/unreal/` |
 
-### Web runtime snippet
-
-Use `@autarkis/chitin-web` anywhere you already have a browser physics world. The visual asset can be a splat, GLB, generated mesh, or anything else; the `.phys` file just needs to share the same coordinate space.
+### Web: Three.js + Rapier
 
 ```typescript
 import RAPIER from "@dimforge/rapier3d";
@@ -173,12 +171,20 @@ import { parsePhys, addToWorld } from "@autarkis/chitin-web";
 
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
 const phys = parsePhys(buffer);
-
-// Adds fixed Rapier convex colliders at the visual scene origin.
 addToWorld(RAPIER, world, phys);
 ```
 
-For other physics runtimes, use `parsePhys(buffer)` directly and pass each hull's vertices/indices to the engine's convex-collider API.
+A full working example with capsule walk controller and Playwright tests lives in [`integrations/walktest/`](integrations/walktest/). See [docs/usage.md](docs/usage.md#web-quickstart-ply-to-walkable-browser-scene) for the end-to-end walkthrough.
+
+### Unity: drag-and-drop import
+
+Drop a `.phys` file into your Assets folder. The `ScriptedImporter` creates a GameObject hierarchy with convex MeshColliders -- no code required. For rigged assets, hulls are grouped under bone-named parents.
+
+Install via Package Manager: "Add package from disk" -> `integrations/unity/package.json`. See [docs/usage.md](docs/usage.md#unity-quickstart-drag-and-drop-phys-import) for runtime loading code.
+
+### Other engines
+
+Use `parsePhys(buffer)` (TypeScript) or `PhysReader.Read(data)` (C#/C++) directly and pass each hull's vertices/indices to the engine's convex-collider API.
 
 ## Local build service
 
