@@ -37,8 +37,12 @@ def poisson_reconstruct_inner(
         )
         pcd.orient_normals_consistent_tangent_plane(k=10)
 
+    # n_threads=1: cell-level parallelism already comes from the process
+    # pool; per-cell OpenMP pools oversubscribe cores, segfault sporadically
+    # under contention (exit -11), and make float accumulation order -- and
+    # thus the output mesh -- nondeterministic.
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd, depth=depth
+        pcd, depth=depth, n_threads=1
     )
 
     densities = np.asarray(densities)

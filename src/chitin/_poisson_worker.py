@@ -3,7 +3,6 @@
 import sys
 
 import numpy as np
-import open3d as o3d
 
 
 def main() -> None:
@@ -17,31 +16,13 @@ def main() -> None:
         float(data["density_quantile"][0]) if "density_quantile" in data else 0.1
     )
 
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(positions)
+    from chitin.stages.reconstruct import poisson_reconstruct_inner
 
-    if normals is not None and not np.allclose(normals, 0):
-        pcd.normals = o3d.utility.Vector3dVector(normals)
-    else:
-        pcd.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
-        )
-        pcd.orient_normals_consistent_tangent_plane(k=10)
-
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd, depth=depth
+    vertices, triangles = poisson_reconstruct_inner(
+        positions, normals, depth, density_quantile
     )
 
-    densities = np.asarray(densities)
-    if len(densities) > 0:
-        density_threshold = np.quantile(densities, density_quantile)
-        mesh.remove_vertices_by_mask(densities < density_threshold)
-
-    np.savez(
-        out_path,
-        vertices=np.asarray(mesh.vertices, dtype=np.float64),
-        triangles=np.asarray(mesh.triangles, dtype=np.int32),
-    )
+    np.savez(out_path, vertices=vertices, triangles=triangles)
 
 
 if __name__ == "__main__":
