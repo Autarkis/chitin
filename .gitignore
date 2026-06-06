@@ -13,3 +13,6 @@ node_modules/
 *.dylib
 examples/utility-proof/assets/
 examples/utility-proof/reports/
+examples/garden-colliders/
+integrations/walktest/test-results/
+.serena/
