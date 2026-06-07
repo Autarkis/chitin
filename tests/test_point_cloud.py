@@ -447,6 +447,54 @@ def test_occlusion_noop_on_single_hull():
     assert culled == 0
 
 
+@requires_open3d
+def test_occlusion_coverage_guard_keeps_interior_hull():
+    from chitin.stages.occlusion import cull_occluded_hulls
+
+    # Closed hollow enclosure: six wall slabs. The interior box is invisible
+    # from every exterior viewpoint but covers input points nothing else
+    # covers -- the garden regression in miniature (under-table geometry).
+    walls = [
+        _box_hull(center=(2.0, 0.0, 0.0), half=(0.2, 2.2, 2.2)),
+        _box_hull(center=(-2.0, 0.0, 0.0), half=(0.2, 2.2, 2.2)),
+        _box_hull(center=(0.0, 2.0, 0.0), half=(2.2, 0.2, 2.2)),
+        _box_hull(center=(0.0, -2.0, 0.0), half=(2.2, 0.2, 2.2)),
+        _box_hull(center=(0.0, 0.0, 2.0), half=(2.2, 2.2, 0.2)),
+        _box_hull(center=(0.0, 0.0, -2.0), half=(2.2, 2.2, 0.2)),
+    ]
+    interior = _box_hull(half=(0.6, 0.6, 0.6))
+    points = np.array(
+        [[x, y, z] for x in (-0.4, 0.4) for y in (-0.4, 0.4) for z in (-0.4, 0.4)]
+    )
+
+    # Without points the interior box is culled on visibility alone.
+    _, culled_blind = cull_occluded_hulls(walls + [interior])
+    assert culled_blind == 1
+
+    # The coverage guard keeps it: its points are covered by no other hull.
+    kept, culled = cull_occluded_hulls(walls + [interior], points)
+    assert culled == 0
+    assert any(h is interior for h in kept)
+
+
+@requires_open3d
+def test_occlusion_coverage_guard_culls_redundant_buried():
+    from chitin.stages.occlusion import cull_occluded_hulls
+
+    # Same union-buried setup as above, but the buried box's points are also
+    # inside the slabs, so removing it cannot uncover anything.
+    slab_a = _box_hull(center=(-0.65, 0.0, 0.0), half=(1.35, 2.0, 2.0))
+    slab_b = _box_hull(center=(0.65, 0.0, 0.0), half=(1.35, 2.0, 2.0))
+    buried = _box_hull(half=(0.6, 0.6, 0.6))
+    points = np.array(
+        [[x, y, z] for x in (-0.4, 0.4) for y in (-0.4, 0.4) for z in (-0.4, 0.4)]
+    )
+
+    kept, culled = cull_occluded_hulls([slab_a, slab_b, buried], points)
+    assert culled == 1
+    assert all(h is not buried for h in kept)
+
+
 def _flip_half_quats(rots, rng):
     """Compose a 180-degree local-x rotation onto a random half of the
     quaternions, flipping the sign of the derived minor-axis normal."""
