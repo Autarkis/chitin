@@ -29,6 +29,21 @@ Splat viewer pipelines usually voxelize a gaussian splat, fill or carve navigabl
 
 Chitin reconstructs surfaces and decomposes them into convex hulls. That is the right shape when the output needs to become a reusable physics asset: versioned, validated, loadable by multiple engines, and independent of the original viewer. A splat viewer can keep its visual format and load Chitin collision as a sidecar.
 
+## Ecosystem
+
+Chitin is the asset layer: a compiler that emits `.phys` and nothing more. It
+stays independent, but is designed to sit under a **scene-level registry** — the
+layer that owns coordinate frames, stable object identity, provenance, and
+layout, and that references each asset's `.phys` sidecar rather than producing
+physics itself.
+
+Visual-only viewers (mesh or gaussian-splat) render read-only geometry; Chitin
+colliders fill the collision/raycast gap via the Three.js + Rapier reader
+(`@autarkis/chitin-web`).
+
+Integration is by artifact (`.phys`) and reference type, never by package
+import.
+
 ## Install
 
 ```bash
