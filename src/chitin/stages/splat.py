@@ -316,20 +316,27 @@ def extract_spatial(
             )
             futures[f] = cell_idx
 
+        results_by_cell = {}
         for future in as_completed(futures):
-            cell_idx = futures[future]
-            result = future.result()
-            if isinstance(result, str):
-                failed_cells.append((cell_idx, result))
-                continue
-            hulls, lod_entries = result
-            for hull in hulls:
-                all_hulls.append(hull)
-                hull_cell_map.append(cell_idx)
-            for tier_idx, tier_hulls in lod_entries:
-                if tier_idx not in lod_buckets:
-                    lod_buckets[tier_idx] = []
-                lod_buckets[tier_idx].extend(tier_hulls)
+            results_by_cell[futures[future]] = future.result()
+
+    # Append in cell order, not completion order: as_completed yields in
+    # scheduling-dependent order and every downstream pass (seam repair,
+    # dedup, containment cull, consolidation) is order-sensitive, so
+    # completion-order appends made output hashes depend on worker timing.
+    for cell_idx, *_ in cell_tasks:
+        result = results_by_cell[cell_idx]
+        if isinstance(result, str):
+            failed_cells.append((cell_idx, result))
+            continue
+        hulls, lod_entries = result
+        for hull in hulls:
+            all_hulls.append(hull)
+            hull_cell_map.append(cell_idx)
+        for tier_idx, tier_hulls in lod_entries:
+            if tier_idx not in lod_buckets:
+                lod_buckets[tier_idx] = []
+            lod_buckets[tier_idx].extend(tier_hulls)
 
     if config.seam_repair and len(cells) > 1:
         from chitin.stages.repair import seam_repair_pass
