@@ -213,6 +213,13 @@ def extract_from_arrays(
     result.hulls, occlusion_culled = cull_occluded_hulls(result.hulls, raw_positions)
     _plan.detected["occlusion_culled"] = occlusion_culled
 
+    if _resolved.snug_fit:
+        from chitin.stages.snugfit import refine_hulls
+
+        result.hulls, snug_stats = refine_hulls(result.hulls, raw_positions)
+        _plan.detected.update(snug_stats)
+        _plan.step("snugfit")
+
     from chitin.verify.coverage import coverage_report
 
     _plan.step("coverage")

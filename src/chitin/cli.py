@@ -155,6 +155,11 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Disable seam repair pass (skip re-merging cells at octree boundaries)",
     )
     p.add_argument(
+        "--snug-fit",
+        action="store_true",
+        help="Tighten hull face planes onto covered input points (experimental)",
+    )
+    p.add_argument(
         "-b",
         "--bundle",
         action="store_true",
@@ -235,6 +240,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         flatness_threshold=args.flatness_threshold,
         auto_environment=not args.no_auto_environment,
         seam_repair=not args.no_seam_repair,
+        snug_fit=args.snug_fit,
     )
 
     if not args.quiet:

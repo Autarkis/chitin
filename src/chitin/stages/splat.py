@@ -414,6 +414,13 @@ def extract_spatial(
     plan.detected["occlusion_culled"] = occlusion_culled
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx], _ = cull_occluded_hulls(lod_buckets[tier_idx], positions)
+
+    if config.snug_fit:
+        from chitin.stages.snugfit import refine_hulls
+
+        all_hulls, snug_stats = refine_hulls(all_hulls, positions)
+        plan.detected.update(snug_stats)
+        plan.step("snugfit")
     for tier_idx in lod_buckets:
         lod_buckets[tier_idx] = cull_contained_hulls(lod_buckets[tier_idx])
         lod_buckets[tier_idx] = consolidate_near_contained_hulls(lod_buckets[tier_idx])

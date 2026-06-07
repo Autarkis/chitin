@@ -25,6 +25,7 @@ class Config:
     flatness_threshold: float = 0.9
     auto_environment: bool = True
     seam_repair: bool = True
+    snug_fit: bool = False
 
     def __post_init__(self) -> None:
         if self.concavity <= 0:

@@ -35,6 +35,7 @@ class ResolvedConfig:
     flatness_threshold: float
     auto_environment: bool
     seam_repair: bool
+    snug_fit: bool
 
     use_spatial_split: bool
     use_seam_repair: bool
@@ -64,6 +65,7 @@ class ResolvedConfig:
             "flatness_threshold": self.flatness_threshold,
             "auto_environment": self.auto_environment,
             "seam_repair": self.seam_repair,
+            "snug_fit": self.snug_fit,
             "use_spatial_split": self.use_spatial_split,
             "use_seam_repair": self.use_seam_repair,
             "pipeline_path": self.pipeline_path,
@@ -153,6 +155,7 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
         flatness_threshold=config.flatness_threshold,
         auto_environment=config.auto_environment,
         seam_repair=config.seam_repair,
+        snug_fit=config.snug_fit,
         use_spatial_split=use_spatial_split,
         use_seam_repair=use_seam_repair,
         pipeline_path=pipeline_path,

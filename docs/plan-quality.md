@@ -64,6 +64,8 @@ CoACD hulls over-inflate relative to the input samples, and today the only count
 
 This is a real project, not a patch. Gate on phases 0-3 shipping first; phase 1 provides the objective and the regression gate.
 
+Status (2026-06-07): shipped behind `--snug-fit` (off by default). Design and findings in `docs/plan-snugfit.md`. The objective collapsed to closed form -- with normals fixed and coverage a hard constraint, each face moves to its assigned points' support, no optimizer needed. A per-hull coverage guard (reject any rebuild that drops an assigned point) makes the pass coverage-safe: garden holds coverage exactly (0.9797 == baseline) while slack_p95 drops 17% and total hull volume 35%; 479 of 560 candidate hulls refined, 81 rejected. Byte-deterministic across two builds.
+
 ## Test debt (alongside each phase)
 
 The evidence pass found zero tests for seam detection/repair, flatness detection, and the environment heuristic -- the three areas with the most commit churn. Each phase above lands with fixtures:
