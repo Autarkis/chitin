@@ -46,7 +46,8 @@ def test_report_fields(client, box_glb):
     assert report["processed_vertices"] > 0
     assert isinstance(report["warnings"], list)
     assert isinstance(report["detected"], dict)
-    assert report["compiler_version"] == "0.1.0"
+    from chitin import __version__
+    assert report["compiler_version"] == __version__
     assert "json" in report["artifacts"]
 
 
