@@ -33,6 +33,25 @@ def extract(
     plan.step("parse")
     plan.detected.update(result.detected)
 
+    if config.target_height is not None or config.target_footprint is not None:
+        if result.skin is not None:
+            # Uniform-scaling a skinned mesh without rescaling its bind poses
+            # would desync the rig; furniture (the target use case) is static.
+            plan.detected["normalize_skipped_skinned"] = True
+        elif result.positions is not None and len(result.positions):
+            from chitin.stages.normalize import normalize_to_target
+
+            result.positions, norm_stats = normalize_to_target(
+                result.positions,
+                target_height=config.target_height,
+                target_footprint=config.target_footprint,
+                up_axis=config.up_axis,
+                flat_aspect_ratio=config.flat_aspect_ratio,
+            )
+            if norm_stats:
+                plan.step("normalize")
+                plan.detected.update(norm_stats)
+
     analysis = analyze_arrays(
         result.positions,
         result.opacity,

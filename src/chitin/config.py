@@ -13,6 +13,7 @@ class Config:
     opacity_is_logit: bool = False
     coacd_preprocess_mode: str = "auto"
     coacd_preprocess_resolution: int = 50
+    coacd_adaptive_preprocess: bool = True
     max_decompose_vertices: int = 200_000
     lod_concavities: list[float] | None = None
     splat_scale_is_log: bool = True
@@ -26,6 +27,10 @@ class Config:
     auto_environment: bool = True
     seam_repair: bool = True
     snug_fit: bool = False
+    target_height: float | None = None
+    target_footprint: float | None = None
+    up_axis: int = 1
+    flat_aspect_ratio: float = 0.2
 
     def __post_init__(self) -> None:
         if self.concavity <= 0:
@@ -92,3 +97,17 @@ class Config:
                     raise ValueError(
                         f"lod_concavities values must be positive, got {c}"
                     )
+        if self.target_height is not None and self.target_height <= 0:
+            raise ValueError(
+                f"target_height must be positive, got {self.target_height}"
+            )
+        if self.target_footprint is not None and self.target_footprint <= 0:
+            raise ValueError(
+                f"target_footprint must be positive, got {self.target_footprint}"
+            )
+        if self.up_axis not in (0, 1, 2):
+            raise ValueError(f"up_axis must be one of 0, 1, 2, got {self.up_axis}")
+        if self.flat_aspect_ratio <= 0:
+            raise ValueError(
+                f"flat_aspect_ratio must be positive, got {self.flat_aspect_ratio}"
+            )

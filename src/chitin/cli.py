@@ -160,6 +160,27 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Tighten hull face planes onto covered input points (experimental)",
     )
     p.add_argument(
+        "--target-height",
+        type=float,
+        default=None,
+        help="Uniformly rescale the input so its height (up-axis extent) is N "
+        "meters before extraction (for non-metric source assets)",
+    )
+    p.add_argument(
+        "--target-footprint",
+        type=float,
+        default=None,
+        help="Real-world footprint (largest horizontal extent, meters) used "
+        "instead of --target-height for flat objects like rugs",
+    )
+    p.add_argument(
+        "--up-axis",
+        type=int,
+        choices=[0, 1, 2],
+        default=1,
+        help="Which axis is up/height for --target-height (default: 1, glTF Y-up)",
+    )
+    p.add_argument(
         "-b",
         "--bundle",
         action="store_true",
@@ -241,6 +262,9 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         auto_environment=not args.no_auto_environment,
         seam_repair=not args.no_seam_repair,
         snug_fit=args.snug_fit,
+        target_height=args.target_height,
+        target_footprint=args.target_footprint,
+        up_axis=args.up_axis,
     )
 
     if not args.quiet:

@@ -12,6 +12,36 @@ from chitin.verify.convex import outward_face_planes as _outward_face_planes
 from chitin.verify.convex import points_inside as _per_vertex_inside
 
 
+# CoACD's manifold preprocessing voxel-remeshes non-watertight input on a
+# `resolution`^3 grid, emitting ~O(resolution^2) surface triangles regardless of
+# how simple the source is. For low-poly catalog assets (a few hundred faces) the
+# default resolution of 50 inflates the mesh ~150x (a 676-face panel becomes
+# ~100k triangles), and the MCTS decomposition then crawls on the bloated mesh.
+# Scale the grid to input complexity: catalog assets get a light grid; dense
+# scans keep the full configured resolution (where it is genuinely warranted).
+ADAPTIVE_MIN_RESOLUTION = 30
+ADAPTIVE_LOW_FACES = 1_000
+ADAPTIVE_HIGH_FACES = 50_000
+
+
+def adaptive_preprocess_resolution(face_count: int, configured: int) -> int:
+    """Pick a preprocess resolution scaled to mesh complexity, capped at the
+    configured value (never coarser than ``ADAPTIVE_MIN_RESOLUTION``).
+
+    Ramps linearly from the floor at ``ADAPTIVE_LOW_FACES`` to the configured
+    resolution at ``ADAPTIVE_HIGH_FACES``, so simple meshes are cheap and dense
+    meshes are untouched.
+    """
+    floor = min(ADAPTIVE_MIN_RESOLUTION, configured)
+    if face_count <= ADAPTIVE_LOW_FACES:
+        return floor
+    if face_count >= ADAPTIVE_HIGH_FACES:
+        return configured
+    span = ADAPTIVE_HIGH_FACES - ADAPTIVE_LOW_FACES
+    frac = (face_count - ADAPTIVE_LOW_FACES) / span
+    return int(round(floor + (configured - floor) * frac))
+
+
 def aabb_overlaps_bounds(
     hull: Hull, bounds_min: np.ndarray, bounds_max: np.ndarray
 ) -> bool:
@@ -305,11 +335,19 @@ def decompose_and_build(
     tm = trimesh.Trimesh(vertices=vertices, faces=faces)
     coacd_mesh = coacd.Mesh(tm.vertices, tm.faces)
 
+    preprocess_resolution = config.coacd_preprocess_resolution
+    if config.coacd_adaptive_preprocess and config.coacd_preprocess_mode != "off":
+        preprocess_resolution = adaptive_preprocess_resolution(
+            len(faces), config.coacd_preprocess_resolution
+        )
+        if _plan is not None and preprocess_resolution != config.coacd_preprocess_resolution:
+            _plan.detected["preprocess_resolution"] = preprocess_resolution
+
     parts = coacd.run_coacd(
         coacd_mesh,
         threshold=config.concavity,
         preprocess_mode=config.coacd_preprocess_mode,
-        preprocess_resolution=config.coacd_preprocess_resolution,
+        preprocess_resolution=preprocess_resolution,
         max_convex_hull=config.max_hulls,
     )
 
@@ -328,7 +366,7 @@ def decompose_and_build(
                 coacd_mesh,
                 threshold=lod_concavity,
                 preprocess_mode=config.coacd_preprocess_mode,
-                preprocess_resolution=config.coacd_preprocess_resolution,
+                preprocess_resolution=preprocess_resolution,
                 max_convex_hull=config.max_hulls,
             )
             lod_hulls = env_hulls.copy()

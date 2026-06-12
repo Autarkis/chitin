@@ -22,11 +22,28 @@ from chitin import Config
         ({"flatness_threshold": 1.1}, "flatness_threshold"),
         ({"max_decompose_vertices": 99}, "max_decompose_vertices"),
         ({"lod_concavities": [0.1, 0]}, "lod_concavities"),
+        ({"target_height": 0}, "target_height"),
+        ({"target_height": -1.5}, "target_height"),
+        ({"target_footprint": 0}, "target_footprint"),
+        ({"up_axis": 3}, "up_axis"),
+        ({"flat_aspect_ratio": 0}, "flat_aspect_ratio"),
     ],
 )
 def test_config_rejects_invalid_values(kwargs, message):
     with pytest.raises(ValueError, match=message):
         Config(**kwargs)
+
+
+def test_config_accepts_normalization_params():
+    config = Config(target_height=0.55, target_footprint=2.0, up_axis=2)
+    assert config.target_height == 0.55
+    assert config.target_footprint == 2.0
+    assert config.up_axis == 2
+
+
+def test_config_adaptive_preprocess_defaults_on():
+    assert Config().coacd_adaptive_preprocess is True
+    assert Config(coacd_adaptive_preprocess=False).coacd_adaptive_preprocess is False
 
 
 def test_config_accepts_default_values():
