@@ -6,11 +6,11 @@ The current smell: `core.py` is 1,457 lines where detection, policy, reconstruct
 
 ## Current state — COMPLETE (2026-05-21)
 
-All six phases shipped. core.py went from 1,457 lines to 322. result.py went from 282 to 55. All 58 tests pass.
+All six phases shipped. core.py went from 1,457 lines to 322. result.py went from 282 to 55. All 58 tests pass. *(Historical snapshot; core.py has since grown to 369 lines.)*
 
 ```
 src/chitin/
-  core.py          322 lines. Orchestration only: extract, extract_from_arrays,
+  core.py          369 lines. Orchestration only: extract, extract_from_arrays,
                     extract_from_mesh, extract_from_rigged_mesh.
   analyze.py       InputAnalysis dataclass + analyze_arrays().
   resolve.py       ResolvedConfig dataclass + resolve_config(). Single policy locus.
@@ -277,7 +277,7 @@ The public API (`extract`, `extract_from_arrays`, `extract_from_mesh`, `Config`,
 After this refactor:
 
 1. `poisson_depth=8` is impossible to hardcode -- the service must go through `resolve_config()`.
-2. `core.py` is under 300 lines.
+2. `core.py` is orchestration-only (~369 lines), down from 1,457.
 3. Every auto-detection decision appears in `resolved-config.json` with a human-readable reason.
 4. Each pipeline stage is independently testable with fixture data.
 5. `probe` and `sweep` share a single ray-triangle intersection implementation.

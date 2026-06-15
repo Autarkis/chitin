@@ -49,6 +49,7 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
                                │
                      ┌─────────▼───────────┐
                      │   stages/            │
+                     │   normalize          │
                      │   reconstruct        │
                      │   filter             │
                      │   flatness           │
@@ -88,13 +89,14 @@ The compiler is organized into four module groups:
 
 **`stages/`** -- the processing pipeline. Each stage takes typed input + a frozen `ResolvedConfig`, returns typed output, and appends to the `BuildPlan`:
 
-1. **reconstruct** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
-2. **filter** -- proximity filter removes closure surfaces far from input data. Density quantile strips low-confidence Poisson vertices. Thin-shell extrusion prevents volume-fill on environment scans
-3. **flatness** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD
-4. **decompose** -- CoACD convex decomposition, LOD tier generation, walkable hull extraction, cross-cell AABB IOU deduplication
-5. **repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
-6. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
-7. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
+1. **normalize** -- scale-normalization pass: uniformly rescales the input to a target height or footprint (`--target-height`/`--target-footprint`) before decomposition. Skipped for skinned assets
+2. **reconstruct** -- Poisson reconstruction via Open3D. Depth auto-selected per cell based on point count (4-7). Each cell runs in a subprocess so Open3D segfaults are isolated
+3. **filter** -- proximity filter removes closure surfaces far from input data. Density quantile strips low-confidence Poisson vertices. Thin-shell extrusion prevents volume-fill on environment scans
+4. **flatness** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD
+5. **decompose** -- CoACD convex decomposition, LOD tier generation, walkable hull extraction, cross-cell AABB IOU deduplication
+6. **repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
+7. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
+8. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
 
 **`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does capsule traversability analysis. `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
 
@@ -102,7 +104,7 @@ The compiler is organized into four module groups:
 
 **`analyze.py` + `resolve.py`** -- the spine. `analyze_arrays()` produces an `InputAnalysis` (facts about the input: format, opacity, covariance, density, skinning). `resolve_config()` turns user `Config` + `InputAnalysis` into a frozen `ResolvedConfig` with a `decisions` dict explaining every auto-override. No downstream code mutates config after this point.
 
-**`core.py`** -- orchestration only (~320 lines). `extract()` dispatches: load adapter -> analyze -> resolve -> pipeline. `extract_from_arrays()`, `extract_from_mesh()`, `extract_from_rigged_mesh()` are the public entry points for direct API use.
+**`core.py`** -- orchestration only (~369 lines). `extract()` dispatches: load adapter -> analyze -> resolve -> pipeline. `extract_from_arrays()`, `extract_from_mesh()`, `extract_from_rigged_mesh()` are the public entry points for direct API use.
 
 The compiler does not make runtime decisions. It produces an artifact. Consumers decide how to use it.
 

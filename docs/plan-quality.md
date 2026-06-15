@@ -2,7 +2,7 @@
 
 The goal is to close the loop. The pipeline makes every quality-relevant decision through unmeasured heuristics -- roughly 30 hardcoded thresholds across the stages -- and ships hulls with no integrated signal for whether the output is good. `verify/probe.py` and `verify/sweep.py` exist but are post-hoc CLI commands; nothing inside extraction measures coverage, tightness, or redundancy.
 
-The current smell, from the garden example bundle (`examples/garden-colliders/`):
+The current smell, from an example bundle (the current example lives at `examples/utility-proof/`; the `examples/garden-colliders/` bundle this plan was written against no longer ships):
 
 - Seam repair moves probe coverage from 72.9% to 76.1%. We only know because someone ran `chitin probe` by hand and pasted the number into a commit message (82a6b8a).
 - The consolidation pass drops hull count from 278 to 140. Half the pre-consolidation output is redundant, and nothing in the pipeline reports that.

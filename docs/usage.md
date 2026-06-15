@@ -23,7 +23,7 @@ Most inputs work with defaults. Use `chitin check <file>` to see what chitin det
 | Gaussian splat (PLY with covariance) | `chitin extract scene.ply -o scene.phys` | Defaults handle opacity filtering, covariance normals, and spatial partitioning. Add `--opacity-threshold 0.5` if you want stricter filtering. |
 | Room / environment scan | `chitin extract room.ply -o room.phys` | Auto-detected: chitin enables `--thin-shell` and `--proximity-filter` when it detects a hollow-shell distribution. Use `--no-auto-environment` to disable. |
 | Clean mesh (OBJ, GLB, STL) | `chitin extract model.obj -o model.phys` | Just works. Adjust `--concavity` to trade hull count for fit (lower = tighter). |
-| Large mesh (200K+ verts) | `chitin extract big.obj -o big.phys` | Auto-decimates above `--max-decompose-vertices` (200K default). |
+| Large mesh (200K+ verts) | `chitin extract big.obj -o big.phys` | Auto-decimates above the `Config.max_decompose_vertices` field (200K default). Decimation is automatic; there is no CLI flag for it — set it via the Python `Config`. |
 | Multi-LOD | `chitin extract model.obj -o model.phys --lod-concavities 0.1,0.3,0.5` | LOD 0 uses `--concavity`, additional tiers at each threshold. Output is v3 `.phys`. |
 | Rigged character (GLB) | `chitin extract character.glb -o character.phys` | Experimental. Per-bone hulls in bone-local space. Single-primitive GLB only. |
 | Skinned FBX | `chitin convert model.fbx -o model.glb && chitin extract model.glb -o model.phys` | Convert to GLB via Blender headless first. |
@@ -67,6 +67,10 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--auto-verify` | off | Run raycast probe after extraction and print coverage summary. |
 | `--no-auto-environment` | off | Disable auto-detection of environment scans. |
 | `--no-seam-repair` | off | Disable seam repair pass at octree cell boundaries. |
+| `--snug-fit` | off | Tighten hull face planes onto covered input points (experimental). |
+| `--target-height` | none | Uniformly rescale the input so its height (up-axis extent) is N meters before extraction (for non-metric source assets). |
+| `--target-footprint` | none | Real-world footprint (largest horizontal extent, meters) used instead of `--target-height` for flat objects like rugs. |
+| `--up-axis` | 1 | Which axis (0/1/2) is up/height for `--target-height` (default 1, glTF Y-up). |
 | `-b, --bundle` | off | Write full artifact bundle (scene.phys + build-plan.json + analysis.json + resolved-config.json) to a directory instead of a single file. |
 | `--no-hook` | off | Skip post-process hook. |
 
