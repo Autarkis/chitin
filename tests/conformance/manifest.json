@@ -1,0 +1,149 @@
+{
+  "invalid_magic.phys": {
+    "description": "wrong magic bytes",
+    "errorContains": "magic",
+    "valid": false
+  },
+  "invalid_trailing.phys": {
+    "description": "trailing bytes after end of data",
+    "errorContains": "trailing",
+    "valid": false
+  },
+  "invalid_truncated.phys": {
+    "description": "data truncated (last 8 bytes removed)",
+    "errorContains": "truncat",
+    "valid": false
+  },
+  "invalid_version.phys": {
+    "description": "unsupported version 99",
+    "errorContains": "version",
+    "valid": false
+  },
+  "multi_lod.phys": {
+    "bones": [],
+    "description": "LOD0 + two LOD tiers (ascending concavity)",
+    "flags": 4,
+    "hasBindPoses": false,
+    "hasBones": false,
+    "hasLod": true,
+    "hullCount": 1,
+    "hulls": [
+      {
+        "aabbMax": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "aabbMin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "boneIndex": null,
+        "indexCount": 36,
+        "vertexCount": 8
+      }
+    ],
+    "lodTiers": [
+      {
+        "concavity": 0.01,
+        "hullCount": 1
+      },
+      {
+        "concavity": 0.05,
+        "hullCount": 1
+      }
+    ],
+    "totalIndices": 36,
+    "totalTriangles": 12,
+    "totalVertices": 8,
+    "valid": true,
+    "version": 3
+  },
+  "rigged.phys": {
+    "bones": [
+      {
+        "name": "root"
+      },
+      {
+        "name": "child"
+      }
+    ],
+    "description": "two hulls + two bones with bind poses",
+    "flags": 3,
+    "hasBindPoses": true,
+    "hasBones": true,
+    "hasLod": false,
+    "hullCount": 2,
+    "hulls": [
+      {
+        "aabbMax": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "aabbMin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "boneIndex": 0,
+        "indexCount": 36,
+        "vertexCount": 8
+      },
+      {
+        "aabbMax": [
+          2.0,
+          2.0,
+          2.0
+        ],
+        "aabbMin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "boneIndex": 1,
+        "indexCount": 12,
+        "vertexCount": 4
+      }
+    ],
+    "lodTiers": [],
+    "totalIndices": 48,
+    "totalTriangles": 16,
+    "totalVertices": 12,
+    "valid": true,
+    "version": 3
+  },
+  "static_hull.phys": {
+    "bones": [],
+    "description": "single convex hull, no bones/LOD",
+    "flags": 0,
+    "hasBindPoses": false,
+    "hasBones": false,
+    "hasLod": false,
+    "hullCount": 1,
+    "hulls": [
+      {
+        "aabbMax": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "aabbMin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "boneIndex": null,
+        "indexCount": 36,
+        "vertexCount": 8
+      }
+    ],
+    "lodTiers": [],
+    "totalIndices": 36,
+    "totalTriangles": 12,
+    "totalVertices": 8,
+    "valid": true,
+    "version": 3
+  }
+}
