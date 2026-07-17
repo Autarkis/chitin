@@ -268,7 +268,7 @@ for issue in issues:
 `@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine.
 
 ```typescript
-import RAPIER from "@dimforge/rapier3d";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { parsePhys, addToWorld, createDebugMeshes } from "@autarkis/chitin-web";
 
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());

@@ -181,7 +181,7 @@ All integrations read the same `.phys` binary with identical dequantization.
 ### Web: Three.js + Rapier
 
 ```typescript
-import RAPIER from "@dimforge/rapier3d";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { parsePhys, addToWorld } from "@autarkis/chitin-web";
 
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());

@@ -13,19 +13,19 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@dimforge/rapier3d": ">=0.13",
+    "@dimforge/rapier3d-compat": ">=0.13",
     "three": ">=0.160"
   },
   "peerDependenciesMeta": {
-    "@dimforge/rapier3d": {
+    "three": {
       "optional": true
     },
-    "three": {
+    "@dimforge/rapier3d-compat": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@dimforge/rapier3d": "^0.19.3",
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@types/three": "^0.184.1",
     "three": "^0.184.0",
     "typescript": "^6.0.3",

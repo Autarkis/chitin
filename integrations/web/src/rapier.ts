@@ -1,4 +1,4 @@
-import type RAPIER from "@dimforge/rapier3d";
+import type RAPIER from "@dimforge/rapier3d-compat";
 import type { PhysFile, PhysHull } from "./phys-parser.js";
 
 export interface ColliderResult {
