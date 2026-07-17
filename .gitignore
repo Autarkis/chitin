@@ -16,3 +16,6 @@ examples/utility-proof/reports/
 examples/garden-colliders/
 integrations/walktest/test-results/
 .serena/
+
+# Agent instructions (local only, not shipped in the public repo)
+CLAUDE.md

@@ -27,8 +27,8 @@ def normalize_to_target(
     the choice of source/target dimension consistent.
 
     Scaling is about the origin, so a model whose origin sits on its base keeps
-    its base on the ground plane; absolute placement is re-anchored downstream
-    (Registry ``transform``). The scale stays uniform, so colliders
+    its base on the ground plane; absolute placement is re-anchored downstream by
+    the consuming scene layer. The scale stays uniform, so colliders
     extracted afterward inherit the correct metric size without any per-axis
     distortion.
 
