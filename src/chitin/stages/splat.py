@@ -297,7 +297,6 @@ def extract_spatial(
     plan.detected["cells_skipped_sparse"] = cells_skipped_sparse
     cells_failed = 0
     failure_reasons: dict[str, int] = {}
-    failed_cells: list[tuple[int, str]] = []
 
     # Every cell may be too sparse to keep; ProcessPoolExecutor rejects
     # max_workers=0, so only spin up the pool when there is work to do.
@@ -325,14 +324,35 @@ def extract_spatial(
     else:
         plan.detected["parallel_workers"] = 0
 
+    # Serial retry for sporadic poisson worker segfaults, BEFORE ordered
+    # assembly. A load-dependent segfault usually succeeds on a second attempt
+    # without pool contention; retrying here (rather than appending afterward)
+    # means a retried success lands in the same cell-order slot as an immediate
+    # one -- byte-identical output -- and still participates in seam repair.
+    # Other failure kinds are deterministic; don't retry those.
+    task_by_idx = {t[0]: t for t in cell_tasks}
+    cells_retried = 0
+    for cell_idx, *_ in cell_tasks:
+        result = results_by_cell[cell_idx]
+        if isinstance(result, str) and result.startswith("poisson_failed"):
+            cells_retried += 1
+            _, c_pos, c_norm, c_sc, c_rot, s_min, s_max = task_by_idx[cell_idx]
+            results_by_cell[cell_idx] = _process_single_cell(
+                c_pos, c_norm, c_sc, c_rot, s_min, s_max, config
+            )
+    if cells_retried:
+        plan.detected["cells_retried"] = cells_retried
+
     # Append in cell order, not completion order: as_completed yields in
-    # scheduling-dependent order and every downstream pass (seam repair,
-    # dedup, containment cull, consolidation) is order-sensitive, so
-    # completion-order appends made output hashes depend on worker timing.
+    # scheduling-dependent order and every downstream pass (seam repair, dedup,
+    # containment cull, consolidation) is order-sensitive, so completion-order
+    # appends made output hashes depend on worker timing. Retried cells occupy
+    # their natural slot here because the retry above ran first.
     for cell_idx, *_ in cell_tasks:
         result = results_by_cell[cell_idx]
         if isinstance(result, str):
-            failed_cells.append((cell_idx, result))
+            cells_failed += 1
+            failure_reasons[result] = failure_reasons.get(result, 0) + 1
             continue
         hulls, lod_entries = result
         for hull in hulls:
@@ -361,35 +381,6 @@ def extract_spatial(
         repaired_count = pre_repair - len(all_hulls)
         if repaired_count != 0:
             plan.detected["seam_repair_delta"] = len(all_hulls) - pre_repair
-
-    # Serial retry for poisson failures: worker segfaults are sporadic and
-    # load-dependent, so a second attempt without pool contention usually
-    # succeeds. Other failure kinds are deterministic; don't retry those.
-    task_by_idx = {t[0]: t for t in cell_tasks}
-    cells_retried = 0
-    for cell_idx, reason in failed_cells:
-        retried = None
-        if reason.startswith("poisson_failed") and cell_idx in task_by_idx:
-            cells_retried += 1
-            _, c_pos, c_norm, c_sc, c_rot, s_min, s_max = task_by_idx[cell_idx]
-            retried = _process_single_cell(
-                c_pos, c_norm, c_sc, c_rot, s_min, s_max, config
-            )
-        if retried is None or isinstance(retried, str):
-            final_reason = retried if isinstance(retried, str) else reason
-            cells_failed += 1
-            failure_reasons[final_reason] = failure_reasons.get(final_reason, 0) + 1
-            continue
-        retry_hulls, retry_lod_entries = retried
-        for hull in retry_hulls:
-            all_hulls.append(hull)
-            hull_cell_map.append(cell_idx)
-        for tier_idx, tier_hulls in retry_lod_entries:
-            if tier_idx not in lod_buckets:
-                lod_buckets[tier_idx] = []
-            lod_buckets[tier_idx].extend(tier_hulls)
-    if cells_retried:
-        plan.detected["cells_retried"] = cells_retried
 
     plan.detected["cells_failed"] = cells_failed
     if failure_reasons:
