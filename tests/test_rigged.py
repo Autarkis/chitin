@@ -65,3 +65,33 @@ def test_no_ibm_skips_transform(two_bone_rig):
     for hull in r.hulls:
         center = hull.vertices.mean(axis=0)
         assert abs(center[0]) > 0.5, "should still be in world space"
+
+
+def test_rigged_lod_tiers_are_populated(two_bone_rig):
+    # LOD tiers were computed per bone and then discarded; they must now survive
+    # and carry hulls from every bone, tagged bone-local.
+    r = extract_from_rigged_mesh(
+        **two_bone_rig,
+        config=Config(concavity=0.5, lod_concavities=[0.3, 0.7]),
+    )
+    assert r.lod_tiers is not None
+    assert [round(t.concavity, 3) for t in r.lod_tiers] == [0.3, 0.7]
+    for tier in r.lod_tiers:
+        assert tier.hulls
+        assert all(h.bone_name in {"left_arm", "right_arm"} for h in tier.hulls)
+
+
+def test_rigged_lod_roundtrips_through_phys(two_bone_rig, tmp_path):
+    r = extract_from_rigged_mesh(
+        **two_bone_rig,
+        config=Config(concavity=0.5, lod_concavities=[0.3, 0.7]),
+    )
+    out = tmp_path / "rigged_lod.phys"
+    r.to_phys(out)
+
+    from chitin.phys import read_phys, validate_phys
+
+    assert validate_phys(out) == []
+    pf = read_phys(out)
+    assert pf.has_lod and pf.has_bones
+    assert [round(t.concavity, 3) for t in pf.lod_tiers] == [0.3, 0.7]

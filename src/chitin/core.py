@@ -9,7 +9,7 @@ from chitin.analyze import analyze_arrays
 from chitin.config import Config
 from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig, resolve_config
-from chitin.result import BoneInfo, ExtractionResult
+from chitin.result import BoneInfo, ExtractionResult, Hull, LodHulls
 from chitin.stages.decompose import decompose_and_build
 from chitin.stages.filter import post_poisson_filter
 from chitin.stages.reconstruct import poisson_reconstruct
@@ -362,6 +362,7 @@ def extract_from_rigged_mesh(
     _plan.detected["segment_count"] = len(segments)
 
     all_hulls = []
+    lod_by_concavity: dict[float, list[Hull]] = {}
     total_mesh_verts = 0
     bones_skipped = 0
     for bone_idx, (seg_verts, seg_faces) in segments.items():
@@ -387,10 +388,25 @@ def extract_from_rigged_mesh(
             hull.bone_name = name
             hull.bone_index = bone_idx
             all_hulls.append(hull)
+        # Merge each bone's LOD tiers by concavity so rigged multi-LOD requests
+        # produce tiers (tagged bone-local) instead of silently dropping to LOD0.
+        for tier in result.lod_tiers or []:
+            bucket = lod_by_concavity.setdefault(tier.concavity, [])
+            for hull in tier.hulls:
+                hull.bone_name = name
+                hull.bone_index = bone_idx
+                bucket.append(hull)
 
     _plan.step("per_bone_decompose")
     _plan.detected["bones_skipped"] = bones_skipped
     _plan.processed_vertices = total_mesh_verts
+
+    lod_tiers = None
+    if lod_by_concavity:
+        lod_tiers = [
+            LodHulls(concavity=c, hulls=lod_by_concavity[c])
+            for c in sorted(lod_by_concavity)
+        ]
 
     bones = None
     if bone_names:
@@ -408,4 +424,5 @@ def extract_from_rigged_mesh(
         mesh_vertex_count=total_mesh_verts,
         bones=bones,
         build_plan=_plan,
+        lod_tiers=lod_tiers,
     )
