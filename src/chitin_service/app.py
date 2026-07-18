@@ -124,7 +124,7 @@ async def submit_job(
     )
 
     input_hash = Store.hash_bytes(data)
-    config_hash = Store.hash_config(job_config, output_list)
+    config_hash = Store.hash_config(job_config, output_list, Path(filename).suffix)
     compiler_ver = Store.compiler_version()
 
     cached = store.find_cached(input_hash, config_hash, compiler_ver)

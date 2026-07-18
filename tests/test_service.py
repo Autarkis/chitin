@@ -3,6 +3,7 @@ import trimesh
 from fastapi.testclient import TestClient
 
 from chitin_service.app import app, set_store
+from chitin_service.models import JobConfig
 from chitin_service.store import Store
 
 
@@ -111,6 +112,22 @@ def test_cache_hit(client, box_glb):
     )
     assert resp2.status_code == 201
     assert resp2.json()["cached_from"] == first_id
+
+
+def test_cache_key_distinguishes_input_kind():
+    # Adapter dispatch is extension-based, so identical bytes + config submitted
+    # as .glb vs .obj must produce different cache keys (they route through
+    # different adapters). Regression for the cross-adapter cache-collision bug.
+    cfg = JobConfig()
+    assert Store.hash_config(cfg, ["json"], ".glb") != Store.hash_config(
+        cfg, ["json"], ".obj"
+    )
+
+
+def test_compiler_version_pins_dependency_versions():
+    # A CoACD upgrade must invalidate persisted caches, so its version is part
+    # of the compiler-version cache component.
+    assert "coacd" in Store.compiler_version()
 
 
 def test_404_unknown_job(client):

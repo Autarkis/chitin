@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import shutil
 import sqlite3
@@ -220,12 +221,25 @@ class Store:
         return hashlib.sha256(data).hexdigest()
 
     @staticmethod
-    def hash_config(config: JobConfig, outputs: list[str]) -> str:
+    def hash_config(config: JobConfig, outputs: list[str], input_ext: str) -> str:
         d = config.to_dict()
         d["outputs"] = sorted(outputs)
+        # Adapter dispatch is extension-based, so the input kind is part of the
+        # cache identity: identical bytes submitted as .glb vs .obj must not
+        # collide (they route through different adapters).
+        d["input_ext"] = input_ext.lower()
         blob = json.dumps(d, sort_keys=True).encode()
         return hashlib.sha256(blob).hexdigest()
 
     @staticmethod
     def compiler_version() -> str:
-        return chitin.__version__ if hasattr(chitin, "__version__") else "0.1.0"
+        # Include the versions of the deps that actually shape the output, so an
+        # upgrade of CoACD (or Open3D/trimesh) invalidates persisted caches.
+        base = chitin.__version__ if hasattr(chitin, "__version__") else "0.1.0"
+        parts = [base]
+        for dep in ("coacd", "open3d", "trimesh"):
+            try:
+                parts.append(f"{dep}{importlib.metadata.version(dep)}")
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        return "+".join(parts)

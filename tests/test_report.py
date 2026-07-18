@@ -48,7 +48,10 @@ def test_report_fields(client, box_glb):
     assert isinstance(report["detected"], dict)
     from chitin import __version__
 
-    assert report["compiler_version"] == __version__
+    # compiler_version pins the base version plus dependency versions
+    # (coacd/open3d/trimesh) so a dependency upgrade invalidates caches.
+    assert report["compiler_version"].startswith(__version__)
+    assert "coacd" in report["compiler_version"]
     assert "json" in report["artifacts"]
 
 
