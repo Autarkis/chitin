@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
-import coacd
 import numpy as np
 import trimesh
 
@@ -12,6 +15,147 @@ from chitin.result import ExtractionResult, Hull, LodHulls
 from chitin.stages.flatness import make_planar_box
 from chitin.verify.convex import outward_face_planes as _outward_face_planes
 from chitin.verify.convex import points_inside as _per_vertex_inside
+
+_COACD_WORKER_SCRIPT = Path(__file__).parent / "_coacd_worker.py"
+# Hard-kill budget for a single CoACD call. Kept modest because the failure mode
+# (remesh explosion on non-watertight input) never finishes, and several calls
+# can run serially (seam repair). A cheap is_closed_surface check can't perfectly
+# predict which meshes explode, so one uniform budget is the reliable backstop;
+# the resolution cap below is what keeps the common case fast. Kept low because
+# several calls run serially (seam repair) on 2-core CI, and exploders never
+# finish anyway -- a legit small mesh decomposes in well under this.
+COACD_TIMEOUT_SECONDS = 15
+# A non-watertight mesh forces CoACD's voxel-remesh; at high resolution that
+# explodes the triangle count (~150k+) and stalls MCTS. Capping the resolution
+# keeps the remesh small enough to decompose. Verified: open patches complete
+# in ~1s at res 6-8 but hang at >=10.
+NONWATERTIGHT_MAX_RESOLUTION = 8
+
+
+def is_closed_surface(faces: np.ndarray) -> bool:
+    """Cheap watertight proxy: is every edge shared by exactly two triangles?
+
+    Pure numpy so it stays out of open3d. A closed mesh lets CoACD skip its
+    explosive voxel-remesh; an open one forces it.
+    """
+    if len(faces) == 0:
+        return False
+    edges = np.sort(
+        np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]),
+        axis=1,
+    )
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    return bool(np.all(counts == 2))
+
+
+class CoACDTimeoutError(RuntimeError):
+    """CoACD exceeded its time budget or the worker crashed."""
+
+
+def run_coacd_bounded(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    *,
+    threshold: float,
+    preprocess_mode: str,
+    preprocess_resolution: int,
+    max_convex_hull: int,
+    timeout: float = COACD_TIMEOUT_SECONDS,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Run CoACD in a subprocess so a native stall can be hard-killed on timeout.
+
+    Returns a list of (vertices, triangles) hulls, or raises CoACDTimeoutError
+    when CoACD does not finish in ``timeout`` seconds (or the worker crashes) --
+    e.g. the manifold-remesh explosion on non-watertight input.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        in_path = Path(tmpdir) / "in.npz"
+        out_path = Path(tmpdir) / "out.npz"
+        np.savez(
+            in_path,
+            vertices=np.asarray(vertices, dtype=np.float64),
+            faces=np.asarray(faces, dtype=np.int32),
+            threshold=np.array([threshold], dtype=np.float64),
+            preprocess_mode=np.array([preprocess_mode]),
+            preprocess_resolution=np.array([preprocess_resolution], dtype=np.int64),
+            max_convex_hull=np.array([max_convex_hull], dtype=np.int64),
+        )
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(_COACD_WORKER_SCRIPT),
+                    str(in_path),
+                    str(out_path),
+                ],
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise CoACDTimeoutError(f"coacd timeout after {timeout}s") from exc
+        if result.returncode != 0 or not out_path.exists():
+            raise CoACDTimeoutError(f"coacd worker exit {result.returncode}")
+        with np.load(out_path) as data:
+            n = int(data["n"][0])
+            return [(data[f"v{i}"], data[f"t{i}"]) for i in range(n)]
+
+
+def _aabb_box_hull(vertices: np.ndarray) -> Hull:
+    """Axis-aligned bounding box of ``vertices`` as a fallback convex hull."""
+    mn = vertices.min(axis=0).astype(np.float32)
+    mx = vertices.max(axis=0).astype(np.float32)
+    corners = np.array(
+        [
+            [x, y, z]
+            for x in (mn[0], mx[0])
+            for y in (mn[1], mx[1])
+            for z in (mn[2], mx[2])
+        ],
+        dtype=np.float32,
+    )
+    tris = np.array(
+        [
+            0,
+            1,
+            3,
+            0,
+            3,
+            2,
+            4,
+            6,
+            7,
+            4,
+            7,
+            5,
+            0,
+            4,
+            5,
+            0,
+            5,
+            1,
+            2,
+            3,
+            7,
+            2,
+            7,
+            6,
+            0,
+            2,
+            6,
+            0,
+            6,
+            4,
+            1,
+            5,
+            7,
+            1,
+            7,
+            3,
+        ],
+        dtype=np.uint32,
+    )
+    return Hull(vertices=corners, indices=tris)
+
 
 logger = logging.getLogger("chitin")
 
@@ -349,7 +493,6 @@ def decompose_and_build(
         )
 
     tm = trimesh.Trimesh(vertices=vertices, faces=faces)
-    coacd_mesh = coacd.Mesh(tm.vertices, tm.faces)
 
     preprocess_resolution = config.coacd_preprocess_resolution
     if config.coacd_adaptive_preprocess and config.coacd_preprocess_mode != "off":
@@ -362,39 +505,50 @@ def decompose_and_build(
         ):
             _plan.detected["preprocess_resolution"] = preprocess_resolution
 
-    parts = coacd.run_coacd(
-        coacd_mesh,
-        threshold=config.concavity,
-        preprocess_mode=config.coacd_preprocess_mode,
-        preprocess_resolution=preprocess_resolution,
-        max_convex_hull=config.max_hulls,
-    )
+    closed = is_closed_surface(faces)
+    if (
+        config.coacd_preprocess_mode != "off"
+        and not closed
+        and preprocess_resolution > NONWATERTIGHT_MAX_RESOLUTION
+    ):
+        preprocess_resolution = NONWATERTIGHT_MAX_RESOLUTION
+        if _plan is not None:
+            _plan.detected["nonwatertight_preprocess_cap"] = preprocess_resolution
 
-    hulls = env_hulls.copy()
-    for verts, tris in parts:
-        verts = np.asarray(verts, dtype=np.float32)
-        tris = np.asarray(tris, dtype=np.uint32).ravel()
-        if len(verts) >= config.min_hull_vertices:
-            hulls.append(Hull(vertices=verts, indices=tris))
-
-    lod_tiers = None
-    if config.lod_concavities:
-        lod_tiers = []
-        for lod_concavity in sorted(config.lod_concavities):
-            lod_parts = coacd.run_coacd(
-                coacd_mesh,
-                threshold=lod_concavity,
+    def _decompose(threshold: float) -> list[Hull]:
+        # Bound CoACD (native, can stall on non-watertight input); fall back to
+        # the mesh's bounding box rather than hang the pipeline.
+        try:
+            parts = run_coacd_bounded(
+                tm.vertices,
+                tm.faces,
+                threshold=threshold,
                 preprocess_mode=config.coacd_preprocess_mode,
                 preprocess_resolution=preprocess_resolution,
                 max_convex_hull=config.max_hulls,
             )
-            lod_hulls = env_hulls.copy()
-            for verts, tris in lod_parts:
-                verts = np.asarray(verts, dtype=np.float32)
-                tris = np.asarray(tris, dtype=np.uint32).ravel()
-                if len(verts) >= config.min_hull_vertices:
-                    lod_hulls.append(Hull(vertices=verts, indices=tris))
-            lod_tiers.append(LodHulls(concavity=lod_concavity, hulls=lod_hulls))
+        except CoACDTimeoutError:
+            if _plan is not None:
+                _plan.detected["coacd_timeouts"] = (
+                    _plan.detected.get("coacd_timeouts", 0) + 1
+                )
+            return env_hulls + [_aabb_box_hull(np.asarray(tm.vertices))]
+        out = env_hulls.copy()
+        for verts, tris in parts:
+            verts = np.asarray(verts, dtype=np.float32)
+            tris = np.asarray(tris, dtype=np.uint32).ravel()
+            if len(verts) >= config.min_hull_vertices:
+                out.append(Hull(vertices=verts, indices=tris))
+        return out
+
+    hulls = _decompose(config.concavity)
+
+    lod_tiers = None
+    if config.lod_concavities:
+        lod_tiers = [
+            LodHulls(concavity=c, hulls=_decompose(c))
+            for c in sorted(config.lod_concavities)
+        ]
 
     return ExtractionResult(
         hulls=hulls,

@@ -194,6 +194,10 @@ def _process_single_cell(
     if len(cell_tris) < 4:
         return "filtered_out"
 
+    # Cells are open surface patches after proximity filtering; decompose_and_build
+    # caps CoACD's remesh resolution for non-watertight input (and bounds it) so a
+    # patch can't explode the triangle count and stall.
+
     flat, flat_normal = (
         is_flat_mesh(cell_verts, cell_tris, config.flatness_threshold)
         if config.flatness_threshold > 0
@@ -238,6 +242,7 @@ def extract_spatial(
     config: ResolvedConfig,
     plan: BuildPlan,
 ) -> ExtractionResult:
+    import multiprocessing
     import os
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -304,7 +309,12 @@ def extract_spatial(
     if cell_tasks:
         max_workers = min(os.cpu_count() or 1, len(cell_tasks), 8)
         plan.detected["parallel_workers"] = max_workers
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Force "spawn": the default "fork" on Linux inherits open3d/OpenMP
+        # thread state and locked mutexes into the child, which deadlocks the
+        # worker at startup (macOS already defaults to spawn, which is why this
+        # only hung on Linux CI).
+        ctx = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as executor:
             futures = {}
             for cell_idx, c_pos, c_norm, c_sc, c_rot, s_min, s_max in cell_tasks:
                 f = executor.submit(

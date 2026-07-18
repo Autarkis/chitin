@@ -46,9 +46,18 @@ def poisson_reconstruct_inner(
     )
 
     densities = np.asarray(densities)
-    if len(densities) > 0:
+    if len(densities) > 0 and density_quantile > 0:
         density_threshold = np.quantile(densities, density_quantile)
-        mesh.remove_vertices_by_mask(densities < density_threshold)
+        trimmed = o3d.geometry.TriangleMesh(mesh)
+        trimmed.remove_vertices_by_mask(densities < density_threshold)
+        # Trimming low-density vertices opens boundary holes. A non-watertight
+        # mesh fails CoACD's manifold check and forces its voxel-remesh, which
+        # explodes the triangle count (a few thousand faces -> ~150k+) and
+        # stalls MCTS indefinitely. Keep the trim only when it preserves a
+        # watertight surface; otherwise decompose the (watertight) untrimmed
+        # mesh -- a slightly over-extended collider beats a non-terminating one.
+        if not mesh.is_watertight() or trimmed.is_watertight():
+            mesh = trimmed
 
     return (
         np.asarray(mesh.vertices, dtype=np.float64),

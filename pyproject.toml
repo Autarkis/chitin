@@ -42,6 +42,7 @@ all = ["chitin[splat,usd,service]"]
 dev = [
     "chitin[all]",
     "pytest>=8.0",
+    "pytest-timeout>=2.3",
     "httpx>=0.27",
     "ruff>=0.4",
 ]
@@ -62,3 +63,9 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Hard ceiling so a deadlocked test fails fast instead of freezing CI. The
+# "thread" method (not "signal") dumps every thread's stack and hard-exits on
+# timeout, so it can break a C-level deadlock (e.g. open3d/OpenMP) that a Python
+# SIGALRM handler cannot interrupt -- and the dump names the stuck test + call.
+timeout = 180
+timeout_method = "thread"
