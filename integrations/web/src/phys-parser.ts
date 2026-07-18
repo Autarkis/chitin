@@ -88,6 +88,8 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
   }
 
   const hulls: PhysHull[] = [];
+  let expectedVOff = 0;
+  let expectedIOff = 0;
 
   for (let i = 0; i < hullCount; i++) {
     const off = hullTableOff + i * descSize;
@@ -109,6 +111,19 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
       );
     }
 
+    // Hull ranges are contiguous and non-overlapping: each offset must equal
+    // the running total of preceding counts.
+    if (vOff !== expectedVOff) {
+      throw new Error(
+        `hull ${i}: vertex_offset ${vOff} != expected ${expectedVOff} (non-contiguous or overlapping range)`,
+      );
+    }
+    if (iOff !== expectedIOff) {
+      throw new Error(
+        `hull ${i}: index_offset ${iOff} != expected ${expectedIOff} (non-contiguous or overlapping range)`,
+      );
+    }
+
     const aabbMin: [number, number, number] = [
       view.getFloat32(off + 16, true),
       view.getFloat32(off + 20, true),
@@ -119,6 +134,9 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
       view.getFloat32(off + 32, true),
       view.getFloat32(off + 36, true),
     ];
+    if (![...aabbMin, ...aabbMax].every(Number.isFinite)) {
+      throw new Error(`hull ${i}: non-finite aabb`);
+    }
 
     let boneIndex: number | null = null;
     if (hasBones) {
@@ -154,6 +172,8 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     }
 
     hulls.push({ vertices, indices, aabbMin, aabbMax, boneIndex });
+    expectedVOff += vCount;
+    expectedIOff += iCount;
   }
 
   const bones: PhysBone[] = [];

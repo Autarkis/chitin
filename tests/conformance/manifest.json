@@ -9,6 +9,16 @@
     "errorContains": "magic",
     "valid": false
   },
+  "invalid_nan_aabb.phys": {
+    "description": "hull aabb has a non-finite (NaN) component",
+    "errorContains": "non-finite",
+    "valid": false
+  },
+  "invalid_overlapping_range.phys": {
+    "description": "hull vertex range overlaps a previous hull",
+    "errorContains": "contiguous",
+    "valid": false
+  },
   "invalid_trailing.phys": {
     "description": "trailing bytes after end of data",
     "errorContains": "trailing",

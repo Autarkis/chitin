@@ -235,6 +235,17 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "errorContains": "vertex range",
     }
 
+    # hull 0 aabb_min.x set to NaN (finiteness check; NaN slips past min>max).
+    bad_nan = bytearray(base)
+    b_htoff = struct.unpack_from("<I", bad_nan, 20)[0]
+    struct.pack_into("<f", bad_nan, b_htoff + 16, float("nan"))
+    (FIXTURES / "invalid_nan_aabb.phys").write_bytes(bytes(bad_nan))
+    entries["invalid_nan_aabb.phys"] = {
+        "description": "hull aabb has a non-finite (NaN) component",
+        "valid": False,
+        "errorContains": "non-finite",
+    }
+
     # rigged hull 0 bone_index set out of range (>= bone_count).
     rigged = (FIXTURES / "rigged.phys").read_bytes()
     bad_bone = bytearray(rigged)
@@ -245,6 +256,18 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "description": "hull bone_index out of range",
         "valid": False,
         "errorContains": "bone_index",
+    }
+
+    # rigged hull 1 vertex_offset reset to 0 so its range overlaps hull 0
+    # (still within total_vertices, so only the contiguity check catches it).
+    # rigged has bones, so the descriptor size is 44 bytes.
+    bad_overlap = bytearray(rigged)
+    struct.pack_into("<I", bad_overlap, r_htoff + 44, 0)
+    (FIXTURES / "invalid_overlapping_range.phys").write_bytes(bytes(bad_overlap))
+    entries["invalid_overlapping_range.phys"] = {
+        "description": "hull vertex range overlaps a previous hull",
+        "valid": False,
+        "errorContains": "contiguous",
     }
     return entries
 

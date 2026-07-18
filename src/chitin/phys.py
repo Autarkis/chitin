@@ -153,6 +153,8 @@ def read_phys(path: str | Path) -> PhysFile:
 
     hulls: list[PhysHull] = []
     off = hull_table_off
+    expected_v_off = 0
+    expected_i_off = 0
     for i in range(hull_count):
         v_off, v_count, i_off, i_count = struct.unpack_from("<IIII", data, off)
         if v_off + v_count > total_verts:
@@ -165,8 +167,20 @@ def read_phys(path: str | Path) -> PhysFile:
                 f"hull {i}: index range [{i_off}, {i_off + i_count}) "
                 f"exceeds total_indices {total_idx}"
             )
+        if v_off != expected_v_off:
+            raise ValueError(
+                f"hull {i}: vertex_offset {v_off} != expected {expected_v_off} "
+                "(non-contiguous or overlapping range)"
+            )
+        if i_off != expected_i_off:
+            raise ValueError(
+                f"hull {i}: index_offset {i_off} != expected {expected_i_off} "
+                "(non-contiguous or overlapping range)"
+            )
         aabb_min = np.array(struct.unpack_from("<3f", data, off + 16), dtype=np.float32)
         aabb_max = np.array(struct.unpack_from("<3f", data, off + 28), dtype=np.float32)
+        if not np.all(np.isfinite(aabb_min)) or not np.all(np.isfinite(aabb_max)):
+            raise ValueError(f"hull {i}: non-finite aabb")
         bone_idx = None
         if has_bones:
             raw_bone = struct.unpack_from("<i", data, off + 40)[0]
@@ -200,6 +214,8 @@ def read_phys(path: str | Path) -> PhysFile:
                 bone_index=bone_idx,
             )
         )
+        expected_v_off += v_count
+        expected_i_off += i_count
 
     bones: list[PhysBone] = []
     next_block_off = index_data_off + total_idx * 2
@@ -250,6 +266,10 @@ def read_phys(path: str | Path) -> PhysFile:
                 aabb_max = np.array(
                     struct.unpack_from("<3f", data, off + 28), dtype=np.float32
                 )
+                if not np.all(np.isfinite(aabb_min)) or not np.all(
+                    np.isfinite(aabb_max)
+                ):
+                    raise ValueError("lod tier hull: non-finite aabb")
                 bone_idx = None
                 if has_bones:
                     raw_bone = struct.unpack_from("<i", data, off + 40)[0]
@@ -387,8 +407,29 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
         aabb_min = np.array(struct.unpack_from("<3f", data, off + 16), dtype=np.float32)
         aabb_max = np.array(struct.unpack_from("<3f", data, off + 28), dtype=np.float32)
 
-        if np.any(aabb_min > aabb_max):
+        if not np.all(np.isfinite(aabb_min)) or not np.all(np.isfinite(aabb_max)):
+            issues.append(ValidationIssue("error", f"hull {i}: non-finite aabb"))
+        elif np.any(aabb_min > aabb_max):
             issues.append(ValidationIssue("error", f"hull {i}: aabb_min > aabb_max"))
+
+        # Hull ranges are contiguous and non-overlapping: each offset must equal
+        # the running total of preceding counts (the writer packs sequentially).
+        if v_off != sum_verts:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    f"hull {i}: vertex_offset {v_off} != expected {sum_verts} "
+                    "(non-contiguous or overlapping range)",
+                )
+            )
+        if i_off != sum_indices:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    f"hull {i}: index_offset {i_off} != expected {sum_indices} "
+                    "(non-contiguous or overlapping range)",
+                )
+            )
 
         # Each hull's declared vertex/index range must stay within the arrays.
         if v_off + v_count > total_verts:
