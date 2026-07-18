@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from chitin import Config, extract_from_arrays, extract_from_mesh
 from chitin.stages.normalize import normalize_to_target
 
 
@@ -99,3 +100,60 @@ def test_scale_is_about_origin():
     out, _ = normalize_to_target(pts, target_height=1.0)  # y ext 2 -> 1, scale .5
     assert out[:, 1].min() == pytest.approx(0.0)
     assert out.max(axis=0)[1] == pytest.approx(1.0)
+
+
+def _unit_box(height_y=2.0):
+    """8 corners of an axis-aligned box, extent height_y along +y, 12 triangles."""
+    v = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, height_y, 0],
+            [0, height_y, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, height_y, 1],
+            [0, height_y, 1],
+        ],
+        dtype=np.float64,
+    )
+    f = np.array(
+        [
+            [0, 1, 2],
+            [0, 2, 3],
+            [4, 6, 5],
+            [4, 7, 6],
+            [0, 4, 5],
+            [0, 5, 1],
+            [1, 5, 6],
+            [1, 6, 2],
+            [2, 6, 7],
+            [2, 7, 3],
+            [3, 7, 4],
+            [3, 4, 0],
+        ],
+        dtype=np.int32,
+    )
+    return v, f
+
+
+def test_extract_from_mesh_honors_target_height():
+    # Direct mesh entry point must normalize like file-based extract() does.
+    v, f = _unit_box(height_y=2.0)
+    r = extract_from_mesh(v, f, config=Config(target_height=10.0))
+    assert r.build_plan.detected.get("normalized") is True
+    assert r.build_plan.detected.get("normalize_scale") == pytest.approx(5.0)
+    assert r.hulls
+    allv = np.vstack([h.vertices for h in r.hulls])
+    height = float(allv[:, 1].max() - allv[:, 1].min())
+    assert height == pytest.approx(10.0, rel=0.05)
+
+
+def test_extract_from_arrays_honors_target_height():
+    # Under 100 points returns early, but normalization still runs first, so we
+    # can assert the entry point applies the target without needing Open3D.
+    pts = np.zeros((50, 3), dtype=np.float64)
+    pts[:, 1] = np.linspace(0.0, 2.0, 50)  # y-extent 2
+    r = extract_from_arrays(pts, config=Config(target_height=10.0))
+    assert r.build_plan.detected.get("normalized") is True
+    assert r.build_plan.detected.get("normalize_scale") == pytest.approx(5.0)

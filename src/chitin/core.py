@@ -21,6 +21,43 @@ from chitin.stages.splat import (
 )
 
 
+def _normalize_positions(
+    positions: np.ndarray | None,
+    config: Config,
+    plan: BuildPlan,
+    *,
+    has_covariance: bool = False,
+) -> np.ndarray | None:
+    """Rescale positions to the configured real-world target, recording stats.
+
+    Shared by every non-skinned entry point so ``extract``, ``extract_from_mesh``
+    and ``extract_from_arrays`` honour ``target_height`` / ``target_footprint``
+    identically. A no-op (no target, empty input) returns positions unchanged.
+    """
+    if config.target_height is None and config.target_footprint is None:
+        return positions
+    if positions is None or not len(positions):
+        return positions
+
+    from chitin.stages.normalize import normalize_to_target
+
+    positions, norm_stats = normalize_to_target(
+        positions,
+        target_height=config.target_height,
+        target_footprint=config.target_footprint,
+        up_axis=config.up_axis,
+        flat_aspect_ratio=config.flat_aspect_ratio,
+    )
+    if norm_stats:
+        plan.step("normalize")
+        plan.detected.update(norm_stats)
+        # Uniform scaling moves point positions but not per-splat covariance
+        # magnitudes, so splat inflation / ghost-zone radii stay in source scale.
+        if has_covariance and norm_stats.get("normalized"):
+            plan.detected["normalize_covariance_unscaled"] = True
+    return positions
+
+
 def extract(
     path: str | Path,
     config: Config | None = None,
@@ -38,19 +75,13 @@ def extract(
             # Uniform-scaling a skinned mesh without rescaling its bind poses
             # would desync the rig; furniture (the target use case) is static.
             plan.detected["normalize_skipped_skinned"] = True
-        elif result.positions is not None and len(result.positions):
-            from chitin.stages.normalize import normalize_to_target
-
-            result.positions, norm_stats = normalize_to_target(
+        else:
+            result.positions = _normalize_positions(
                 result.positions,
-                target_height=config.target_height,
-                target_footprint=config.target_footprint,
-                up_axis=config.up_axis,
-                flat_aspect_ratio=config.flat_aspect_ratio,
+                config,
+                plan,
+                has_covariance=result.scales is not None,
             )
-            if norm_stats:
-                plan.step("normalize")
-                plan.detected.update(norm_stats)
 
     analysis = analyze_arrays(
         result.positions,
@@ -127,7 +158,15 @@ def extract_from_arrays(
     source_count = len(positions)
 
     if _plan is None:
+        # Direct call (not via extract()): apply target normalization here so
+        # every public entry point honours target_height / target_footprint.
         _plan = BuildPlan(input_kind="arrays", collider_kind="point_cloud")
+        positions = _normalize_positions(
+            positions,
+            config,
+            _plan,
+            has_covariance=scales is not None and rots is not None,
+        )
     _plan.source_vertices = source_count
 
     if _resolved is None:
@@ -257,7 +296,10 @@ def extract_from_mesh(
     vertices = np.asarray(vertices, dtype=np.float64)
     faces = np.asarray(faces, dtype=np.int32)
     if _plan is None:
+        # Direct call (not via extract()): apply target normalization here so
+        # every public entry point honours target_height / target_footprint.
         _plan = BuildPlan(input_kind="mesh", collider_kind="static")
+        vertices = _normalize_positions(vertices, config, _plan)
     _plan.source_vertices = _plan.source_vertices or len(vertices)
     if _resolved is None:
         analysis = analyze_arrays(vertices, format="mesh", face_count=len(faces))
