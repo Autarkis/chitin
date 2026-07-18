@@ -384,7 +384,7 @@ for hull in phys.hulls:
 |-----------|------|---------|-------------|
 | `concavity` | float | 0.05 | CoACD concavity threshold for LOD 0. Lower = more hulls, tighter fit. |
 | `opacity_threshold` | float | 0.5 | Minimum opacity to keep a point (splat inputs). |
-| `poisson_depth` | int or None | None | Poisson reconstruction depth (point cloud inputs). None = auto-select per cell based on point count. Manual override: 4-7. |
+| `poisson_depth` | int or None | None | Poisson reconstruction depth (point cloud inputs). None = auto-select per cell based on point count. Manual override 4-7 recommended; depths of 8+ are accepted but run in an isolated subprocess, since Open3D can segfault nondeterministically at high depth. |
 | `min_hull_vertices` | int | 4 | Discard hulls with fewer vertices than this. |
 | `max_hulls` | int | 2048 | Maximum number of convex hulls. |
 | `opacity_is_logit` | bool | False | Set True if opacity values are logits (pre-sigmoid). Auto-detected for PLY inputs. |
@@ -419,7 +419,7 @@ When a splat scene exceeds `spatial_split_threshold` points (default 50K), chiti
 
 Each cell is padded by a ghost zone (3x the 95th-percentile splat radius in that cell) so that boundary geometry is reconstructed in both adjacent cells. Because padding is computed per cell, cells with small splats get tight ghost zones while cells with larger splats get wider ones. After per-cell decomposition, a reconciliation pass deduplicates hulls at boundaries using AABB IOU (threshold 0.5), keeping the larger hull when two overlap significantly.
 
-Poisson reconstruction depth is auto-selected per cell based on point count (`floor(log2(n) / 3)`, clamped to 4-7). This avoids over-resolution on small cells and under-resolution on dense ones. Each cell's Poisson step runs in a subprocess so that an Open3D segfault on one cell doesn't kill the entire pipeline -- the cell is skipped and remaining cells continue.
+Poisson reconstruction depth is auto-selected per cell based on point count (`floor(log2(n) / 3)`, clamped to 4-7). This avoids over-resolution on small cells and under-resolution on dense ones. Each cell's Poisson step runs in a subprocess so that an Open3D segfault on one cell doesn't kill the entire pipeline -- the cell is skipped and remaining cells continue. A manual `poisson_depth` of 8 or higher is likewise forced into a subprocess even on the non-partitioned path, so a high-depth segfault can never take down the compiler process.
 
 The build plan tracks `cell_count`, `padding_min`, `padding_median`, `padding_max`, and `reconciled_hulls` for diagnostics.
 

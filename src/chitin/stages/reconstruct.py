@@ -56,6 +56,12 @@ def poisson_reconstruct_inner(
     )
 
 
+# Open3D's Poisson reconstruction can segfault nondeterministically at high
+# octree depths. Depths at or above this run in a subprocess so a crash is
+# contained to one reconstruction rather than killing the compiler process.
+RISKY_POISSON_DEPTH = 8
+
+
 def poisson_reconstruct(
     positions: np.ndarray,
     normals: np.ndarray | None,
@@ -64,6 +70,11 @@ def poisson_reconstruct(
 ) -> tuple[np.ndarray, np.ndarray]:
     depth = config.poisson_depth
     dq = config.poisson_density_quantile
+
+    # Force subprocess isolation for risky manual depths even when the caller
+    # requested in-process reconstruction.
+    if depth is not None and depth >= RISKY_POISSON_DEPTH:
+        isolate = True
 
     if not isolate:
         return poisson_reconstruct_inner(positions, normals, depth, dq)
@@ -109,5 +120,7 @@ def poisson_reconstruct(
                 f"worker exit {result.returncode}: {stderr_tail or 'no stderr'}"
             )
 
-        data = np.load(out_path)
-        return data["vertices"], data["triangles"]
+        # Close the NpzFile handle before the TemporaryDirectory is cleaned up,
+        # otherwise the still-open file blocks removal on Windows.
+        with np.load(out_path) as data:
+            return data["vertices"], data["triangles"]
