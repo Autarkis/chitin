@@ -56,9 +56,7 @@ def test_flat_object_matches_footprint_not_height():
     # A rug: height 0.02, footprint 2.0 -> flat. Matching height would blow the
     # footprint up ~50x; flat-guard matches the footprint instead.
     pts = _box_points(half=(1.0, 0.01, 0.8))  # ext: x=2.0, y=0.02, z=1.6
-    out, stats = normalize_to_target(
-        pts, target_height=0.55, target_footprint=2.0
-    )
+    out, stats = normalize_to_target(pts, target_height=0.55, target_footprint=2.0)
 
     assert stats["normalize_is_flat"] is True
     assert stats["normalize_matched"] == "footprint"
@@ -97,9 +95,7 @@ def test_degenerate_extent_does_not_divide_by_zero():
 
 def test_scale_is_about_origin():
     # A base-on-floor model (min y = 0) keeps its base on the floor after scale.
-    pts = np.array(
-        [[0, 0, 0], [1, 0, 0], [0, 2, 0], [1, 2, 1]], dtype=np.float64
-    )
+    pts = np.array([[0, 0, 0], [1, 0, 0], [0, 2, 0], [1, 2, 1]], dtype=np.float64)
     out, _ = normalize_to_target(pts, target_height=1.0)  # y ext 2 -> 1, scale .5
     assert out[:, 1].min() == pytest.approx(0.0)
     assert out.max(axis=0)[1] == pytest.approx(1.0)

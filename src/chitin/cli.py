@@ -360,7 +360,6 @@ def _print_analysis(analysis) -> None:
         print(f"manifold:   {'yes' if a.is_manifold else 'no'}")
 
     is_splat = a.has_covariance or a.has_opacity
-    needs_poisson = is_splat or (a.face_count is None and not is_splat)
 
     if is_splat:
         print("type:       gaussian splat point cloud")

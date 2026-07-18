@@ -340,7 +340,10 @@ def decompose_and_build(
         preprocess_resolution = adaptive_preprocess_resolution(
             len(faces), config.coacd_preprocess_resolution
         )
-        if _plan is not None and preprocess_resolution != config.coacd_preprocess_resolution:
+        if (
+            _plan is not None
+            and preprocess_resolution != config.coacd_preprocess_resolution
+        ):
             _plan.detected["preprocess_resolution"] = preprocess_resolution
 
     parts = coacd.run_coacd(
