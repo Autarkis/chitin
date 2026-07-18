@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { quantizeHulls, writePhys } from "../src/phys-writer.js";
+import { ChitinError } from "../src/errors.js";
 import type { ConvexHull } from "../src/types.js";
 
 function makeBoxHull(): ConvexHull {
@@ -87,5 +88,59 @@ describe("writePhys", () => {
     const view = new DataView(buf);
     expect(view.getUint32(8, true)).toBe(2);
     expect(view.getUint32(12, true)).toBe(16); // 8 + 8 verts
+  });
+});
+
+describe("writer input validation", () => {
+  const good = (): ConvexHull => ({
+    vertices: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    indices: new Uint32Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3]),
+  });
+
+  function expectInvalid(hull: ConvexHull, needle: string) {
+    let err: unknown;
+    try {
+      writePhys([hull]);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ChitinError);
+    expect((err as ChitinError).code).toBe("INVALID_MESH");
+    expect((err as Error).message).toContain(needle);
+  }
+
+  it("accepts a well-formed hull", () => {
+    expect(() => writePhys([good()])).not.toThrow();
+  });
+
+  it("rejects empty hulls", () => {
+    expectInvalid(
+      { vertices: new Float32Array(0), indices: new Uint32Array(0) },
+      "empty",
+    );
+  });
+
+  it("rejects non-triangle index arrays", () => {
+    const h = good();
+    h.indices = new Uint32Array([0, 1, 2, 0]);
+    expectInvalid(h, "not triangles");
+  });
+
+  it("rejects vertex arrays not divisible by 3", () => {
+    const h = good();
+    h.vertices = new Float32Array([0, 0, 0, 1, 0]);
+    expectInvalid(h, "multiple of 3");
+  });
+
+  it("rejects non-finite vertices", () => {
+    const h = good();
+    h.vertices[4] = Number.NaN;
+    expectInvalid(h, "non-finite");
+  });
+
+  it("rejects indices past the vertex count", () => {
+    const h = good();
+    h.indices = new Uint32Array([0, 1, 99, 0, 1, 2]);
+    expectInvalid(h, "out of range");
   });
 });

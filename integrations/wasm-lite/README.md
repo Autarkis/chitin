@@ -46,7 +46,8 @@ const phys = writePhys(result.hulls);
 ```typescript
 import RAPIER from "@dimforge/rapier3d";
 import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
-import { parsePhys, createColliders } from "@autarkis/chitin-web";
+import { parsePhys } from "@autarkis/chitin-web";
+import { createColliders } from "@autarkis/chitin-web/rapier";
 
 // 1. Init WASM
 await initFromUrl("/wasm/coacd.js", "/wasm/coacd.wasm");

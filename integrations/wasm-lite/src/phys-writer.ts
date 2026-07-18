@@ -1,12 +1,59 @@
+import { ChitinError } from "./errors.js";
 import type { ConvexHull, QuantizedHull } from "./types.js";
 
 const MAGIC = 0x53594850; // "PHYS" little-endian
 const VERSION = 3;
 const HEADER_SIZE = 32;
 const HULL_DESC_SIZE = 40; // no bones
+const MAX_HULL_VERTICES = 65536; // uint16 triangle indices address at most this
+
+// Reject malformed hulls before they reach the binary writer, where bad data
+// would otherwise be silently wrapped (uint16 indices) or produce garbage.
+export function validateHull(hull: ConvexHull, index: number): void {
+  const where = `hull ${index}`;
+  if (hull.vertices.length === 0 || hull.indices.length === 0) {
+    throw new ChitinError("INVALID_MESH", `${where}: empty hull`);
+  }
+  if (hull.vertices.length % 3 !== 0) {
+    throw new ChitinError(
+      "INVALID_MESH",
+      `${where}: vertex array length ${hull.vertices.length} is not a multiple of 3`,
+    );
+  }
+  if (hull.indices.length % 3 !== 0) {
+    throw new ChitinError(
+      "INVALID_MESH",
+      `${where}: index array length ${hull.indices.length} is not a multiple of 3 (not triangles)`,
+    );
+  }
+  const nv = hull.vertices.length / 3;
+  if (nv > MAX_HULL_VERTICES) {
+    throw new ChitinError(
+      "INVALID_MESH",
+      `${where}: ${nv} vertices exceeds the uint16 index limit (${MAX_HULL_VERTICES})`,
+    );
+  }
+  for (let i = 0; i < hull.vertices.length; i++) {
+    if (!Number.isFinite(hull.vertices[i])) {
+      throw new ChitinError(
+        "INVALID_MESH",
+        `${where}: non-finite vertex component at ${i}`,
+      );
+    }
+  }
+  for (let i = 0; i < hull.indices.length; i++) {
+    if (hull.indices[i] >= nv) {
+      throw new ChitinError(
+        "INVALID_MESH",
+        `${where}: index ${hull.indices[i]} out of range (${nv} vertices)`,
+      );
+    }
+  }
+}
 
 export function quantizeHulls(hulls: ConvexHull[]): QuantizedHull[] {
-  return hulls.map((hull) => {
+  return hulls.map((hull, index) => {
+    validateHull(hull, index);
     const nv = hull.vertices.length / 3;
     const aabbMin: [number, number, number] = [Infinity, Infinity, Infinity];
     const aabbMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
