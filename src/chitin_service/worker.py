@@ -70,6 +70,13 @@ def _build_report(
     if plan and plan.decimated:
         warnings.append("mesh was decimated before decomposition")
 
+    if plan and plan.detected.get("decimation_skipped"):
+        n = plan.detected["decimation_skipped"]
+        warnings.append(
+            f"mesh has {n} vertices over max_decompose_vertices but decimation was "
+            "skipped (Open3D not installed); install chitin[splat] to enable it"
+        )
+
     bones_with_colliders = 0
     if result.bones:
         bone_names_with_hulls = {h.bone_name for h in result.hulls if h.bone_name}

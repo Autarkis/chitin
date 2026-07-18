@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import coacd
 import numpy as np
 import trimesh
@@ -10,6 +12,8 @@ from chitin.result import ExtractionResult, Hull, LodHulls
 from chitin.stages.flatness import make_planar_box
 from chitin.verify.convex import outward_face_planes as _outward_face_planes
 from chitin.verify.convex import points_inside as _per_vertex_inside
+
+logger = logging.getLogger("chitin")
 
 
 # CoACD's manifold preprocessing voxel-remeshes non-watertight input on a
@@ -217,6 +221,14 @@ def maybe_decimate(
     try:
         import open3d as o3d
     except ImportError:
+        logger.warning(
+            "mesh has %d vertices (over max_decompose_vertices=%d) but decimation "
+            "was skipped because Open3D is not installed; the full mesh is passed "
+            "to CoACD. Install the 'splat' extra (pip install chitin[splat]) to "
+            "enable large-mesh decimation.",
+            len(vertices),
+            max_vertices,
+        )
         return vertices, faces
     ratio = max_vertices / len(vertices)
     target_faces = max(4, int(len(faces) * ratio))
@@ -313,6 +325,10 @@ def decompose_and_build(
             _plan.step("decimate")
             _plan.detected["decimated_from"] = pre_decimate_count
             _plan.detected["decimated_to"] = len(vertices)
+        elif pre_decimate_count > config.max_decompose_vertices:
+            # Over the threshold but unchanged => decimation was skipped (Open3D
+            # absent). Surface it so the caller knows the full mesh hit CoACD.
+            _plan.detected["decimation_skipped"] = pre_decimate_count
         _plan.step("decompose")
         _plan.processed_vertices = _plan.processed_vertices or len(vertices)
 
