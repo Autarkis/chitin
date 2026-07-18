@@ -20,7 +20,7 @@ It is not a splat viewer feature or a single-engine import button. Viewer collis
 - **Gaussian splat scenes**: extract collision geometry from PLY point clouds with opacity filtering
 - **Robotics simulation**: generate colliders for scanned environments (Isaac Sim, Gazebo, MuJoCo)
 - **Web/XR**: load `.phys` sidecars in the browser alongside your 3D viewer (Three.js + Rapier)
-- **Game engines**: import `.phys` directly in Unity or Unreal with included plugins
+- **Game engines**: Unity's ScriptedImporter turns `.phys` into MeshColliders on drop; the Unreal plugin imports the hull data as an asset
 - **Rigged characters**: per-bone convex hulls in bone-local space, ready for ragdoll or hit detection
 
 ## Compared with viewer collision
@@ -46,8 +46,10 @@ import.
 
 ## Install
 
+> **Status:** this compiler is not published yet -- the current PyPI `chitin` is an unrelated placeholder, and the npm packages are unpublished. Until release, install from source: clone the repo and `pip install -e .` (add extras, e.g. `pip install -e ".[splat]"`). The commands below are the intended published interface.
+
 ```bash
-pip install chitin              # mesh extraction (OBJ, GLB, STL, FBX)
+pip install chitin              # mesh extraction (OBJ, GLB, STL)
 pip install chitin[splat]       # + point cloud / gaussian splat extraction
 pip install chitin[usd]         # + USD Physics output
 pip install chitin[service]     # + local build service
@@ -162,6 +164,8 @@ The `.phys` binary sidecar is the primary output. It stores quantized convex hul
 
 A single decomposition forces a tradeoff between fidelity and cost. Multi-LOD solves this: the producer generates tiers at different concavity thresholds, the consumer picks based on distance, platform budget, or simulation context. LOD 0 is always the highest-detail decomposition. Additional tiers are coarser and cheaper. v2 readers open a v3 file and get LOD 0 without changes.
 
+Runtime tier *selection* (`phys.lod_tier(...)`) is currently Python-only. The TypeScript, Unity, and Unreal readers consume LOD 0 and skip the additional tiers.
+
 | Format | Extension | Use |
 |--------|-----------|-----|
 | Binary sidecar | `.phys` | Web, native engines, Rapier, custom loaders |
@@ -196,6 +200,10 @@ A full working example with capsule walk controller and Playwright tests lives i
 Drop a `.phys` file into your Assets folder. The `ScriptedImporter` creates a GameObject hierarchy with convex MeshColliders -- no code required. For rigged assets, hulls are grouped under bone-named parents.
 
 Install via Package Manager: "Add package from disk" -> `integrations/unity/package.json`. See [docs/usage.md](docs/usage.md#unity-quickstart-drag-and-drop-phys-import) for runtime loading code.
+
+### Unreal: asset import
+
+The ChitinImporter plugin imports a `.phys` into a `UChitinPhysAsset` (dequantized hulls + bind poses) exposed to Blueprints. It does not yet build `UBodySetup` collision for you -- read the hull vertices/indices from the asset and create the collision bodies (`FKConvexElem` / `UBodySetup`) in C++ or Blueprint.
 
 ### Other engines
 
@@ -236,8 +244,10 @@ chitin-server download <job_id> -o ./output
 - **Flat surfaces over-decompose (mitigated).** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the Mip-NeRF 360 Garden scene this reduced hulls from 1,725 to 579 and build time from 27 min to 9 min. Scenes with unusual ground geometry may need threshold tuning or `--flatness-threshold 0` to disable.
 - **No sparse voxel collision output yet.** Chitin currently emits convex hull artifacts, not viewer-native SVO/voxel grids for walk-mode raycasts.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
-- **FBX skinning is not directly supported.** Static FBX meshes work via trimesh. For skinned FBX, use `chitin convert` to convert to GLB via Blender headless, then extract from the GLB.
+- **FBX requires conversion.** trimesh does not register an FBX loader, so all FBX inputs -- static or skinned -- must be converted first with `chitin convert`, which shells out to Blender headless to produce a GLB. Extract from that GLB.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.
+- **Rigged runtime helpers are Python/data only.** The web `addToWorld()` helper places rigged hulls on a single body without applying per-bone bind transforms. For rigged runtime placement, read the per-hull `boneIndex` and the bone bind transforms and position the hulls yourself.
+- **Target normalization does not rescale splat covariance.** `target_height` / `target_footprint` scale point and mesh positions uniformly, but gaussian-splat covariance (scale) is left unchanged, so splat inflation and ghost-zone radii stay in the source scale. Normalize splats at the source if metric splat sizing matters.
 
 ## License
 

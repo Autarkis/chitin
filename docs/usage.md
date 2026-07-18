@@ -160,7 +160,9 @@ Raycast coverage probe. Fires a grid of downward rays through the scene AABB and
 chitin sweep <file.phys> [--grid 32] [--capsule-radius 0.3] [--capsule-height 1.8] [--step-height 0.3]
 ```
 
-Capsule traversability test. Finds ground cells, builds an adjacency graph filtered by step height, flood-fills connected components, and reports what fraction of ground is reachable from the largest island. Rates results as excellent (>=95%), good (>=80%), fair (>=50%), or poor (<50%). Exits with code 2 on poor rating.
+Ground reachability test. Finds ground cells, builds an adjacency graph filtered by step height, flood-fills connected components, and reports what fraction of ground is reachable from the largest island. Rates results as excellent (>=95%), good (>=80%), fair (>=50%), or poor (<50%). Exits with code 2 on poor rating.
+
+This measures floor connectivity, not full capsule clearance: `--capsule-height` is accepted but currently unused, so low ceilings and narrow vertical gaps are not detected. `--capsule-radius` only trims the outer grid margin and deduplicates snag points.
 
 ### Convert
 

@@ -75,7 +75,7 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
     ┌─────────▼──────┐ ┌──────▼───────┐ ┌──────▼───────┐
     │  Web            │ │  Unity        │ │  Unreal      │
     │  Three.js       │ │  PhysReader   │ │  ChitinPhys  │
-    │  Rapier         │ │  MeshCollider │ │  UBodySetup  │
+    │  Rapier         │ │  MeshCollider │ │  PhysAsset   │
     └────────────────┘ └──────────────┘ └──────────────┘
 ```
 
@@ -94,11 +94,11 @@ The compiler is organized into four module groups:
 3. **filter** -- proximity filter removes closure surfaces far from input data. Density quantile strips low-confidence Poisson vertices. Thin-shell extrusion prevents volume-fill on environment scans
 4. **flatness** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD
 5. **decompose** -- CoACD convex decomposition, LOD tier generation, walkable hull extraction, cross-cell AABB IOU deduplication
-6. **repair** -- detects height discontinuities at octree cell boundaries via capsule sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
+6. **repair** -- detects height discontinuities at octree cell boundaries via a downward-ray ground sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
 7. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
 8. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
 
-**`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does capsule traversability analysis. `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
+**`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does ground-reachability analysis -- a step-height-gated flood fill over ground cells; it reports reachable fraction and does not yet evaluate vertical or lateral capsule clearance (`--capsule-height` is currently unused). `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
 
 **`exporters/`** -- output serialization. `.phys` binary packing, JSON debug companion, USD Physics output, and artifact bundle (build-plan.json + analysis.json + resolved-config.json).
 
@@ -126,7 +126,7 @@ Consumers are thin. They read `.phys`, dequantize vertices, and hand geometry to
 | `@autarkis/chitin-web` | TypeScript | Rapier WASM | Column-vector (implicit via `fromArray`) |
 | `@autarkis/chitin-lite` | TypeScript | CoACD WASM | N/A (produces `.phys`, does not consume) |
 | `com.chitin.physics` | C# | Unity MeshCollider | Column-vector (explicit transpose) |
-| ChitinImporter | C++ | Unreal UBodySetup | Row-vector (native match) |
+| ChitinImporter | C++ | Unreal asset import (`UChitinPhysAsset`; no `UBodySetup` yet) | Row-vector (native match) |
 | `chitin.phys` | Python | Direct numpy | Row-vector (native match) |
 
 ### Validation and diagnostics
