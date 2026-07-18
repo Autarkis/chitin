@@ -51,8 +51,8 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "input",
         type=Path,
-        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC; "
-        "FBX via `chitin convert` first)",
+        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC, "
+        "FBX; FBX auto-converts via Blender)",
     )
     p.add_argument("-o", "--output", type=Path, required=True, help="Output file path")
     p.add_argument(
@@ -196,8 +196,8 @@ def _add_check_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "input",
         type=Path,
-        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC; "
-        "FBX via `chitin convert` first)",
+        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC, "
+        "FBX; FBX auto-converts via Blender)",
     )
 
 
@@ -614,7 +614,7 @@ def _add_convert_parser(sub: argparse._SubParsersAction) -> None:
 
 
 def _cmd_convert(args: argparse.Namespace) -> None:
-    from chitin.convert import convert_fbx_to_glb
+    from chitin.convert import BlenderNotFoundError, convert_fbx_to_glb
 
     input_path = Path(args.input)
     if input_path.suffix.lower() != ".fbx":
@@ -626,7 +626,11 @@ def _cmd_convert(args: argparse.Namespace) -> None:
     if not args.quiet:
         print(f"chitin: {input_path} -> {output_path} (via Blender)")
 
-    convert_fbx_to_glb(input_path, output_path)
+    try:
+        convert_fbx_to_glb(input_path, output_path)
+    except (BlenderNotFoundError, RuntimeError) as exc:
+        print(f"chitin: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     if not args.quiet:
         print(f"chitin: wrote {output_path}")

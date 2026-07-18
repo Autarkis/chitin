@@ -28,7 +28,7 @@ Most inputs work with defaults. Use `chitin check <file>` to see what chitin det
 | Large mesh (200K+ verts) | `chitin extract big.obj -o big.phys` | Decimates above the `Config.max_decompose_vertices` field (200K default) **when Open3D is available** (`chitin[splat]`). On a base install without Open3D, decimation is skipped with a logged warning and the full mesh is passed to CoACD. Set the threshold via the Python `Config`; there is no CLI flag. |
 | Multi-LOD | `chitin extract model.obj -o model.phys --lod-concavities 0.1,0.3,0.5` | LOD 0 uses `--concavity`; each additional threshold must be coarser (greater) than `--concavity`. Output is v3 `.phys`. |
 | Rigged character (GLB) | `chitin extract character.glb -o character.phys` | Experimental. Per-bone hulls in bone-local space. Single-primitive GLB only. |
-| FBX (static or skinned) | `chitin convert model.fbx -o model.glb && chitin extract model.glb -o model.phys` | trimesh has no FBX loader, so all FBX must be converted to GLB via Blender headless first. |
+| FBX (static or skinned) | `chitin extract model.fbx -o model.phys` | trimesh has no FBX loader, so extract auto-converts FBX to GLB via headless Blender (must be on PATH). `chitin convert` does the step explicitly. |
 | USD scene | `chitin extract scene.usda -o colliders.usda` | Requires `pip install chitin[usd]`. |
 
 If you're unsure, start with defaults and inspect the result with `chitin inspect output.phys` and `chitin probe output.phys`.
@@ -41,7 +41,7 @@ If you're unsure, start with defaults and inspect the result with `chitin inspec
 chitin extract <input> -o <output> [options]
 ```
 
-Supported inputs: `.ply`, `.obj`, `.stl`, `.off`, `.glb`, `.gltf`, `.usd`, `.usda`, `.usdc`. FBX (`.fbx`) is not read directly -- convert it to GLB first with `chitin convert` (see below).
+Supported inputs: `.ply`, `.obj`, `.stl`, `.off`, `.glb`, `.gltf`, `.usd`, `.usda`, `.usdc`, `.fbx`. FBX auto-converts to GLB via headless Blender (Blender must be on PATH; see `chitin convert`).
 
 Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` (USD Physics)
 
