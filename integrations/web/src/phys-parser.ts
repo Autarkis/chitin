@@ -191,6 +191,9 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
       for (let f = 0; f < 16; f++) {
         bindTransform[f] = view.getFloat32(bOff + f * 4, true);
       }
+      if (!bindTransform.every(Number.isFinite)) {
+        throw new Error(`bone ${b}: non-finite bind_transform`);
+      }
       bOff += 64;
       requireBytes(byteLength, bOff, 2, `bone ${b} name length`);
       const nameLen = view.getUint16(bOff, true);

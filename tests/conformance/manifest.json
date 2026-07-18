@@ -4,6 +4,18 @@
     "errorContains": "bone_index",
     "valid": false
   },
+  "invalid_lod_nan_aabb.phys": {
+    "description": "LOD tier hull aabb has a non-finite component",
+    "errorContains": "non-finite",
+    "pythonOnly": true,
+    "valid": false
+  },
+  "invalid_lod_offset.phys": {
+    "description": "LOD tier hull vertex range leaves the tier",
+    "errorContains": "range",
+    "pythonOnly": true,
+    "valid": false
+  },
   "invalid_magic.phys": {
     "description": "wrong magic bytes",
     "errorContains": "magic",
@@ -12,6 +24,11 @@
   "invalid_nan_aabb.phys": {
     "description": "hull aabb has a non-finite (NaN) component",
     "errorContains": "non-finite",
+    "valid": false
+  },
+  "invalid_nan_bind.phys": {
+    "description": "bone bind_transform has a non-finite component",
+    "errorContains": "bind_transform",
     "valid": false
   },
   "invalid_overlapping_range.phys": {

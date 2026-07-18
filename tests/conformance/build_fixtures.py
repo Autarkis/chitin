@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 
 from chitin.exporters.phys import export_phys
-from chitin.phys import LodTier, PhysBone, PhysHull, read_phys
+from chitin.phys import LOD_TIER_HEADER_SIZE, LodTier, PhysBone, PhysHull, read_phys
 
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE / "fixtures"
@@ -268,6 +268,49 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "description": "hull vertex range overlaps a previous hull",
         "valid": False,
         "errorContains": "contiguous",
+    }
+
+    # rigged bone bind transform corrupted to NaN (finite check on the bind block).
+    (_v, _fl, _hc, _tv, r_tidx, _hto, _vdo, r_idata) = struct.unpack_from(
+        "<HHIIIIII", rigged, 4
+    )
+    r_bone_block = r_idata + r_tidx * 2  # rigged has no LOD block
+    bad_bind = bytearray(rigged)
+    struct.pack_into("<f", bad_bind, r_bone_block + 4, float("nan"))  # skip bone_count
+    (FIXTURES / "invalid_nan_bind.phys").write_bytes(bytes(bad_bind))
+    entries["invalid_nan_bind.phys"] = {
+        "description": "bone bind_transform has a non-finite component",
+        "valid": False,
+        "errorContains": "bind_transform",
+    }
+
+    # LOD-internal corruption. The web parser skips LOD tier bodies, so these are
+    # Python-only (the web conformance test skips pythonOnly fixtures).
+    lod = (FIXTURES / "multi_lod.phys").read_bytes()
+    (_v2, _fl2, _hc2, _tv2, l_tidx, _hto2, _vdo2, l_idata) = struct.unpack_from(
+        "<HHIIIIII", lod, 4
+    )
+    # multi_lod has no bind poses, so the LOD block follows the index data.
+    l_tier0_hull0 = l_idata + l_tidx * 2 + 4 + LOD_TIER_HEADER_SIZE
+
+    bad_lod_nan = bytearray(lod)
+    struct.pack_into("<f", bad_lod_nan, l_tier0_hull0 + 16, float("nan"))
+    (FIXTURES / "invalid_lod_nan_aabb.phys").write_bytes(bytes(bad_lod_nan))
+    entries["invalid_lod_nan_aabb.phys"] = {
+        "description": "LOD tier hull aabb has a non-finite component",
+        "valid": False,
+        "errorContains": "non-finite",
+        "pythonOnly": True,
+    }
+
+    bad_lod_off = bytearray(lod)
+    struct.pack_into("<I", bad_lod_off, l_tier0_hull0, 1)  # vertex_offset out of range
+    (FIXTURES / "invalid_lod_offset.phys").write_bytes(bytes(bad_lod_off))
+    entries["invalid_lod_offset.phys"] = {
+        "description": "LOD tier hull vertex range leaves the tier",
+        "valid": False,
+        "errorContains": "range",
+        "pythonOnly": True,
     }
     return entries
 

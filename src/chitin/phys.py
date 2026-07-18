@@ -229,6 +229,8 @@ def read_phys(path: str | Path) -> PhysFile:
                 .reshape(4, 4)
                 .copy()
             )
+            if not np.all(np.isfinite(mat)):
+                raise ValueError("non-finite bind_transform")
             bone_off += 64
             name_len = struct.unpack_from("<H", data, bone_off)[0]
             bone_off += 2
@@ -248,7 +250,7 @@ def read_phys(path: str | Path) -> PhysFile:
             t_concavity = struct.unpack_from("<f", data, lod_off)[0]
             t_hull_count = struct.unpack_from("<I", data, lod_off + 4)[0]
             t_total_verts = struct.unpack_from("<I", data, lod_off + 8)[0]
-            _t_total_idx = struct.unpack_from("<I", data, lod_off + 12)[0]  # noqa: F841
+            t_total_idx = struct.unpack_from("<I", data, lod_off + 12)[0]
             t_data_size = struct.unpack_from("<I", data, lod_off + 16)[0]
             lod_off += LOD_TIER_HEADER_SIZE
 
@@ -258,8 +260,18 @@ def read_phys(path: str | Path) -> PhysFile:
 
             tier_hulls: list[PhysHull] = []
             off = t_hull_table_off
+            t_expected_v_off = 0
+            t_expected_i_off = 0
             for _ in range(t_hull_count):
                 v_off, v_count, i_off, i_count = struct.unpack_from("<IIII", data, off)
+                if v_off + v_count > t_total_verts:
+                    raise ValueError("lod tier hull: vertex range exceeds tier total")
+                if i_off + i_count > t_total_idx:
+                    raise ValueError("lod tier hull: index range exceeds tier total")
+                if v_off != t_expected_v_off or i_off != t_expected_i_off:
+                    raise ValueError(
+                        "lod tier hull: non-contiguous or overlapping range"
+                    )
                 aabb_min = np.array(
                     struct.unpack_from("<3f", data, off + 16), dtype=np.float32
                 )
@@ -273,6 +285,15 @@ def read_phys(path: str | Path) -> PhysFile:
                 bone_idx = None
                 if has_bones:
                     raw_bone = struct.unpack_from("<i", data, off + 40)[0]
+                    if raw_bone < -1:
+                        raise ValueError(
+                            f"lod tier hull: invalid bone_index {raw_bone}"
+                        )
+                    if bone_table_count is not None and raw_bone >= bone_table_count:
+                        raise ValueError(
+                            f"lod tier hull: bone_index {raw_bone} >= "
+                            f"bone_count {bone_table_count}"
+                        )
                     bone_idx = None if raw_bone == -1 else raw_bone
                 off += desc_size
 
@@ -299,6 +320,8 @@ def read_phys(path: str | Path) -> PhysFile:
                         bone_index=bone_idx,
                     )
                 )
+                t_expected_v_off += v_count
+                t_expected_i_off += i_count
 
             lod_tiers.append(LodTier(concavity=t_concavity, hulls=tier_hulls))
             lod_off += t_data_size
@@ -538,14 +561,19 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
                 mat = np.frombuffer(
                     data, dtype=np.float32, count=16, offset=bone_off
                 ).reshape(4, 4)
-                det = np.linalg.det(mat[:3, :3])
-                if abs(det) < 1e-7:
+                if not np.all(np.isfinite(mat)):
                     issues.append(
-                        ValidationIssue(
-                            "warning",
-                            f"bone {b}: near-singular bind_transform (det={det:.2e})",
-                        )
+                        ValidationIssue("error", f"bone {b}: non-finite bind_transform")
                     )
+                else:
+                    det = np.linalg.det(mat[:3, :3])
+                    if abs(det) < 1e-7:
+                        issues.append(
+                            ValidationIssue(
+                                "warning",
+                                f"bone {b}: near-singular bind_transform (det={det:.2e})",
+                            )
+                        )
                 bone_off += 64
                 if bone_off + 2 > len(data):
                     issues.append(
@@ -642,11 +670,52 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
                     struct.unpack_from("<3f", data, off + 28), dtype=np.float32
                 )
 
-                if np.any(t_aabb_min > t_aabb_max):
+                if not np.all(np.isfinite(t_aabb_min)) or not np.all(
+                    np.isfinite(t_aabb_max)
+                ):
+                    issues.append(
+                        ValidationIssue(
+                            "error", f"LOD tier {t} hull {h}: non-finite aabb"
+                        )
+                    )
+                elif np.any(t_aabb_min > t_aabb_max):
                     issues.append(
                         ValidationIssue(
                             "error",
                             f"LOD tier {t} hull {h}: aabb_min > aabb_max",
+                        )
+                    )
+
+                if v_off + v_count > t_total_verts:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"LOD tier {t} hull {h}: vertex range exceeds tier "
+                            f"total_vertices {t_total_verts}",
+                        )
+                    )
+                if i_off + i_count > t_total_idx:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"LOD tier {t} hull {h}: index range exceeds tier "
+                            f"total_indices {t_total_idx}",
+                        )
+                    )
+                if v_off != t_sum_verts:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"LOD tier {t} hull {h}: vertex_offset {v_off} != "
+                            f"expected {t_sum_verts} (non-contiguous or overlapping)",
+                        )
+                    )
+                if i_off != t_sum_idx:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"LOD tier {t} hull {h}: index_offset {i_off} != "
+                            f"expected {t_sum_idx} (non-contiguous or overlapping)",
                         )
                     )
 
@@ -673,6 +742,14 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
                             ValidationIssue(
                                 "error",
                                 f"LOD tier {t} hull {h}: invalid bone_index {bone_idx}",
+                            )
+                        )
+                    elif bone_table_count is not None and bone_idx >= bone_table_count:
+                        issues.append(
+                            ValidationIssue(
+                                "error",
+                                f"LOD tier {t} hull {h}: bone_index {bone_idx} >= "
+                                f"bone_count {bone_table_count}",
                             )
                         )
 

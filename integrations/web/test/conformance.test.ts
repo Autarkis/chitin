@@ -71,8 +71,11 @@ describe("phys cross-runtime conformance", () => {
   }
 
   for (const name of invalid) {
-    it(`rejects ${name}`, () => {
-      const spec = manifest[name];
+    const spec = manifest[name];
+    // LOD-internal corruption is undetectable here: the web parser skips LOD
+    // tier bodies, so those fixtures are Python-only.
+    const run = spec.pythonOnly ? it.skip : it;
+    run(`rejects ${name}`, () => {
       // parsePhys throws, and the message names the defect (same needle Python checks)
       expect(() => parsePhys(load(name))).toThrow(spec.errorContains);
     });
