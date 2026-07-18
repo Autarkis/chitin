@@ -51,7 +51,8 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "input",
         type=Path,
-        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, FBX, USD, USDA, USDC)",
+        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC; "
+        "FBX via `chitin convert` first)",
     )
     p.add_argument("-o", "--output", type=Path, required=True, help="Output file path")
     p.add_argument(
@@ -195,7 +196,8 @@ def _add_check_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "input",
         type=Path,
-        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, FBX, USD, USDA, USDC)",
+        help="Input file (PLY, OBJ, STL, OFF, GLB, GLTF, USD, USDA, USDC; "
+        "FBX via `chitin convert` first)",
     )
 
 
@@ -518,9 +520,7 @@ def _cmd_probe(args: argparse.Namespace) -> None:
 
 
 def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser(
-        "sweep", help="capsule traversability test for collision quality"
-    )
+    p = sub.add_parser("sweep", help="ground reachability test for collision quality")
     p.add_argument("file", type=Path, help="path to .phys file")
     p.add_argument(
         "--grid",
@@ -538,7 +538,8 @@ def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
         "--capsule-height",
         type=float,
         default=1.8,
-        help="Capsule height in meters (default: 1.8)",
+        help="Capsule height in meters (default: 1.8; currently unused -- the "
+        "sweep measures ground reachability, not vertical clearance)",
     )
     p.add_argument(
         "--step-height",
