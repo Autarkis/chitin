@@ -9,7 +9,7 @@ class Config:
     opacity_threshold: float = 0.5
     poisson_depth: int | None = None
     min_hull_vertices: int = 4
-    max_hulls: int = 2048
+    max_hulls: int = 2048  # per decomposition unit (per octree cell / per bone)
     opacity_is_logit: bool = False
     coacd_preprocess_mode: str = "auto"
     coacd_preprocess_resolution: int = 50

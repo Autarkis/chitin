@@ -294,31 +294,36 @@ def extract_spatial(
             )
         )
 
-    max_workers = min(os.cpu_count() or 1, len(cell_tasks), 8)
-    plan.detected["parallel_workers"] = max_workers
     plan.detected["cells_skipped_sparse"] = cells_skipped_sparse
     cells_failed = 0
     failure_reasons: dict[str, int] = {}
     failed_cells: list[tuple[int, str]] = []
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {}
-        for cell_idx, c_pos, c_norm, c_sc, c_rot, s_min, s_max in cell_tasks:
-            f = executor.submit(
-                _process_single_cell,
-                c_pos,
-                c_norm,
-                c_sc,
-                c_rot,
-                s_min,
-                s_max,
-                config,
-            )
-            futures[f] = cell_idx
+    # Every cell may be too sparse to keep; ProcessPoolExecutor rejects
+    # max_workers=0, so only spin up the pool when there is work to do.
+    results_by_cell = {}
+    if cell_tasks:
+        max_workers = min(os.cpu_count() or 1, len(cell_tasks), 8)
+        plan.detected["parallel_workers"] = max_workers
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for cell_idx, c_pos, c_norm, c_sc, c_rot, s_min, s_max in cell_tasks:
+                f = executor.submit(
+                    _process_single_cell,
+                    c_pos,
+                    c_norm,
+                    c_sc,
+                    c_rot,
+                    s_min,
+                    s_max,
+                    config,
+                )
+                futures[f] = cell_idx
 
-        results_by_cell = {}
-        for future in as_completed(futures):
-            results_by_cell[futures[future]] = future.result()
+            for future in as_completed(futures):
+                results_by_cell[futures[future]] = future.result()
+    else:
+        plan.detected["parallel_workers"] = 0
 
     # Append in cell order, not completion order: as_completed yields in
     # scheduling-dependent order and every downstream pass (seam repair,

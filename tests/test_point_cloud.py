@@ -119,6 +119,24 @@ def test_inflate_splat_points_count():
     np.testing.assert_array_equal(inflated[:2], positions)
 
 
+def test_spatial_all_sparse_cells_no_crash():
+    # spatial_split_threshold=1 forces the spatial path; with fewer than 100
+    # points no octree cell can meet the density floor, so every cell is
+    # skipped as sparse. The pool must not be built with max_workers=0.
+    rng = np.random.default_rng(0)
+    n = 60
+    pts = rng.uniform(-10, 10, (n, 3)).astype(np.float64)
+    scales = np.full((n, 3), np.log(0.02), dtype=np.float64)
+    rots = np.tile([1.0, 0.0, 0.0, 0.0], (n, 1)).astype(np.float64)
+
+    r = extract_from_arrays(
+        pts, scales=scales, rots=rots, config=Config(spatial_split_threshold=1)
+    )
+    assert len(r.hulls) == 0
+    assert r.build_plan.detected.get("parallel_workers") == 0
+    assert r.build_plan.detected.get("cells_skipped_sparse", 0) >= 1
+
+
 def test_octree_partition_small_set():
     from chitin.stages.splat import octree_partition
 

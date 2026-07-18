@@ -54,7 +54,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--concavity` | 0.05 | CoACD concavity threshold. Lower = tighter fit, more hulls. |
 | `--opacity-threshold` | 0.1 | Minimum opacity to keep a point (splat inputs only). |
 | `--poisson-depth` | auto | Poisson reconstruction depth (point cloud inputs only). Auto-selects per cell based on point count. |
-| `--max-hulls` | 2048 | Maximum number of convex hulls. |
+| `--max-hulls` | 2048 | Max convex hulls per decomposition unit (per octree cell / per bone), not a global cap. |
 | `--lod-concavities` | none | Comma-separated concavity thresholds for LOD tiers. |
 | `--density-quantile` | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environments. |
 | `--proximity-filter` | 0 | Remove mesh vertices farther than N * median_nn_distance from input. |
@@ -386,7 +386,7 @@ for hull in phys.hulls:
 | `opacity_threshold` | float | 0.5 | Minimum opacity to keep a point (splat inputs). |
 | `poisson_depth` | int or None | None | Poisson reconstruction depth (point cloud inputs). None = auto-select per cell based on point count. Manual override 4-7 recommended; depths of 8+ are accepted but run in an isolated subprocess, since Open3D can segfault nondeterministically at high depth. |
 | `min_hull_vertices` | int | 4 | Discard hulls with fewer vertices than this. |
-| `max_hulls` | int | 2048 | Maximum number of convex hulls. |
+| `max_hulls` | int | 2048 | Max convex hulls per decomposition unit (per octree cell / per bone), not a global cap. |
 | `opacity_is_logit` | bool | False | Set True if opacity values are logits (pre-sigmoid). Auto-detected for PLY inputs. |
 | `coacd_preprocess_mode` | str | "auto" | CoACD preprocessing mode. |
 | `coacd_preprocess_resolution` | int | 50 | CoACD preprocessing resolution. |
