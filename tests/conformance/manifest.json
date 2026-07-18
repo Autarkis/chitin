@@ -1,4 +1,9 @@
 {
+  "invalid_bone_index.phys": {
+    "description": "hull bone_index out of range",
+    "errorContains": "bone_index",
+    "valid": false
+  },
   "invalid_magic.phys": {
     "description": "wrong magic bytes",
     "errorContains": "magic",
@@ -17,6 +22,11 @@
   "invalid_version.phys": {
     "description": "unsupported version 99",
     "errorContains": "version",
+    "valid": false
+  },
+  "invalid_vertex_offset.phys": {
+    "description": "hull vertex range exceeds total_vertices",
+    "errorContains": "vertex range",
     "valid": false
   },
   "multi_lod.phys": {

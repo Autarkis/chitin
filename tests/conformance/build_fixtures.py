@@ -222,6 +222,30 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "valid": False,
         "errorContains": "trailing",
     }
+
+    # hull 0 vertex_offset pushed past the end so its span exceeds total_vertices.
+    bad_voff = bytearray(base)
+    total_verts = struct.unpack_from("<I", bad_voff, 12)[0]
+    htoff = struct.unpack_from("<I", bad_voff, 20)[0]
+    struct.pack_into("<I", bad_voff, htoff, total_verts)
+    (FIXTURES / "invalid_vertex_offset.phys").write_bytes(bytes(bad_voff))
+    entries["invalid_vertex_offset.phys"] = {
+        "description": "hull vertex range exceeds total_vertices",
+        "valid": False,
+        "errorContains": "vertex range",
+    }
+
+    # rigged hull 0 bone_index set out of range (>= bone_count).
+    rigged = (FIXTURES / "rigged.phys").read_bytes()
+    bad_bone = bytearray(rigged)
+    r_htoff = struct.unpack_from("<I", bad_bone, 20)[0]
+    struct.pack_into("<i", bad_bone, r_htoff + 40, 999)
+    (FIXTURES / "invalid_bone_index.phys").write_bytes(bytes(bad_bone))
+    entries["invalid_bone_index.phys"] = {
+        "description": "hull bone_index out of range",
+        "valid": False,
+        "errorContains": "bone_index",
+    }
     return entries
 
 

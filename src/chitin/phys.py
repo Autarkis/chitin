@@ -145,15 +145,37 @@ def read_phys(path: str | Path) -> PhysFile:
     if len(data) < expected_min:
         raise ValueError(f"file truncated: {len(data)} bytes < minimum {expected_min}")
 
+    # Peek the bone count (bind-pose block trails index data) to bounds-check
+    # per-hull bone indices while reading.
+    bone_table_count = None
+    if flags & FLAG_HAS_BIND_POSES and expected_min + 4 <= len(data):
+        bone_table_count = struct.unpack_from("<I", data, expected_min)[0]
+
     hulls: list[PhysHull] = []
     off = hull_table_off
-    for _ in range(hull_count):
+    for i in range(hull_count):
         v_off, v_count, i_off, i_count = struct.unpack_from("<IIII", data, off)
+        if v_off + v_count > total_verts:
+            raise ValueError(
+                f"hull {i}: vertex range [{v_off}, {v_off + v_count}) "
+                f"exceeds total_vertices {total_verts}"
+            )
+        if i_off + i_count > total_idx:
+            raise ValueError(
+                f"hull {i}: index range [{i_off}, {i_off + i_count}) "
+                f"exceeds total_indices {total_idx}"
+            )
         aabb_min = np.array(struct.unpack_from("<3f", data, off + 16), dtype=np.float32)
         aabb_max = np.array(struct.unpack_from("<3f", data, off + 28), dtype=np.float32)
         bone_idx = None
         if has_bones:
             raw_bone = struct.unpack_from("<i", data, off + 40)[0]
+            if raw_bone < -1:
+                raise ValueError(f"hull {i}: invalid bone_index {raw_bone}")
+            if bone_table_count is not None and raw_bone >= bone_table_count:
+                raise ValueError(
+                    f"hull {i}: bone_index {raw_bone} >= bone_count {bone_table_count}"
+                )
             bone_idx = None if raw_bone == -1 else raw_bone
         off += desc_size
 
@@ -345,6 +367,14 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
             )
         )
 
+    # Peek the bone count (the bind-pose block trails the index data) so each
+    # hull's bone_index can be range-checked during the loop below.
+    bone_table_count: int | None = None
+    if flags & FLAG_HAS_BIND_POSES:
+        bone_block_off = index_data_off + total_idx * 2
+        if bone_block_off + 4 <= len(data):
+            bone_table_count = struct.unpack_from("<I", data, bone_block_off)[0]
+
     sum_verts = 0
     sum_indices = 0
     off = hull_table_off
@@ -359,6 +389,24 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
 
         if np.any(aabb_min > aabb_max):
             issues.append(ValidationIssue("error", f"hull {i}: aabb_min > aabb_max"))
+
+        # Each hull's declared vertex/index range must stay within the arrays.
+        if v_off + v_count > total_verts:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    f"hull {i}: vertex range [{v_off}, {v_off + v_count}) "
+                    f"exceeds total_vertices {total_verts}",
+                )
+            )
+        if i_off + i_count > total_idx:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    f"hull {i}: index range [{i_off}, {i_off + i_count}) "
+                    f"exceeds total_indices {total_idx}",
+                )
+            )
 
         if v_count < 4:
             issues.append(
@@ -377,6 +425,14 @@ def validate_phys(path: str | Path) -> list[ValidationIssue]:
             if bone_idx < -1:
                 issues.append(
                     ValidationIssue("error", f"hull {i}: invalid bone_index {bone_idx}")
+                )
+            elif bone_table_count is not None and bone_idx >= bone_table_count:
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        f"hull {i}: bone_index {bone_idx} >= "
+                        f"bone_count {bone_table_count}",
+                    )
                 )
 
         i_byte_off = index_data_off + i_off * 2

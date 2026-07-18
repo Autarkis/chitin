@@ -77,6 +77,16 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     throw new Error(`bad index data offset: ${indexDataOff}`);
   }
 
+  // Peek the bone count (the bind-pose block trails the index data) so each
+  // hull's boneIndex can be range-checked in the loop below.
+  let boneTableCount: number | null = null;
+  if (hasBindPoses) {
+    const boneBlockOff = indexDataOff + totalIdx * 2;
+    if (boneBlockOff + 4 <= byteLength) {
+      boneTableCount = view.getUint32(boneBlockOff, true);
+    }
+  }
+
   const hulls: PhysHull[] = [];
 
   for (let i = 0; i < hullCount; i++) {
@@ -86,6 +96,18 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     const vCount = view.getUint32(off + 4, true);
     const iOff = view.getUint32(off + 8, true);
     const iCount = view.getUint32(off + 12, true);
+
+    // Each hull's declared vertex/index range must stay within the arrays.
+    if (vOff + vCount > totalVerts) {
+      throw new Error(
+        `hull ${i}: vertex range [${vOff}, ${vOff + vCount}) exceeds total_vertices ${totalVerts}`,
+      );
+    }
+    if (iOff + iCount > totalIdx) {
+      throw new Error(
+        `hull ${i}: index range [${iOff}, ${iOff + iCount}) exceeds total_indices ${totalIdx}`,
+      );
+    }
 
     const aabbMin: [number, number, number] = [
       view.getFloat32(off + 16, true),
@@ -101,6 +123,14 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     let boneIndex: number | null = null;
     if (hasBones) {
       const raw = view.getInt32(off + 40, true);
+      if (raw < -1) {
+        throw new Error(`hull ${i}: invalid bone_index ${raw}`);
+      }
+      if (boneTableCount !== null && raw >= boneTableCount) {
+        throw new Error(
+          `hull ${i}: bone_index ${raw} >= bone_count ${boneTableCount}`,
+        );
+      }
       boneIndex = raw === -1 ? null : raw;
     }
 
