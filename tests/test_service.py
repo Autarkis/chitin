@@ -151,3 +151,49 @@ def test_bad_format_rejected(client, box_glb):
             params={"outputs": "mp4"},
         )
     assert resp.status_code == 400
+
+
+def test_submit_cli_omits_poisson_depth_by_default(monkeypatch, tmp_path):
+    # The submit CLI must not force depth 8 (documented-unstable); by default it
+    # sends no poisson_depth so the server auto-selects 4-7 per cell.
+    import argparse
+
+    from chitin_service import cli
+
+    captured = {}
+
+    class _Resp:
+        status_code = 201
+        text = ""
+
+        def json(self):
+            return {"id": "j1", "status": "complete"}
+
+    def _fake_post(url, files=None, params=None, timeout=None):
+        captured["params"] = params
+        return _Resp()
+
+    monkeypatch.setattr("httpx.post", _fake_post)
+    f = tmp_path / "m.glb"
+    f.write_bytes(b"x")
+    args = argparse.Namespace(
+        file=str(f),
+        server="http://x",
+        outputs="phys",
+        concavity=0.05,
+        opacity_threshold=0.5,
+        poisson_depth=None,
+        min_hull_vertices=4,
+        max_hulls=256,
+        opacity_is_logit=False,
+        coacd_preprocess_mode="auto",
+        coacd_preprocess_resolution=50,
+        max_decompose_vertices=200_000,
+    )
+
+    cli._cmd_submit(args)
+    assert "poisson_depth" not in captured["params"]
+
+    args.poisson_depth = 8
+    cli._cmd_submit(args)
+    assert captured["params"]["poisson_depth"] == 8

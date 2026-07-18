@@ -21,7 +21,13 @@ def main() -> None:
     )
     submit.add_argument("--concavity", type=float, default=0.05)
     submit.add_argument("--opacity-threshold", type=float, default=0.5)
-    submit.add_argument("--poisson-depth", type=int, default=8)
+    submit.add_argument(
+        "--poisson-depth",
+        type=int,
+        default=None,
+        help="Poisson depth for point clouds; default auto-selects 4-7 per "
+        "cell. 8+ is accepted but unstable (isolated in a subprocess).",
+    )
     submit.add_argument("--min-hull-vertices", type=int, default=4)
     submit.add_argument("--max-hulls", type=int, default=256)
     submit.add_argument("--opacity-is-logit", action="store_true")
@@ -30,7 +36,6 @@ def main() -> None:
     )
     submit.add_argument("--coacd-preprocess-resolution", type=int, default=50)
     submit.add_argument("--max-decompose-vertices", type=int, default=200_000)
-    submit.add_argument("--wait", action="store_true", help="poll until complete")
 
     status = sub.add_parser("status", help="check job status")
     status.add_argument("job_id")
@@ -74,22 +79,27 @@ def _cmd_submit(args: argparse.Namespace) -> None:
     import httpx
 
     path = args.file
+    params = {
+        "outputs": args.outputs,
+        "concavity": args.concavity,
+        "opacity_threshold": args.opacity_threshold,
+        "min_hull_vertices": args.min_hull_vertices,
+        "max_hulls": args.max_hulls,
+        "opacity_is_logit": args.opacity_is_logit,
+        "coacd_preprocess_mode": args.coacd_preprocess_mode,
+        "coacd_preprocess_resolution": args.coacd_preprocess_resolution,
+        "max_decompose_vertices": args.max_decompose_vertices,
+    }
+    # Only override the server's auto depth (4-7 per cell) when asked; the CLI no
+    # longer forces the documented-unstable depth 8 on every job.
+    if args.poisson_depth is not None:
+        params["poisson_depth"] = args.poisson_depth
+
     with open(path, "rb") as f:
         resp = httpx.post(
             f"{args.server}/v1/jobs",
             files={"file": (path.split("/")[-1], f)},
-            params={
-                "outputs": args.outputs,
-                "concavity": args.concavity,
-                "opacity_threshold": args.opacity_threshold,
-                "poisson_depth": args.poisson_depth,
-                "min_hull_vertices": args.min_hull_vertices,
-                "max_hulls": args.max_hulls,
-                "opacity_is_logit": args.opacity_is_logit,
-                "coacd_preprocess_mode": args.coacd_preprocess_mode,
-                "coacd_preprocess_resolution": args.coacd_preprocess_resolution,
-                "max_decompose_vertices": args.max_decompose_vertices,
-            },
+            params=params,
             timeout=600.0,
         )
 
