@@ -72,7 +72,7 @@ def test_rigged_lod_tiers_are_populated(two_bone_rig):
     # and carry hulls from every bone, tagged bone-local.
     r = extract_from_rigged_mesh(
         **two_bone_rig,
-        config=Config(concavity=0.5, lod_concavities=[0.3, 0.7]),
+        config=Config(concavity=0.2, lod_concavities=[0.3, 0.7]),
     )
     assert r.lod_tiers is not None
     assert [round(t.concavity, 3) for t in r.lod_tiers] == [0.3, 0.7]
@@ -84,7 +84,7 @@ def test_rigged_lod_tiers_are_populated(two_bone_rig):
 def test_rigged_lod_roundtrips_through_phys(two_bone_rig, tmp_path):
     r = extract_from_rigged_mesh(
         **two_bone_rig,
-        config=Config(concavity=0.5, lod_concavities=[0.3, 0.7]),
+        config=Config(concavity=0.2, lod_concavities=[0.3, 0.7]),
     )
     out = tmp_path / "rigged_lod.phys"
     r.to_phys(out)

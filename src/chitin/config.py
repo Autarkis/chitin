@@ -93,9 +93,12 @@ class Config:
             )
         if self.lod_concavities is not None:
             for c in self.lod_concavities:
-                if c <= 0:
+                # LOD0 is the base concavity (highest detail); every additional
+                # tier must be strictly coarser, i.e. a larger concavity.
+                if c <= self.concavity:
                     raise ValueError(
-                        f"lod_concavities values must be positive, got {c}"
+                        "lod_concavities must be greater than the base concavity "
+                        f"({self.concavity}) so each tier is coarser than LOD0, got {c}"
                     )
         if self.target_height is not None and self.target_height <= 0:
             raise ValueError(
