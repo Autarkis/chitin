@@ -5,9 +5,9 @@ import { parsePhys } from "../src/phys-parser.js";
 
 // Cross-runtime .phys conformance — web reader half. Verifies parsePhys against the
 // SAME frozen corpus + manifest the Python reader checks (tests/conformance, copied
-// here so the web package is self-contained). The web parser intentionally skips LOD
-// tier *bodies* (exposing hasLod + the LOD0 hulls only), so the shared field set is
-// version/flags/has* / hull count / per-hull AABB+counts / totals / bones / validity.
+// here so the web package is self-contained). Both readers parse LOD tier bodies, so
+// the shared field set is version/flags/has* / hull count / per-hull AABB+counts /
+// totals / bones / LOD tier concavity+count / validity.
 
 const DIR = resolve(__dirname, "conformance");
 const manifest: Record<string, any> = JSON.parse(
@@ -67,15 +67,18 @@ describe("phys cross-runtime conformance", () => {
       expect(pf.bones.map((b) => b.name)).toEqual(
         spec.bones.map((b: any) => b.name)
       );
+
+      expect(pf.lodTiers).toHaveLength(spec.lodTiers.length);
+      pf.lodTiers.forEach((t, i) => {
+        expect(t.hulls).toHaveLength(spec.lodTiers[i].hullCount);
+        expect(t.concavity).toBeCloseTo(spec.lodTiers[i].concavity, 4);
+      });
     });
   }
 
   for (const name of invalid) {
     const spec = manifest[name];
-    // LOD-internal corruption is undetectable here: the web parser skips LOD
-    // tier bodies, so those fixtures are Python-only.
-    const run = spec.pythonOnly ? it.skip : it;
-    run(`rejects ${name}`, () => {
+    it(`rejects ${name}`, () => {
       // parsePhys throws, and the message names the defect (same needle Python checks)
       expect(() => parsePhys(load(name))).toThrow(spec.errorContains);
     });

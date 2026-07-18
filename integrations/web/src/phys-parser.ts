@@ -20,14 +20,158 @@ export interface PhysBone {
   bindTransform: Float32Array; // 16 floats, row-major 4x4
 }
 
+export interface PhysLodTier {
+  concavity: number;
+  hulls: PhysHull[];
+}
+
 export interface PhysFile {
   version: number;
   flags: number;
-  hulls: PhysHull[];
+  hulls: PhysHull[]; // LOD 0 (highest detail)
   bones: PhysBone[];
+  lodTiers: PhysLodTier[]; // additional coarser tiers, ascending concavity
   hasBones: boolean;
   hasBindPoses: boolean;
   hasLod: boolean;
+}
+
+interface HullBlock {
+  view: DataView;
+  byteLength: number;
+  hullTableOff: number;
+  descSize: number;
+  hasBones: boolean;
+  hullCount: number;
+  vertexDataOff: number;
+  indexDataOff: number;
+  totalVerts: number;
+  totalIdx: number;
+  boneTableCount: number | null;
+  prefix: string;
+}
+
+// Shared hull-table reader for both the LOD0 block and each LOD tier, so the
+// same structural invariants (range, contiguity, finite AABB, bone bounds) hold
+// everywhere.
+function readHulls(blk: HullBlock): PhysHull[] {
+  const {
+    view,
+    byteLength,
+    hullTableOff,
+    descSize,
+    hasBones,
+    hullCount,
+    vertexDataOff,
+    indexDataOff,
+    totalVerts,
+    totalIdx,
+    boneTableCount,
+    prefix,
+  } = blk;
+
+  const hulls: PhysHull[] = [];
+  let expectedVOff = 0;
+  let expectedIOff = 0;
+
+  for (let i = 0; i < hullCount; i++) {
+    const off = hullTableOff + i * descSize;
+    requireBytes(byteLength, off, descSize, `${prefix} ${i} descriptor`);
+    const vOff = view.getUint32(off, true);
+    const vCount = view.getUint32(off + 4, true);
+    const iOff = view.getUint32(off + 8, true);
+    const iCount = view.getUint32(off + 12, true);
+
+    if (vOff + vCount > totalVerts) {
+      throw new Error(
+        `${prefix} ${i}: vertex range [${vOff}, ${vOff + vCount}) exceeds total_vertices ${totalVerts}`,
+      );
+    }
+    if (iOff + iCount > totalIdx) {
+      throw new Error(
+        `${prefix} ${i}: index range [${iOff}, ${iOff + iCount}) exceeds total_indices ${totalIdx}`,
+      );
+    }
+    if (vOff !== expectedVOff) {
+      throw new Error(
+        `${prefix} ${i}: vertex_offset ${vOff} != expected ${expectedVOff} (non-contiguous or overlapping range)`,
+      );
+    }
+    if (iOff !== expectedIOff) {
+      throw new Error(
+        `${prefix} ${i}: index_offset ${iOff} != expected ${expectedIOff} (non-contiguous or overlapping range)`,
+      );
+    }
+
+    const aabbMin: [number, number, number] = [
+      view.getFloat32(off + 16, true),
+      view.getFloat32(off + 20, true),
+      view.getFloat32(off + 24, true),
+    ];
+    const aabbMax: [number, number, number] = [
+      view.getFloat32(off + 28, true),
+      view.getFloat32(off + 32, true),
+      view.getFloat32(off + 36, true),
+    ];
+    if (![...aabbMin, ...aabbMax].every(Number.isFinite)) {
+      throw new Error(`${prefix} ${i}: non-finite aabb`);
+    }
+
+    let boneIndex: number | null = null;
+    if (hasBones) {
+      const raw = view.getInt32(off + 40, true);
+      if (raw < -1) {
+        throw new Error(`${prefix} ${i}: invalid bone_index ${raw}`);
+      }
+      if (boneTableCount !== null && raw >= boneTableCount) {
+        throw new Error(
+          `${prefix} ${i}: bone_index ${raw} >= bone_count ${boneTableCount}`,
+        );
+      }
+      boneIndex = raw === -1 ? null : raw;
+    }
+
+    const vertices = new Float32Array(vCount * 3);
+    const qOff = vertexDataOff + vOff * 6;
+    requireBytes(byteLength, qOff, vCount * 6, `${prefix} ${i} vertices`);
+    for (let v = 0; v < vCount; v++) {
+      for (let c = 0; c < 3; c++) {
+        const q = view.getInt16(qOff + (v * 3 + c) * 2, true);
+        const extent = aabbMax[c] - aabbMin[c];
+        const e = extent === 0 ? 1.0 : extent;
+        vertices[v * 3 + c] = ((q + 32768) / 65535) * e + aabbMin[c];
+      }
+    }
+
+    const idxOff = indexDataOff + iOff * 2;
+    requireBytes(byteLength, idxOff, iCount * 2, `${prefix} ${i} indices`);
+    const indices = new Uint16Array(iCount);
+    for (let t = 0; t < iCount; t++) {
+      indices[t] = view.getUint16(idxOff + t * 2, true);
+    }
+
+    hulls.push({ vertices, indices, aabbMin, aabbMax, boneIndex });
+    expectedVOff += vCount;
+    expectedIOff += iCount;
+  }
+
+  return hulls;
+}
+
+// Pick the tier whose concavity is nearest the target; falls back to LOD0
+// (phys.hulls) when the file carries no additional tiers. Mirrors Python's
+// PhysFile.lod_tier().
+export function selectLodHulls(phys: PhysFile, concavity: number): PhysHull[] {
+  if (phys.lodTiers.length === 0) return phys.hulls;
+  let best = phys.lodTiers[0];
+  for (const tier of phys.lodTiers) {
+    if (
+      Math.abs(tier.concavity - concavity) < Math.abs(best.concavity - concavity)
+    ) {
+      best = tier;
+    }
+  }
+  return best.hulls;
 }
 
 export function parsePhys(buffer: ArrayBuffer): PhysFile {
@@ -87,94 +231,20 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     }
   }
 
-  const hulls: PhysHull[] = [];
-  let expectedVOff = 0;
-  let expectedIOff = 0;
-
-  for (let i = 0; i < hullCount; i++) {
-    const off = hullTableOff + i * descSize;
-    requireBytes(byteLength, off, descSize, `hull ${i} descriptor`);
-    const vOff = view.getUint32(off, true);
-    const vCount = view.getUint32(off + 4, true);
-    const iOff = view.getUint32(off + 8, true);
-    const iCount = view.getUint32(off + 12, true);
-
-    // Each hull's declared vertex/index range must stay within the arrays.
-    if (vOff + vCount > totalVerts) {
-      throw new Error(
-        `hull ${i}: vertex range [${vOff}, ${vOff + vCount}) exceeds total_vertices ${totalVerts}`,
-      );
-    }
-    if (iOff + iCount > totalIdx) {
-      throw new Error(
-        `hull ${i}: index range [${iOff}, ${iOff + iCount}) exceeds total_indices ${totalIdx}`,
-      );
-    }
-
-    // Hull ranges are contiguous and non-overlapping: each offset must equal
-    // the running total of preceding counts.
-    if (vOff !== expectedVOff) {
-      throw new Error(
-        `hull ${i}: vertex_offset ${vOff} != expected ${expectedVOff} (non-contiguous or overlapping range)`,
-      );
-    }
-    if (iOff !== expectedIOff) {
-      throw new Error(
-        `hull ${i}: index_offset ${iOff} != expected ${expectedIOff} (non-contiguous or overlapping range)`,
-      );
-    }
-
-    const aabbMin: [number, number, number] = [
-      view.getFloat32(off + 16, true),
-      view.getFloat32(off + 20, true),
-      view.getFloat32(off + 24, true),
-    ];
-    const aabbMax: [number, number, number] = [
-      view.getFloat32(off + 28, true),
-      view.getFloat32(off + 32, true),
-      view.getFloat32(off + 36, true),
-    ];
-    if (![...aabbMin, ...aabbMax].every(Number.isFinite)) {
-      throw new Error(`hull ${i}: non-finite aabb`);
-    }
-
-    let boneIndex: number | null = null;
-    if (hasBones) {
-      const raw = view.getInt32(off + 40, true);
-      if (raw < -1) {
-        throw new Error(`hull ${i}: invalid bone_index ${raw}`);
-      }
-      if (boneTableCount !== null && raw >= boneTableCount) {
-        throw new Error(
-          `hull ${i}: bone_index ${raw} >= bone_count ${boneTableCount}`,
-        );
-      }
-      boneIndex = raw === -1 ? null : raw;
-    }
-
-    const vertices = new Float32Array(vCount * 3);
-    const qOff = vertexDataOff + vOff * 6;
-    requireBytes(byteLength, qOff, vCount * 6, `hull ${i} vertices`);
-    for (let v = 0; v < vCount; v++) {
-      for (let c = 0; c < 3; c++) {
-        const q = view.getInt16(qOff + (v * 3 + c) * 2, true);
-        const extent = aabbMax[c] - aabbMin[c];
-        const e = extent === 0 ? 1.0 : extent;
-        vertices[v * 3 + c] = ((q + 32768) / 65535) * e + aabbMin[c];
-      }
-    }
-
-    const idxOff = indexDataOff + iOff * 2;
-    requireBytes(byteLength, idxOff, iCount * 2, `hull ${i} indices`);
-    const indices = new Uint16Array(iCount);
-    for (let t = 0; t < iCount; t++) {
-      indices[t] = view.getUint16(idxOff + t * 2, true);
-    }
-
-    hulls.push({ vertices, indices, aabbMin, aabbMax, boneIndex });
-    expectedVOff += vCount;
-    expectedIOff += iCount;
-  }
+  const hulls = readHulls({
+    view,
+    byteLength,
+    hullTableOff,
+    descSize,
+    hasBones,
+    hullCount,
+    vertexDataOff,
+    indexDataOff,
+    totalVerts,
+    totalIdx,
+    boneTableCount,
+    prefix: "hull",
+  });
 
   const bones: PhysBone[] = [];
   let nextBlockOff = indexDataOff + totalIdx * 2;
@@ -206,6 +276,7 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     nextBlockOff = bOff;
   }
 
+  const lodTiers: PhysLodTier[] = [];
   if (hasLod) {
     requireBytes(byteLength, nextBlockOff, 4, "LOD tier count");
     const tierCount = view.getUint32(nextBlockOff, true);
@@ -217,9 +288,32 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
         LOD_TIER_HEADER_SIZE,
         `LOD tier ${tier} header`
       );
+      const concavity = view.getFloat32(nextBlockOff, true);
+      const tHullCount = view.getUint32(nextBlockOff + 4, true);
+      const tTotalVerts = view.getUint32(nextBlockOff + 8, true);
+      const tTotalIdx = view.getUint32(nextBlockOff + 12, true);
       const dataSize = view.getUint32(nextBlockOff + 16, true);
       nextBlockOff += LOD_TIER_HEADER_SIZE;
       requireBytes(byteLength, nextBlockOff, dataSize, `LOD tier ${tier} data`);
+
+      const tHullTableOff = nextBlockOff;
+      const tVertexDataOff = tHullTableOff + tHullCount * descSize;
+      const tIndexDataOff = tVertexDataOff + tTotalVerts * 6;
+      const tierHulls = readHulls({
+        view,
+        byteLength,
+        hullTableOff: tHullTableOff,
+        descSize,
+        hasBones,
+        hullCount: tHullCount,
+        vertexDataOff: tVertexDataOff,
+        indexDataOff: tIndexDataOff,
+        totalVerts: tTotalVerts,
+        totalIdx: tTotalIdx,
+        boneTableCount,
+        prefix: `LOD tier ${tier} hull`,
+      });
+      lodTiers.push({ concavity, hulls: tierHulls });
       nextBlockOff += dataSize;
     }
   }
@@ -228,7 +322,16 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
     throw new Error(`${byteLength - nextBlockOff} trailing bytes after end of data`);
   }
 
-  return { version, flags, hulls, bones, hasBones, hasBindPoses, hasLod };
+  return {
+    version,
+    flags,
+    hulls,
+    bones,
+    lodTiers,
+    hasBones,
+    hasBindPoses,
+    hasLod,
+  };
 }
 
 function requireBytes(

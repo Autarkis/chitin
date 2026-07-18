@@ -132,3 +132,34 @@ describe("parsePhys", () => {
     expect(phys.hulls).toHaveLength(0);
   });
 });
+
+describe("LOD tiers", () => {
+  const MULTI_LOD = resolve(__dirname, "conformance", "multi_lod.phys");
+  const NO_LOD = resolve(__dirname, "conformance", "static_hull.phys");
+
+  it("parses tier concavities and hulls", async () => {
+    const { parsePhys } = await import("../src/phys-parser.js");
+    const phys = parsePhys(loadFixture(MULTI_LOD));
+    expect(phys.hasLod).toBe(true);
+    expect(phys.lodTiers.map((t) => Number(t.concavity.toFixed(2)))).toEqual([
+      0.01, 0.05,
+    ]);
+    // tier 0 is the cube (8 verts), tier 1 the coarser tetra (4 verts)
+    expect(phys.lodTiers[0].hulls[0].vertices.length / 3).toBe(8);
+    expect(phys.lodTiers[1].hulls[0].vertices.length / 3).toBe(4);
+  });
+
+  it("selectLodHulls picks the nearest tier", async () => {
+    const { parsePhys, selectLodHulls } = await import("../src/phys-parser.js");
+    const phys = parsePhys(loadFixture(MULTI_LOD));
+    expect(selectLodHulls(phys, 0.02)[0].vertices.length / 3).toBe(8); // -> 0.01
+    expect(selectLodHulls(phys, 0.9)[0].vertices.length / 3).toBe(4); // -> 0.05
+  });
+
+  it("selectLodHulls falls back to LOD0 without tiers", async () => {
+    const { parsePhys, selectLodHulls } = await import("../src/phys-parser.js");
+    const phys = parsePhys(loadFixture(NO_LOD));
+    expect(phys.lodTiers).toHaveLength(0);
+    expect(selectLodHulls(phys, 0.3)).toBe(phys.hulls);
+  });
+});

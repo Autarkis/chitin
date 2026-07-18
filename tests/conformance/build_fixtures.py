@@ -284,8 +284,7 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "errorContains": "bind_transform",
     }
 
-    # LOD-internal corruption. The web parser skips LOD tier bodies, so these are
-    # Python-only (the web conformance test skips pythonOnly fixtures).
+    # LOD-internal corruption (both readers parse LOD tier bodies).
     lod = (FIXTURES / "multi_lod.phys").read_bytes()
     (_v2, _fl2, _hc2, _tv2, l_tidx, _hto2, _vdo2, l_idata) = struct.unpack_from(
         "<HHIIIIII", lod, 4
@@ -300,7 +299,6 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "description": "LOD tier hull aabb has a non-finite component",
         "valid": False,
         "errorContains": "non-finite",
-        "pythonOnly": True,
     }
 
     bad_lod_off = bytearray(lod)
@@ -310,7 +308,6 @@ def _write_invalid_fixtures() -> dict[str, dict]:
         "description": "LOD tier hull vertex range leaves the tier",
         "valid": False,
         "errorContains": "range",
-        "pythonOnly": True,
     }
     return entries
 

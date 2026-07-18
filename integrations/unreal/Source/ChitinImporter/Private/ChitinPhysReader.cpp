@@ -6,10 +6,85 @@ static constexpr uint32 PhysMagic = 0x53594850; // "PHYS" LE
 static constexpr int32 HeaderSize = 32;
 static constexpr int32 FlagHasBones = 0x01;
 static constexpr int32 FlagHasBindPoses = 0x02;
+static constexpr int32 FlagHasLod = 0x04;
 
 static float Dequantize(int16 Q, float Min, float Extent)
 {
     return ((Q + 32768.0f) / 65535.0f) * Extent + Min;
+}
+
+// Reads one hull table (LOD 0 or a LOD tier). Descriptors are contiguous from
+// HullTableOff; vertex/index data live at the block's data offsets.
+static TArray<FChitinHull> ReadHulls(FMemoryReader& Ar, uint32 HullTableOff,
+    uint32 HullCount, uint32 VertexDataOff, uint32 IndexDataOff, bool bHasBones)
+{
+    struct FHullDesc
+    {
+        uint32 VOffset, VCount, IOffset, ICount;
+        FVector3f AabbMin, AabbMax;
+        int32 BoneIndex;
+    };
+
+    TArray<FHullDesc> Descs;
+    Descs.SetNum(HullCount);
+
+    Ar.Seek(HullTableOff);
+    for (uint32 i = 0; i < HullCount; i++)
+    {
+        FHullDesc& D = Descs[i];
+        Ar << D.VOffset;
+        Ar << D.VCount;
+        Ar << D.IOffset;
+        Ar << D.ICount;
+        Ar << D.AabbMin.X << D.AabbMin.Y << D.AabbMin.Z;
+        Ar << D.AabbMax.X << D.AabbMax.Y << D.AabbMax.Z;
+        D.BoneIndex = -1;
+        if (bHasBones)
+            Ar << D.BoneIndex;
+    }
+
+    TArray<FChitinHull> Hulls;
+    Hulls.SetNum(HullCount);
+    for (uint32 i = 0; i < HullCount; i++)
+    {
+        const FHullDesc& D = Descs[i];
+        FChitinHull& Hull = Hulls[i];
+        Hull.BoneIndex = D.BoneIndex;
+
+        FVector3f Extent = D.AabbMax - D.AabbMin;
+        for (int32 C = 0; C < 3; C++)
+        {
+            if (Extent[C] == 0.0f) Extent[C] = 1.0f;
+        }
+
+        Hull.Vertices.SetNum(D.VCount);
+        Ar.Seek(VertexDataOff + D.VOffset * 6);
+        for (uint32 V = 0; V < D.VCount; V++)
+        {
+            int16 Qx, Qy, Qz;
+            Ar << Qx << Qy << Qz;
+            Hull.Vertices[V] = FVector(
+                Dequantize(Qx, D.AabbMin.X, Extent.X),
+                Dequantize(Qy, D.AabbMin.Y, Extent.Y),
+                Dequantize(Qz, D.AabbMin.Z, Extent.Z)
+            );
+        }
+
+        Hull.Indices.SetNum(D.ICount);
+        Ar.Seek(IndexDataOff + D.IOffset * 2);
+        for (uint32 T = 0; T < D.ICount; T++)
+        {
+            uint16 Idx;
+            Ar << Idx;
+            Hull.Indices[T] = Idx;
+        }
+
+        FVector Min(D.AabbMin.X, D.AabbMin.Y, D.AabbMin.Z);
+        FVector Max(D.AabbMax.X, D.AabbMax.Y, D.AabbMax.Z);
+        Hull.Bounds = FBox(Min, Max);
+    }
+
+    return Hulls;
 }
 
 UChitinPhysAsset* FChitinPhysReader::ReadFromFile(const FString& FilePath, UObject* Outer)
@@ -59,78 +134,16 @@ UChitinPhysAsset* FChitinPhysReader::ReadFromBuffer(const TArray<uint8>& Data, U
     bool bHasBones = (Flags & FlagHasBones) != 0;
     int32 DescSize = bHasBones ? 44 : 40;
 
-    struct FHullDesc
-    {
-        uint32 VOffset, VCount, IOffset, ICount;
-        FVector3f AabbMin, AabbMax;
-        int32 BoneIndex;
-    };
-
-    TArray<FHullDesc> Descs;
-    Descs.SetNum(HullCount);
-
-    Ar.Seek(HullTableOff);
-    for (uint32 i = 0; i < HullCount; i++)
-    {
-        FHullDesc& D = Descs[i];
-        Ar << D.VOffset;
-        Ar << D.VCount;
-        Ar << D.IOffset;
-        Ar << D.ICount;
-        Ar << D.AabbMin.X << D.AabbMin.Y << D.AabbMin.Z;
-        Ar << D.AabbMax.X << D.AabbMax.Y << D.AabbMax.Z;
-        D.BoneIndex = -1;
-        if (bHasBones)
-            Ar << D.BoneIndex;
-    }
-
     UChitinPhysAsset* Asset = NewObject<UChitinPhysAsset>(Outer);
     Asset->Version = Version;
     Asset->Flags = Flags;
-    Asset->Hulls.SetNum(HullCount);
+    Asset->Hulls = ReadHulls(Ar, HullTableOff, HullCount, VertexDataOff, IndexDataOff, bHasBones);
 
-    for (uint32 i = 0; i < HullCount; i++)
-    {
-        const FHullDesc& D = Descs[i];
-        FChitinHull& Hull = Asset->Hulls[i];
-        Hull.BoneIndex = D.BoneIndex;
-
-        FVector3f Extent = D.AabbMax - D.AabbMin;
-        for (int32 C = 0; C < 3; C++)
-        {
-            if (Extent[C] == 0.0f) Extent[C] = 1.0f;
-        }
-
-        Hull.Vertices.SetNum(D.VCount);
-        Ar.Seek(VertexDataOff + D.VOffset * 6);
-        for (uint32 V = 0; V < D.VCount; V++)
-        {
-            int16 Qx, Qy, Qz;
-            Ar << Qx << Qy << Qz;
-            Hull.Vertices[V] = FVector(
-                Dequantize(Qx, D.AabbMin.X, Extent.X),
-                Dequantize(Qy, D.AabbMin.Y, Extent.Y),
-                Dequantize(Qz, D.AabbMin.Z, Extent.Z)
-            );
-        }
-
-        Hull.Indices.SetNum(D.ICount);
-        Ar.Seek(IndexDataOff + D.IOffset * 2);
-        for (uint32 T = 0; T < D.ICount; T++)
-        {
-            uint16 Idx;
-            Ar << Idx;
-            Hull.Indices[T] = Idx;
-        }
-
-        FVector Min(D.AabbMin.X, D.AabbMin.Y, D.AabbMin.Z);
-        FVector Max(D.AabbMax.X, D.AabbMax.Y, D.AabbMax.Z);
-        Hull.Bounds = FBox(Min, Max);
-    }
+    uint32 NextBlock = IndexDataOff + TotalIdx * 2;
 
     if ((Flags & FlagHasBindPoses) != 0)
     {
-        Ar.Seek(IndexDataOff + TotalIdx * 2);
+        Ar.Seek(NextBlock);
         uint32 BoneCount;
         Ar << BoneCount;
         Asset->Bones.SetNum(BoneCount);
@@ -160,6 +173,37 @@ UChitinPhysAsset* FChitinPhysReader::ReadFromBuffer(const TArray<uint8>& Data, U
                     NameLen
                 ).Get()
             ));
+        }
+        NextBlock = (uint32)Ar.Tell();
+    }
+
+    if ((Flags & FlagHasLod) != 0)
+    {
+        Ar.Seek(NextBlock);
+        uint32 TierCount;
+        Ar << TierCount;
+        Asset->LodTiers.SetNum(TierCount);
+
+        for (uint32 Tier = 0; Tier < TierCount; Tier++)
+        {
+            float Concavity;
+            uint32 THullCount, TTotalVerts, TTotalIdx, DataSize, Reserved;
+            Ar << Concavity;
+            Ar << THullCount;
+            Ar << TTotalVerts;
+            Ar << TTotalIdx; // not needed for layout
+            Ar << DataSize;
+            Ar << Reserved;
+
+            uint32 THullTableOff = (uint32)Ar.Tell();
+            uint32 TVertexDataOff = THullTableOff + THullCount * DescSize;
+            uint32 TIndexDataOff = TVertexDataOff + TTotalVerts * 6;
+
+            FChitinLodTier& T = Asset->LodTiers[Tier];
+            T.Concavity = Concavity;
+            T.Hulls = ReadHulls(Ar, THullTableOff, THullCount, TVertexDataOff, TIndexDataOff, bHasBones);
+
+            Ar.Seek(THullTableOff + DataSize);
         }
     }
 

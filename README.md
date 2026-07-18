@@ -164,7 +164,7 @@ The `.phys` binary sidecar is the primary output. It stores quantized convex hul
 
 A single decomposition forces a tradeoff between fidelity and cost. Multi-LOD solves this: the producer generates tiers at different concavity thresholds, the consumer picks based on distance, platform budget, or simulation context. LOD 0 is always the highest-detail decomposition. Additional tiers are coarser and cheaper. v2 readers open a v3 file and get LOD 0 without changes.
 
-Runtime tier *selection* (`phys.lod_tier(...)`) is currently Python-only. The TypeScript, Unity, and Unreal readers consume LOD 0 and skip the additional tiers.
+Runtime tier *selection* by nearest concavity is available in every reader: `phys.lod_tier(...)` (Python), `selectLodHulls(phys, ...)` / `createColliders(..., { lodConcavity })` (TypeScript), `PhysAsset.SelectLod(...)` (Unity), and `UChitinPhysAsset::SelectLod(...)` (Unreal). Readers with no target pick default to LOD 0.
 
 | Format | Extension | Use |
 |--------|-----------|-----|

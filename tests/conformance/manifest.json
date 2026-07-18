@@ -7,13 +7,11 @@
   "invalid_lod_nan_aabb.phys": {
     "description": "LOD tier hull aabb has a non-finite component",
     "errorContains": "non-finite",
-    "pythonOnly": true,
     "valid": false
   },
   "invalid_lod_offset.phys": {
     "description": "LOD tier hull vertex range leaves the tier",
     "errorContains": "range",
-    "pythonOnly": true,
     "valid": false
   },
   "invalid_magic.phys": {
