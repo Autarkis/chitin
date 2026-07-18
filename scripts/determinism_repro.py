@@ -18,7 +18,9 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-INPUT = REPO / "examples/utility-proof/assets/garden-3dgs/mipnerf360_garden_crop_table.ply"
+INPUT = (
+    REPO / "examples/utility-proof/assets/garden-3dgs/mipnerf360_garden_crop_table.ply"
+)
 # repo venv, not PATH: the miniconda chitin is py3.13 and lacks open3d
 CHITIN = REPO / ".venv/bin/chitin"
 
