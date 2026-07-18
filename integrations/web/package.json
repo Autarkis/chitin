@@ -5,6 +5,21 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./rapier": {
+      "types": "./dist/rapier.d.ts",
+      "import": "./dist/rapier.js"
+    },
+    "./three": {
+      "types": "./dist/three.d.ts",
+      "import": "./dist/three.js"
+    }
+  },
+  "sideEffects": false,
   "files": [
     "dist"
   ],

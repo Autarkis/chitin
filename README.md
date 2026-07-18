@@ -186,12 +186,19 @@ All integrations read the same `.phys` binary with identical dequantization.
 
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
-import { parsePhys, addToWorld } from "@autarkis/chitin-web";
+import { parsePhys } from "@autarkis/chitin-web";          // format only, no deps
+import { addToWorld } from "@autarkis/chitin-web/rapier";  // Rapier bindings
 
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
 const phys = parsePhys(buffer);
 addToWorld(RAPIER, world, phys);
 ```
+
+The package root (`@autarkis/chitin-web`) is dependency-free — just the `.phys`
+parser and validator. The Rapier collider bindings live at
+`@autarkis/chitin-web/rapier` and the Three.js debug meshes at
+`@autarkis/chitin-web/three`, so a format-only consumer never pulls in Three or
+Rapier.
 
 A full working example with capsule walk controller and Playwright tests lives in [`integrations/walktest/`](integrations/walktest/). See [docs/usage.md](docs/usage.md#web-quickstart-ply-to-walkable-browser-scene) for the end-to-end walkthrough.
 

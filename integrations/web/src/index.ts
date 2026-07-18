@@ -1,3 +1,6 @@
+// Format-only entry point: parses/validates .phys with no physics-engine or
+// Three.js dependency. Import the Rapier bindings from "@autarkis/chitin-web/rapier"
+// and the Three.js debug meshes from "@autarkis/chitin-web/three".
 export { parsePhys, selectLodHulls } from "./phys-parser.js";
 export type {
   PhysFile,
@@ -5,9 +8,3 @@ export type {
   PhysBone,
   PhysLodTier,
 } from "./phys-parser.js";
-
-export { createColliders, addToWorld } from "./rapier.js";
-export type { ColliderResult, ColliderOptions } from "./rapier.js";
-
-export { createDebugMeshes } from "./three.js";
-export type { DebugOptions } from "./three.js";

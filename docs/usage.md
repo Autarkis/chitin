@@ -269,11 +269,13 @@ for issue in issues:
 
 ### Browser runtime
 
-`@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine.
+`@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine. The package uses subpath exports: the root is dependency-free (`parsePhys`, `selectLodHulls`), the Rapier bindings live at `@autarkis/chitin-web/rapier`, and the Three.js debug meshes at `@autarkis/chitin-web/three`.
 
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
-import { parsePhys, addToWorld, createDebugMeshes } from "@autarkis/chitin-web";
+import { parsePhys } from "@autarkis/chitin-web"; // format only, no deps
+import { addToWorld } from "@autarkis/chitin-web/rapier";
+import { createDebugMeshes } from "@autarkis/chitin-web/three";
 
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
 const phys = parsePhys(buffer);
@@ -298,7 +300,9 @@ chitin inspect scene.phys    # verify hull count looks reasonable
 
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
-import { parsePhys, addToWorld, createDebugMeshes } from "@autarkis/chitin-web";
+import { parsePhys } from "@autarkis/chitin-web"; // format only, no deps
+import { addToWorld } from "@autarkis/chitin-web/rapier";
+import { createDebugMeshes } from "@autarkis/chitin-web/three";
 
 // after RAPIER.init() and world creation:
 const buffer = await fetch("/assets/scene.phys").then((r) => r.arrayBuffer());
