@@ -6,6 +6,9 @@ format is versioned independently and noted where it changes.
 
 ## [0.1.2] - 2026-07-19
 
+- Replace the GPL-licensed `plyfile` dependency with a small built-in permissive
+  PLY reader, so the whole dependency stack is permissive (MIT/BSD) and cleanly
+  usable in commercial software.
 - Add `keywords`, `homepage`, and `bugs` to both npm packages so they surface in
   registry search (npm-only; the Python package already carried these).
 

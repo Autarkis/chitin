@@ -8,10 +8,9 @@ from chitin.adapters import AdapterResult
 
 
 def load_ply(path: Path) -> AdapterResult:
-    from plyfile import PlyData
+    from chitin.adapters.ply_reader import read_ply_vertex
 
-    ply = PlyData.read(str(path))
-    vertex = ply["vertex"]
+    vertex = read_ply_vertex(path)
     positions = np.column_stack([vertex["x"], vertex["y"], vertex["z"]]).astype(
         np.float64
     )

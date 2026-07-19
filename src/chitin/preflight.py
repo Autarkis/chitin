@@ -107,10 +107,9 @@ def detect_environment_hints(path: Path) -> list[str] | None:
     if path.suffix.lower() != ".ply":
         return None
     try:
-        from plyfile import PlyData
+        from chitin.adapters.ply_reader import read_ply_vertex
 
-        ply = PlyData.read(str(path))
-        vertex = ply["vertex"]
+        vertex = read_ply_vertex(path)
         names = set(vertex.data.dtype.names)
         if not all(c in names for c in ("x", "y", "z")):
             return None
