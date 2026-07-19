@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in Chitin doesn't work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Chitin spans several languages, so please tell
+        us **which component** is affected — it's the single most useful thing for
+        triage.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Chitin is this about?
+      options:
+        - Python compiler (extract / CLI)
+        - .phys format / spec
+        - Python .phys reader/validator
+        - "@autarkis/chitin-web (TypeScript reader / Rapier / Three)"
+        - "@autarkis/chitin-lite (browser WASM compiler)"
+        - Unity importer
+        - Unreal importer
+        - Build service (chitin-server)
+        - Documentation
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Chitin / package version (and how you installed it).
+      placeholder: "e.g. chitin 0.1.0 (pip), @autarkis/chitin-web 0.1.0 (npm)"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands / code. A minimal input asset or `.phys` file helps enormously.
+      placeholder: |
+        1. chitin extract model.glb -o model.phys ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python/Node version, GPU/engine if relevant.
+      placeholder: "e.g. Ubuntu 24.04, Python 3.12.7, Node 20"
+    validations:
+      required: false

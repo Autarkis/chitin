@@ -1,5 +1,8 @@
 # chitin
 
+[![CI](https://github.com/Autarkis/chitin/actions/workflows/ci.yml/badge.svg)](https://github.com/Autarkis/chitin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Open-source physics asset compiler for scanned, generated, splat, and rigged 3D assets.
 
 Chitin is a free MIT-licensed compiler that bridges the gap between visual capture (gaussian splats, photogrammetry, LiDAR) and physics simulation. Feed it a point cloud, mesh, or skinned model and get back portable convex hulls that any engine can load. The primary output is the `.phys` binary sidecar -- a compact format with readers for Python, TypeScript, C#, and C++.
@@ -46,7 +49,7 @@ import.
 
 ## Install
 
-> **Status:** this compiler is not published yet -- the current PyPI `chitin` is an unrelated placeholder, and the npm packages are unpublished. Until release, install from source: clone the repo and `pip install -e .` (add extras, e.g. `pip install -e ".[splat]"`). The commands below are the intended published interface.
+> **Status:** `0.1.0` isn't published yet -- the PyPI `chitin` project currently holds an older `0.0.1` placeholder, and the npm packages are unpublished. Until the release lands, install from source: clone the repo and `pip install -e ".[all]"` (add `[dev]` to run the tests). The commands below are the intended published interface.
 
 ```bash
 pip install chitin              # mesh extraction (OBJ, GLB, STL)
