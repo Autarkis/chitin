@@ -8,7 +8,14 @@ Convex decomposition and `.phys` sidecar generation in the browser. Takes mesh v
 npm install @autarkis/chitin-lite
 ```
 
-You also need the CoACD WASM module. Build it from `integrations/wasm/` or host the pre-built `coacd.js` + `coacd.wasm` alongside your app.
+You also need the CoACD WASM module (`coacd.js` + `coacd.wasm`). Fetch a versioned
+build from the GitHub Release, host the two files alongside your app, or build them
+yourself from `integrations/wasm/`:
+
+```
+https://github.com/Autarkis/chitin/releases/download/wasm-v0.1.2/coacd.js
+https://github.com/Autarkis/chitin/releases/download/wasm-v0.1.2/coacd.wasm
+```
 
 ## Usage
 

@@ -1,0 +1,4 @@
+# Shell scripts are executed by bash on Linux CI runners. CRLF would corrupt the
+# shebang and line continuations, so force LF regardless of the committing
+# client's OS or core.autocrlf setting.
+*.sh text eol=lf

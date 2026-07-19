@@ -1,0 +1,79 @@
+name: Build CoACD WASM
+
+# Compiles CoACD to WebAssembly, functionally tests the decompose path under
+# Node, and (on a wasm-v* tag) attaches coacd.js + coacd.wasm to the GitHub
+# Release so chitin-lite consumers can fetch a versioned, CORS-reachable build.
+on:
+  pull_request:
+    paths:
+      - "integrations/wasm/**"
+      - ".github/workflows/build-wasm.yml"
+  push:
+    tags:
+      - "wasm-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # create/attach the release asset on tag builds
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # README-tested Emscripten; bump in lockstep with the binding when needed.
+      EMSDK_VERSION: "5.0.7"
+      # CoACD tag whose CoACD() signature matches src/coacd_bind.cpp (18 args).
+      COACD_REF: "1.0.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v16
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify toolchain
+        run: |
+          emcc --version
+          cmake --version
+
+      - name: Build CoACD WASM
+        working-directory: integrations/wasm
+        env:
+          COACD_SRC: ${{ runner.temp }}/coacd-src
+        run: bash build.sh
+
+      - name: Functional test (decompose under Node)
+        working-directory: integrations/wasm
+        run: node test/decompose.test.cjs
+
+      - name: Size-band gate
+        working-directory: integrations/wasm
+        run: |
+          wasm=$(wc -c < dist/coacd.wasm)
+          js=$(wc -c < dist/coacd.js)
+          echo "coacd.wasm=${wasm} bytes  coacd.js=${js} bytes"
+          if [ "$wasm" -lt 400000 ] || [ "$wasm" -gt 800000 ]; then
+            echo "::error::coacd.wasm size ${wasm} outside [400000, 800000]"; exit 1
+          fi
+          if [ "$js" -lt 40000 ] || [ "$js" -gt 200000 ]; then
+            echo "::error::coacd.js size ${js} outside [40000, 200000]"; exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coacd-wasm
+          path: |
+            integrations/wasm/dist/coacd.js
+            integrations/wasm/dist/coacd.wasm
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/wasm-v')
+        uses: softprops/action-gh-release@v3.0.2
+        with:
+          files: |
+            integrations/wasm/dist/coacd.js
+            integrations/wasm/dist/coacd.wasm
