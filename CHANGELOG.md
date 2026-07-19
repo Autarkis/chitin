@@ -4,6 +4,11 @@ All notable changes to Chitin are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The `.phys` binary
 format is versioned independently and noted where it changes.
 
+## [0.1.2] - 2026-07-19
+
+- Add `keywords`, `homepage`, and `bugs` to both npm packages so they surface in
+  registry search (npm-only; the Python package already carried these).
+
 ## [0.1.1] - 2026-07-19
 
 - Add a README for `@autarkis/chitin-web`.
@@ -55,5 +60,6 @@ First public release. `.phys` format version 3.
 - Unity `com.chitin.physics` (drag-drop ScriptedImporter), Unreal ChitinImporter
   (asset import), and a Three.js + Rapier web bridge.
 
+[0.1.2]: https://github.com/Autarkis/chitin/releases/tag/web-v0.1.2
 [0.1.1]: https://github.com/Autarkis/chitin/releases/tag/python-v0.1.1
 [0.1.0]: https://github.com/Autarkis/chitin/releases/tag/python-v0.1.0

@@ -1,7 +1,23 @@
 {
   "name": "@autarkis/chitin-web",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Load chitin .phys collision sidecars in the browser",
+  "keywords": [
+    "physics",
+    "collision",
+    "collider",
+    "convex-hull",
+    "three",
+    "threejs",
+    "rapier",
+    "gltf",
+    "glb",
+    "robotics",
+    "webgl",
+    "phys"
+  ],
+  "homepage": "https://github.com/Autarkis/chitin#readme",
+  "bugs": "https://github.com/Autarkis/chitin/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Autarkis/chitin.git",

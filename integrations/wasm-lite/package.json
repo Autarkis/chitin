@@ -1,7 +1,23 @@
 {
   "name": "@autarkis/chitin-lite",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Convex decomposition and .phys sidecar generation in the browser via CoACD WASM",
+  "keywords": [
+    "physics",
+    "collision",
+    "convex-decomposition",
+    "coacd",
+    "wasm",
+    "webassembly",
+    "convex-hull",
+    "mesh",
+    "gltf",
+    "collider",
+    "robotics",
+    "phys"
+  ],
+  "homepage": "https://github.com/Autarkis/chitin#readme",
+  "bugs": "https://github.com/Autarkis/chitin/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Autarkis/chitin.git",
