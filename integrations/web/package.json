@@ -2,6 +2,11 @@
   "name": "@autarkis/chitin-web",
   "version": "0.1.0",
   "description": "Load chitin .phys collision sidecars in the browser",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Autarkis/chitin.git",
+    "directory": "integrations/web"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
