@@ -49,8 +49,6 @@ import.
 
 ## Install
 
-> **Status:** `0.1.0` isn't published yet -- the PyPI `chitin` project currently holds an older `0.0.1` placeholder, and the npm packages are unpublished. Until the release lands, install from source: clone the repo and `pip install -e ".[all]"` (add `[dev]` to run the tests). The commands below are the intended published interface.
-
 ```bash
 pip install chitin              # mesh extraction (OBJ, GLB, STL)
 pip install chitin[splat]       # + point cloud / gaussian splat extraction
