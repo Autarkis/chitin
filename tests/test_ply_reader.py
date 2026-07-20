@@ -10,11 +10,20 @@ from chitin.adapters.ply import load_ply
 from chitin.adapters.ply_reader import read_ply_vertex
 
 _SPLAT_PROPS = [
-    "x", "y", "z",
-    "nx", "ny", "nz",
+    "x",
+    "y",
+    "z",
+    "nx",
+    "ny",
+    "nz",
     "opacity",
-    "scale_0", "scale_1", "scale_2",
-    "rot_0", "rot_1", "rot_2", "rot_3",
+    "scale_0",
+    "scale_1",
+    "scale_2",
+    "rot_0",
+    "rot_1",
+    "rot_2",
+    "rot_3",
 ]
 
 _SPLAT_VERTS = [

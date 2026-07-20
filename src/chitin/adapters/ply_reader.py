@@ -98,9 +98,7 @@ def _read_header(f, path):
                 item_t = _PLY_TO_NP[tokens[3].decode()]
                 current[2].append(("list", count_t, item_t, tokens[4].decode()))
             else:
-                current[2].append(
-                    (tokens[2].decode(), _PLY_TO_NP[tokens[1].decode()])
-                )
+                current[2].append((tokens[2].decode(), _PLY_TO_NP[tokens[1].decode()]))
         elif keyword == b"end_header":
             break
     if fmt is None:
