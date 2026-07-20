@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>chitin — compile colliders in the browser</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; overflow: hidden; background: #0d0f13; color: #cdd3dc;
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      #c { display: block; width: 100vw; height: 100vh; }
+      #panel { position: fixed; top: 12px; left: 12px; width: 250px; padding: 14px;
+        background: rgba(20, 24, 30, 0.9); border: 1px solid #2a303a; border-radius: 8px; }
+      #panel h1 { margin: 0 0 2px; font-size: 15px; color: #eaeef4; }
+      #panel .sub { margin: 0 0 12px; color: #6b7686; font-size: 11px; }
+      #panel label { display: block; margin: 10px 0 3px; color: #8b95a6; font-size: 11px; }
+      select, input[type="range"] { width: 100%; }
+      select { background: #12161c; color: #cdd3dc; border: 1px solid #2a303a;
+        border-radius: 5px; padding: 5px; }
+      button { width: 100%; margin-top: 12px; padding: 8px; cursor: pointer;
+        background: #1f6feb; color: #fff; border: 0; border-radius: 5px; font: inherit; }
+      button:hover { background: #388bfd; }
+      button:disabled { background: #30363d; color: #6b7686; cursor: default; }
+      #stat { margin-top: 12px; padding-top: 10px; border-top: 1px solid #2a303a;
+        color: #7d8798; font-size: 11px; white-space: pre-line; min-height: 34px; }
+      .hullcount { color: #3fb950; }
+      .err { color: #f85149; }
+      a { color: #58a6ff; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="panel">
+      <h1>chitin</h1>
+      <p class="sub">convex colliders, compiled in your browser</p>
+
+      <label for="asset">Shape</label>
+      <select id="asset"></select>
+
+      <label for="thr">Concavity threshold <span id="thrv">0.05</span></label>
+      <input id="thr" type="range" min="0.02" max="0.6" step="0.01" value="0.05" />
+
+      <button id="drop" disabled>Drop objects</button>
+      <div id="stat">loading…</div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.184.0",
+          "@dimforge/rapier3d-compat": "https://esm.sh/@dimforge/rapier3d-compat@0.19.3",
+          "@autarkis/chitin-lite": "https://esm.sh/@autarkis/chitin-lite@0.1.2",
+          "@autarkis/chitin-web/rapier": "https://esm.sh/@autarkis/chitin-web@0.1.2/rapier?external=three,@dimforge/rapier3d-compat",
+          "@autarkis/chitin-web": "https://esm.sh/@autarkis/chitin-web@0.1.2?external=three,@dimforge/rapier3d-compat"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import RAPIER from "@dimforge/rapier3d-compat";
+      import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
+      import { parsePhys, selectLodHulls } from "@autarkis/chitin-web";
+      import { addToWorld } from "@autarkis/chitin-web/rapier";
+
+      const WASM = "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0";
+      const stat = document.getElementById("c") && document.getElementById("stat");
+      const setStat = (html) => (stat.innerHTML = html);
+
+      // --- three scene ---
+      const canvas = document.getElementById("c");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0d0f13);
+      const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+      scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x202028, 1.1));
+      const key = new THREE.DirectionalLight(0xffffff, 1.4);
+      key.position.set(3, 6, 4);
+      scene.add(key);
+      const grid = new THREE.GridHelper(20, 20, 0x2a303a, 0x1a1e26);
+      grid.position.y = -1.2;
+      scene.add(grid);
+
+      function resize() {
+        const w = window.innerWidth, h = window.innerHeight;
+        renderer.setSize(w, h, false);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      // --- minimal orbit camera (drag to rotate, wheel to zoom) ---
+      let az = 0.7, el = 0.5, dist = 6;
+      function place() {
+        camera.position.set(
+          dist * Math.cos(el) * Math.sin(az),
+          dist * Math.sin(el),
+          dist * Math.cos(el) * Math.cos(az),
+        );
+        camera.lookAt(0, 0, 0);
+      }
+      let drag = false, px = 0, py = 0;
+      canvas.addEventListener("pointerdown", (e) => { drag = true; px = e.clientX; py = e.clientY; });
+      addEventListener("pointerup", () => (drag = false));
+      addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        az -= (e.clientX - px) * 0.01;
+        el = Math.max(-1.4, Math.min(1.4, el + (e.clientY - py) * 0.01));
+        px = e.clientX; py = e.clientY;
+      });
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        dist = Math.max(2.5, Math.min(20, dist + e.deltaY * 0.01));
+      }, { passive: false });
+
+      // --- physics ---
+      await RAPIER.init();
+      const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+      // ground plane collider so dropped objects rest
+      const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -1.2, 0));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(10, 0.1, 10), groundBody);
+
+      const HUES = [0.58, 0.08, 0.33, 0.83, 0.14, 0.5, 0.95, 0.22];
+      let assetGroup = new THREE.Group();
+      scene.add(assetGroup);
+      let assetBody = null;
+      const balls = []; // { body, mesh }
+
+      function disposeGroup(group) {
+        group.traverse((o) => {
+          o.geometry?.dispose?.();
+          const m = o.material;
+          if (m) (Array.isArray(m) ? m : [m]).forEach((mat) => mat.dispose());
+        });
+      }
+
+      function showHulls(phys) {
+        disposeGroup(assetGroup);
+        scene.remove(assetGroup);
+        assetGroup = new THREE.Group();
+        const hulls = selectLodHulls(phys, 0);
+        hulls.forEach((h, i) => {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.BufferAttribute(h.vertices, 3));
+          g.setIndex(new THREE.BufferAttribute(h.indices, 1));
+          g.computeVertexNormals();
+          const color = new THREE.Color().setHSL(HUES[i % HUES.length], 0.6, 0.55);
+          assetGroup.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+            color, transparent: true, opacity: 0.85, flatShading: true })));
+          assetGroup.add(new THREE.LineSegments(
+            new THREE.WireframeGeometry(g),
+            new THREE.LineBasicMaterial({ color: 0x0d0f13, transparent: true, opacity: 0.25 })));
+        });
+        scene.add(assetGroup);
+        return hulls.length;
+      }
+
+      let samples = {};
+      let busy = false;
+
+      async function compile(key) {
+        if (busy) return;
+        busy = true;
+        const s = samples[key];
+        const thr = parseFloat(document.getElementById("thr").value);
+        setStat(`compiling ${s.label} @ ${thr.toFixed(2)}…`);
+        try {
+          const t0 = performance.now();
+          const res = await decompose(new Float64Array(s.vertices), new Int32Array(s.faces), { threshold: thr });
+          const phys = parsePhys(writePhys(res.hulls)); // lite → .phys → web reader
+          const n = showHulls(phys);
+          if (assetBody) world.removeRigidBody(assetBody);
+          assetBody = addToWorld(RAPIER, world, phys, { x: 0, y: 0, z: 0 }); // chitin-web rapier bridge
+          const ms = Math.round(performance.now() - t0);
+          setStat(`<span class="hullcount">${n} convex hulls</span> — CoACD in ${ms} ms\ndrag to orbit · scroll to zoom`);
+          document.getElementById("drop").disabled = false;
+        } catch (e) {
+          setStat(`<span class="err">compile failed:</span> ${e.message}`);
+          console.error(e);
+        } finally {
+          busy = false;
+        }
+      }
+
+      const MAX_BALLS = 60;
+      function removeBall(b) {
+        world.removeRigidBody(b.body);
+        scene.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        b.mesh.material.dispose();
+      }
+
+      function dropObjects() {
+        for (let i = 0; i < 12; i++) {
+          const r = 0.12 + Math.random() * 0.06;
+          const body = world.createRigidBody(
+            RAPIER.RigidBodyDesc.dynamic().setTranslation(
+              (Math.random() - 0.5) * 1.2, 3 + Math.random() * 2, (Math.random() - 0.5) * 1.2));
+          world.createCollider(RAPIER.ColliderDesc.ball(r).setRestitution(0.4), body);
+          const mesh = new THREE.Mesh(
+            new THREE.SphereGeometry(r, 16, 12),
+            new THREE.MeshStandardMaterial({ color: 0xf0f4fa, metalness: 0.1, roughness: 0.5 }));
+          scene.add(mesh);
+          balls.push({ body, mesh });
+        }
+        while (balls.length > MAX_BALLS) removeBall(balls.shift());
+      }
+
+      // fixed-step accumulator so physics is independent of render FPS
+      const FIXED_DT = 1 / 60;
+      world.timestep = FIXED_DT;
+      let acc = 0;
+      let lastT = performance.now();
+      function tick() {
+        const now = performance.now();
+        acc += Math.min((now - lastT) / 1000, 0.1); // clamp to avoid a spiral of death
+        lastT = now;
+        while (acc >= FIXED_DT) {
+          world.step();
+          acc -= FIXED_DT;
+        }
+        for (let i = balls.length - 1; i >= 0; i--) {
+          const b = balls[i];
+          const t = b.body.translation();
+          b.mesh.position.set(t.x, t.y, t.z);
+          if (t.y < -6) {
+            removeBall(b);
+            balls.splice(i, 1);
+          }
+        }
+        place();
+        renderer.render(scene, camera);
+        requestAnimationFrame(tick);
+      }
+
+      // --- boot ---
+      try {
+        setStat("loading CoACD wasm…");
+        await initFromUrl(`${WASM}/coacd.mjs`, `${WASM}/coacd.wasm`);
+        samples = await (await fetch("./samples.json")).json();
+        const sel = document.getElementById("asset");
+        for (const [k, v] of Object.entries(samples)) {
+          const o = document.createElement("option");
+          o.value = k; o.textContent = v.label; sel.appendChild(o);
+        }
+        sel.value = "torus";
+        sel.addEventListener("change", () => compile(sel.value));
+        document.getElementById("thr").addEventListener("input", (e) => {
+          document.getElementById("thrv").textContent = parseFloat(e.target.value).toFixed(2);
+        });
+        document.getElementById("thr").addEventListener("change", () => compile(sel.value));
+        document.getElementById("drop").addEventListener("click", dropObjects);
+        tick();
+        await compile("torus");
+      } catch (e) {
+        setStat(`<span class="err">init failed:</span> ${e.message}\n(the wasm package may not be published yet)`);
+        console.error(e);
+      }
+    </script>
+  </body>
+</html>
