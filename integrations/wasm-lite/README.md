@@ -8,14 +8,18 @@ Convex decomposition and `.phys` sidecar generation in the browser. Takes mesh v
 npm install @autarkis/chitin-lite
 ```
 
-You also need the CoACD WASM module (`coacd.js` + `coacd.wasm`). Fetch a versioned
-build from the GitHub Release, host the two files alongside your app, or build them
-yourself from `integrations/wasm/`:
+You also need the CoACD WASM module. It ships as a separate package,
+[`@autarkis/chitin-coacd-wasm`](https://www.npmjs.com/package/@autarkis/chitin-coacd-wasm),
+so it can be loaded straight from a CDN (npm CDNs send CORS headers; GitHub
+release assets do not):
 
 ```
-https://github.com/Autarkis/chitin/releases/download/wasm-v0.1.2/coacd.js
-https://github.com/Autarkis/chitin/releases/download/wasm-v0.1.2/coacd.wasm
+https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs
+https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm
 ```
+
+To pin your own copy, `npm install @autarkis/chitin-coacd-wasm` and serve the two
+files from your app.
 
 ## Usage
 
@@ -25,7 +29,10 @@ https://github.com/Autarkis/chitin/releases/download/wasm-v0.1.2/coacd.wasm
 import { initFromUrl } from "@autarkis/chitin-lite";
 
 // Point to wherever you host the WASM build output
-await initFromUrl("/wasm/coacd.js", "/wasm/coacd.wasm");
+await initFromUrl(
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+);
 ```
 
 ### Decompose a mesh
@@ -51,13 +58,16 @@ const phys = writePhys(result.hulls);
 ### Full pipeline: GLB to .phys in the browser
 
 ```typescript
-import RAPIER from "@dimforge/rapier3d";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
 import { parsePhys } from "@autarkis/chitin-web";
 import { createColliders } from "@autarkis/chitin-web/rapier";
 
 // 1. Init WASM
-await initFromUrl("/wasm/coacd.js", "/wasm/coacd.wasm");
+await initFromUrl(
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+);
 
 // 2. Load mesh (from Three.js, your own loader, etc.)
 const vertices = new Float64Array(geometry.attributes.position.array);
@@ -70,8 +80,9 @@ const result = await decompose(vertices, faces, { threshold: 0.05 });
 const physBuffer = writePhys(result.hulls);
 
 // 5. Read it back and create Rapier colliders
+await RAPIER.init();
 const physFile = parsePhys(physBuffer);
-const { colliders } = createColliders(rapier, physFile);
+const { colliders } = createColliders(RAPIER, physFile);
 ```
 
 ## Config

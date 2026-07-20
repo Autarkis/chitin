@@ -93,6 +93,74 @@ export function validateMeshInput(
       `face array length ${faces.length} is not a multiple of 3`,
     );
   }
+  // Every vertex coordinate must be finite; NaN/Infinity crash or hang CoACD.
+  for (let i = 0; i < vertices.length; i++) {
+    if (!Number.isFinite(vertices[i])) {
+      throw new ChitinError(
+        "INVALID_MESH",
+        `vertex coordinate at position ${i} is not finite (${vertices[i]})`,
+      );
+    }
+  }
+  // Every face index must reference a real vertex; an out-of-range index reads
+  // past the buffer inside native code.
+  const vertexCount = vertices.length / 3;
+  for (let i = 0; i < faces.length; i++) {
+    const idx = faces[i];
+    if (idx < 0 || idx >= vertexCount) {
+      throw new ChitinError(
+        "INVALID_MESH",
+        `face index ${idx} at position ${i} is out of range [0, ${vertexCount})`,
+      );
+    }
+  }
+}
+
+/** Reject decompose options that fall outside their valid range. */
+export function validateConfig(config: DecomposeConfig): void {
+  const { threshold, maxConvexHull } = config;
+  if (threshold !== undefined && (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1)) {
+    throw new ChitinError(
+      "INVALID_CONFIG",
+      `threshold must be in (0, 1], got ${threshold}`,
+    );
+  }
+  if (
+    maxConvexHull !== undefined &&
+    (!Number.isInteger(maxConvexHull) || maxConvexHull === 0 || maxConvexHull < -1)
+  ) {
+    throw new ChitinError(
+      "INVALID_CONFIG",
+      `maxConvexHull must be -1 (unlimited) or a positive integer, got ${maxConvexHull}`,
+    );
+  }
+  // CoACD 1.0.11 (public/coacd.cpp) explicitly rejects prep_resolution outside
+  // [5, 1000]; a generic "positive" check would let native code throw instead.
+  const { prepResolution } = config;
+  if (
+    prepResolution !== undefined &&
+    (!Number.isInteger(prepResolution) || prepResolution < 5 || prepResolution > 1000)
+  ) {
+    throw new ChitinError(
+      "INVALID_CONFIG",
+      `prepResolution must be an integer in [5, 1000] (CoACD's supported range), got ${prepResolution}`,
+    );
+  }
+  for (const key of [
+    "sampleResolution",
+    "mctsNodes",
+    "mctsIteration",
+    "mctsMaxDepth",
+    "maxChVertex",
+  ] as const) {
+    const v = config[key];
+    if (v !== undefined && (!Number.isInteger(v) || v <= 0)) {
+      throw new ChitinError(
+        "INVALID_CONFIG",
+        `${key} must be a positive integer, got ${v}`,
+      );
+    }
+  }
 }
 
 export async function decompose(
@@ -101,6 +169,7 @@ export async function decompose(
   config: DecomposeConfig = {},
 ): Promise<DecomposeResult> {
   validateMeshInput(vertices, faces);
+  validateConfig(config);
   const mod = await getModule();
 
   const result = mod.decompose(

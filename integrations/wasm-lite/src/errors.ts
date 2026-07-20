@@ -1,8 +1,10 @@
+// Only INVALID_MESH and INVALID_CONFIG are currently emitted.
 export type ChitinErrorCode =
   | "INVALID_MESH" // malformed input geometry (shape, finiteness, index bounds)
-  | "NON_MANIFOLD" // input mesh is not manifold (reserved; set by the compiler)
-  | "OUT_OF_MEMORY" // WASM heap exhausted during compilation
-  | "CANCELLED"; // compilation was aborted by the caller
+  | "INVALID_CONFIG" // a decompose option is out of its valid range
+  | "NON_MANIFOLD" // reserved: input mesh is not manifold (not yet emitted)
+  | "OUT_OF_MEMORY" // reserved: WASM heap exhausted (not yet mapped from CoACD)
+  | "CANCELLED"; // reserved: aborted by the caller (needs the worker API)
 
 export class ChitinError extends Error {
   readonly code: ChitinErrorCode;

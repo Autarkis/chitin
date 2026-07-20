@@ -3,6 +3,7 @@ export {
   initFromUrl,
   setModuleFactory,
   setWasmBinary,
+  validateConfig,
   validateMeshInput,
 } from "./decompose.js";
 export { quantizeHulls, validateHull, writePhys } from "./phys-writer.js";
