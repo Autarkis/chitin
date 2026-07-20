@@ -43,11 +43,15 @@ emmake make coacd -j"${NPROC}"
 echo ""
 echo "Compiling WASM module with Embind..."
 mkdir -p "${OUT_DIR}"
-# ENVIRONMENT includes node so the module can be loaded and functionally tested
-# in CI (test/decompose.test.cjs); web and worker are the shipping targets.
+# EXPORT_ES6 emits a real ES module (coacd.mjs) so `import(url)` loads it cleanly
+# from a CDN in the browser and from Node -- a MODULARIZE UMD would throw on its
+# `module`/`exports` references when imported as ESM. ENVIRONMENT includes node
+# so the module can be functionally tested in CI (test/decompose.test.mjs); web
+# and worker are the shipping targets.
 em++ \
     -O3 \
     -s MODULARIZE=1 \
+    -s EXPORT_ES6=1 \
     -s EXPORT_NAME=createCoACD \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s INITIAL_MEMORY=67108864 \
@@ -61,11 +65,11 @@ em++ \
     -DDISABLE_SPDLOG \
     "${SCRIPT_DIR}/src/coacd_bind.cpp" \
     "${BUILD_DIR}/coacd/libcoacd.a" \
-    -o "${OUT_DIR}/coacd.js"
+    -o "${OUT_DIR}/coacd.mjs"
 
 WASM_SIZE=$(wc -c < "${OUT_DIR}/coacd.wasm" | tr -d ' ')
-JS_SIZE=$(wc -c < "${OUT_DIR}/coacd.js" | tr -d ' ')
+JS_SIZE=$(wc -c < "${OUT_DIR}/coacd.mjs" | tr -d ' ')
 echo ""
 echo "Build complete:"
-echo "  ${OUT_DIR}/coacd.js    (${JS_SIZE} bytes)"
+echo "  ${OUT_DIR}/coacd.mjs   (${JS_SIZE} bytes)"
 echo "  ${OUT_DIR}/coacd.wasm  (${WASM_SIZE} bytes)"

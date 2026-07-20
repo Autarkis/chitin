@@ -69,7 +69,7 @@ For manifold meshes (OBJ, GLB, STL from standard modeling tools), you can skip P
 npm install @autarkis/chitin-lite
 ```
 
-This drives CoACD compiled to WebAssembly (558KB) in the browser and writes the same `.phys` format the Python compiler produces. The npm package ships the JavaScript/TypeScript wrapper only; you supply the CoACD WASM module — build it from [`integrations/wasm/`](integrations/wasm/) or host the prebuilt `coacd.js` + `coacd.wasm` — and point the loader at it. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for usage.
+This drives CoACD compiled to WebAssembly (558KB) in the browser and writes the same `.phys` format the Python compiler produces. The npm package ships the JavaScript/TypeScript wrapper only; the CoACD WASM module ships separately as [`@autarkis/chitin-coacd-wasm`](https://www.npmjs.com/package/@autarkis/chitin-coacd-wasm) (an ES module) — load `coacd.mjs` + `coacd.wasm` from a CDN or host your own copy, and point the loader at it. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for usage.
 
 Use `chitin check <file>` to see which path a given input needs:
 

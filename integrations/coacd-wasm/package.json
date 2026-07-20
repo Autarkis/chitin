@@ -1,0 +1,41 @@
+{
+  "name": "@autarkis/chitin-coacd-wasm",
+  "version": "0.2.0",
+  "description": "CoACD convex decomposition compiled to WebAssembly, as an ES module for chitin-lite",
+  "keywords": [
+    "coacd",
+    "convex-decomposition",
+    "wasm",
+    "webassembly",
+    "physics",
+    "collision",
+    "chitin",
+    "phys"
+  ],
+  "homepage": "https://github.com/Autarkis/chitin#readme",
+  "bugs": "https://github.com/Autarkis/chitin/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Autarkis/chitin.git",
+    "directory": "integrations/coacd-wasm"
+  },
+  "type": "module",
+  "main": "coacd.mjs",
+  "exports": {
+    ".": "./coacd.mjs",
+    "./coacd.wasm": "./coacd.wasm"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "prepack": "node scripts/prepack-check.mjs"
+  },
+  "files": [
+    "coacd.mjs",
+    "coacd.wasm",
+    "README.md",
+    "LICENSE",
+    "LICENSE-MPL-2.0.txt",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "license": "MIT"
+}

@@ -1,22 +1,19 @@
-name: Build CoACD WASM (CI)
+name: Release CoACD WASM
 
-# PR build and test only; no publish authority. Releases: release-wasm.yml.
+# On a wasm-v* tag: build, attach to the release, and publish to npm via OIDC.
 on:
-  pull_request:
-    paths:
-      - "integrations/wasm/**"
-      - "integrations/coacd-wasm/**"
-      - "integrations/wasm-lite/**"
-      - "integrations/web/**"
-      - ".github/workflows/build-wasm.yml"
-  workflow_dispatch:
+  push:
+    tags:
+      - "wasm-v*"
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
+    environment: npm-publish
     env:
       EMSDK_VERSION: "5.0.7"
       COACD_REF: "1.0.11"
@@ -26,17 +23,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Validate tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#wasm-v}"
+          PKG_VERSION=$(node -p "require('./integrations/coacd-wasm/package.json').version")
+          echo "tag=${TAG_VERSION} package=${PKG_VERSION}"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::tag version (${TAG_VERSION}) does not match package.json (${PKG_VERSION})"; exit 1
+          fi
 
       - name: Set up Emscripten
         uses: mymindstorm/setup-emsdk@v16
         with:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
-
-      - name: Verify toolchain
-        run: |
-          emcc --version
-          cmake --version
 
       - name: Build CoACD WASM
         working-directory: integrations/wasm
@@ -67,11 +69,18 @@ jobs:
             echo "::error::coacd.mjs size ${mjs} outside [40000, 200000]"; exit 1
           fi
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - name: Stage npm package
+        run: cp integrations/wasm/dist/coacd.mjs integrations/wasm/dist/coacd.wasm integrations/coacd-wasm/
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v3.0.2
         with:
-          name: coacd-wasm
-          path: |
+          files: |
             integrations/wasm/dist/coacd.mjs
             integrations/wasm/dist/coacd.wasm
-          if-no-files-found: error
+
+      - name: Publish to npm
+        working-directory: integrations/coacd-wasm
+        run: |
+          npm install -g npm@latest
+          npm publish --access public

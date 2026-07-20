@@ -3,6 +3,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# CoACD wasm artifacts are built and staged into the package only at publish time.
+integrations/coacd-wasm/coacd.mjs
+integrations/coacd-wasm/coacd.wasm
 .eggs/
 *.egg
 .venv/
