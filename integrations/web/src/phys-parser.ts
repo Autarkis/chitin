@@ -102,6 +102,11 @@ function readHulls(blk: HullBlock): PhysHull[] {
         `${prefix} ${i}: index_offset ${iOff} != expected ${expectedIOff} (non-contiguous or overlapping range)`,
       );
     }
+    if (iCount % 3 !== 0) {
+      throw new Error(
+        `${prefix} ${i}: index count ${iCount} is not a multiple of 3`,
+      );
+    }
 
     const aabbMin: [number, number, number] = [
       view.getFloat32(off + 16, true),
@@ -115,6 +120,13 @@ function readHulls(blk: HullBlock): PhysHull[] {
     ];
     if (![...aabbMin, ...aabbMax].every(Number.isFinite)) {
       throw new Error(`${prefix} ${i}: non-finite aabb`);
+    }
+    for (let c = 0; c < 3; c++) {
+      if (aabbMin[c] > aabbMax[c]) {
+        throw new Error(
+          `${prefix} ${i}: aabb_min[${c}] ${aabbMin[c]} > aabb_max[${c}] ${aabbMax[c]}`,
+        );
+      }
     }
 
     let boneIndex: number | null = null;
@@ -147,12 +159,31 @@ function readHulls(blk: HullBlock): PhysHull[] {
     requireBytes(byteLength, idxOff, iCount * 2, `${prefix} ${i} indices`);
     const indices = new Uint16Array(iCount);
     for (let t = 0; t < iCount; t++) {
-      indices[t] = view.getUint16(idxOff + t * 2, true);
+      const idx = view.getUint16(idxOff + t * 2, true);
+      if (idx >= vCount) {
+        throw new Error(
+          `${prefix} ${i}: triangle index ${idx} >= hull vertex count ${vCount}`,
+        );
+      }
+      indices[t] = idx;
     }
 
     hulls.push({ vertices, indices, aabbMin, aabbMax, boneIndex });
     expectedVOff += vCount;
     expectedIOff += iCount;
+  }
+
+  // Every declared vertex/index must belong to a hull; a larger total hides
+  // unreferenced payload (and diverges from the Python reader / docs/phys.md).
+  if (expectedVOff !== totalVerts) {
+    throw new Error(
+      `${prefix}: hull vertices sum to ${expectedVOff} but total_vertices is ${totalVerts} (unreferenced vertex data)`,
+    );
+  }
+  if (expectedIOff !== totalIdx) {
+    throw new Error(
+      `${prefix}: hull indices sum to ${expectedIOff} but total_indices is ${totalIdx} (unreferenced index data)`,
+    );
   }
 
   return hulls;
@@ -293,6 +324,22 @@ export function parsePhys(buffer: ArrayBuffer): PhysFile {
       const tTotalVerts = view.getUint32(nextBlockOff + 8, true);
       const tTotalIdx = view.getUint32(nextBlockOff + 12, true);
       const dataSize = view.getUint32(nextBlockOff + 16, true);
+      if (!Number.isFinite(concavity)) {
+        throw new Error(`LOD tier ${tier}: non-finite concavity ${concavity}`);
+      }
+      if (tier > 0 && concavity <= lodTiers[tier - 1].concavity) {
+        throw new Error(
+          `LOD tier ${tier}: concavity ${concavity} not greater than previous tier ` +
+            `${lodTiers[tier - 1].concavity} (tiers must be in ascending concavity order)`,
+        );
+      }
+      const expectedDataSize =
+        tHullCount * descSize + tTotalVerts * 6 + tTotalIdx * 2;
+      if (dataSize !== expectedDataSize) {
+        throw new Error(
+          `LOD tier ${tier}: data size ${dataSize} != expected ${expectedDataSize}`,
+        );
+      }
       nextBlockOff += LOD_TIER_HEADER_SIZE;
       requireBytes(byteLength, nextBlockOff, dataSize, `LOD tier ${tier} data`);
 

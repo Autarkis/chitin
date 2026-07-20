@@ -25,10 +25,8 @@ export function createColliders(
       ? selectLodHulls(phys, opts.lodConcavity)
       : phys.hulls;
 
-  for (const hull of hulls) {
-    const desc = colliderFromHull(rapier, hull);
-    if (!desc) continue;
-
+  hulls.forEach((hull, i) => {
+    const desc = colliderFromHull(rapier, hull, i);
     colliders.push(desc);
 
     if (hull.boneIndex !== null) {
@@ -36,7 +34,7 @@ export function createColliders(
       arr.push(desc);
       boneMap.set(hull.boneIndex, arr);
     }
-  }
+  });
 
   return { colliders, boneMap };
 }
@@ -48,6 +46,13 @@ export function addToWorld(
   position?: { x: number; y: number; z: number },
   opts?: ColliderOptions
 ): RAPIER.RigidBody {
+  if (phys.hasBones) {
+    throw new Error(
+      "addToWorld cannot place a rigged .phys: its hulls are bone-local and would " +
+        "collapse onto a single origin. Use createColliders(rapier, phys) and attach " +
+        "each boneMap entry at its bone's bind pose."
+    );
+  }
   const pos = position ?? { x: 0, y: 0, z: 0 };
   const bodyDesc = rapier.RigidBodyDesc.fixed().setTranslation(
     pos.x,
@@ -66,8 +71,25 @@ export function addToWorld(
 
 function colliderFromHull(
   rapier: typeof RAPIER,
-  hull: PhysHull
-): RAPIER.ColliderDesc | null {
-  if (hull.vertices.length < 12 || hull.indices.length < 3) return null;
-  return rapier.ColliderDesc.convexHull(hull.vertices);
+  hull: PhysHull,
+  index: number
+): RAPIER.ColliderDesc {
+  if (hull.vertices.length < 12 || hull.indices.length < 3) {
+    throw new Error(
+      `hull ${index}: too few vertices/indices to form a collider ` +
+        `(${hull.vertices.length / 3} verts, ${hull.indices.length / 3} tris)`
+    );
+  }
+  // convexMesh keeps the compiled hull's own faces; convexHull would discard the
+  // indices and make Rapier recompute the hull from the point cloud.
+  const desc = rapier.ColliderDesc.convexMesh(
+    hull.vertices,
+    Uint32Array.from(hull.indices)
+  );
+  if (!desc) {
+    throw new Error(
+      `hull ${index}: Rapier rejected the convex mesh as degenerate`
+    );
+  }
+  return desc;
 }
