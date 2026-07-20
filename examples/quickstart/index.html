@@ -21,6 +21,8 @@
         background: #1f6feb; color: #fff; border: 0; border-radius: 5px; font: inherit; }
       button:hover { background: #388bfd; }
       button:disabled { background: #30363d; color: #6b7686; cursor: default; }
+      button.secondary { background: #30363d; }
+      button.secondary:hover { background: #3d444d; }
       #stat { margin-top: 12px; padding-top: 10px; border-top: 1px solid #2a303a;
         color: #7d8798; font-size: 11px; white-space: pre-line; min-height: 34px; }
       .hullcount { color: #3fb950; }
@@ -41,6 +43,7 @@
       <input id="thr" type="range" min="0.02" max="0.6" step="0.01" value="0.05" />
 
       <button id="drop" disabled>Drop objects</button>
+      <button id="cancel" class="secondary" disabled>Cancel compile</button>
       <div id="stat">loading…</div>
     </div>
 
@@ -49,7 +52,7 @@
         "imports": {
           "three": "https://esm.sh/three@0.184.0",
           "@dimforge/rapier3d-compat": "https://esm.sh/@dimforge/rapier3d-compat@0.19.3",
-          "@autarkis/chitin-lite": "https://esm.sh/@autarkis/chitin-lite@0.1.2",
+          "@autarkis/chitin-lite": "https://esm.sh/@autarkis/chitin-lite@0.2.0",
           "@autarkis/chitin-web/rapier": "https://esm.sh/@autarkis/chitin-web@0.1.2/rapier?external=three,@dimforge/rapier3d-compat",
           "@autarkis/chitin-web": "https://esm.sh/@autarkis/chitin-web@0.1.2?external=three,@dimforge/rapier3d-compat"
         }
@@ -59,11 +62,19 @@
     <script type="module">
       import * as THREE from "three";
       import RAPIER from "@dimforge/rapier3d-compat";
-      import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
+      import { DecomposeWorker, writePhys } from "@autarkis/chitin-lite";
       import { parsePhys, selectLodHulls } from "@autarkis/chitin-web";
       import { addToWorld } from "@autarkis/chitin-web/rapier";
 
       const WASM = "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0";
+      // CoACD runs in a Web Worker so a heavy mesh doesn't freeze the page. The
+      // page loads chitin-lite via esm.sh (which bundles), so point the worker at
+      // the package's own dist/worker.js on jsDelivr, where its sibling imports
+      // resolve.
+      const worker = new DecomposeWorker(
+        { js: `${WASM}/coacd.mjs`, wasm: `${WASM}/coacd.wasm` },
+        { workerUrl: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-lite@0.2.0/dist/worker.js" },
+      );
       const stat = document.getElementById("c") && document.getElementById("stat");
       const setStat = (html) => (stat.innerHTML = html);
 
@@ -159,16 +170,29 @@
 
       let samples = {};
       let busy = false;
+      let abort = null; // AbortController for the in-flight compile
 
       async function compile(key) {
         if (busy) return;
         busy = true;
         const s = samples[key];
         const thr = parseFloat(document.getElementById("thr").value);
-        setStat(`compiling ${s.label} @ ${thr.toFixed(2)}…`);
+        abort = new AbortController();
+        const cancelBtn = document.getElementById("cancel");
+        cancelBtn.disabled = false;
+        const t0 = performance.now();
         try {
-          const t0 = performance.now();
-          const res = await decompose(new Float64Array(s.vertices), new Int32Array(s.faces), { threshold: thr });
+          // decompose() runs off the main thread; onState reports the wasm load
+          // and CoACD run so the page stays interactive the whole time.
+          const res = await worker.decompose(
+            new Float64Array(s.vertices),
+            new Int32Array(s.faces),
+            { threshold: thr },
+            {
+              signal: abort.signal,
+              onState: (state) => setStat(`compiling ${s.label} @ ${thr.toFixed(2)}… (${state})`),
+            },
+          );
           const phys = parsePhys(writePhys(res.hulls)); // lite → .phys → web reader
           const n = showHulls(phys);
           if (assetBody) world.removeRigidBody(assetBody);
@@ -177,9 +201,15 @@
           setStat(`<span class="hullcount">${n} convex hulls</span> — CoACD in ${ms} ms\ndrag to orbit · scroll to zoom`);
           document.getElementById("drop").disabled = false;
         } catch (e) {
-          setStat(`<span class="err">compile failed:</span> ${e.message}`);
-          console.error(e);
+          if (e.code === "CANCELLED") {
+            setStat("compile cancelled — pick a shape or move the slider to recompile");
+          } else {
+            setStat(`<span class="err">compile failed:</span> ${e.message}`);
+            console.error(e);
+          }
         } finally {
+          cancelBtn.disabled = true;
+          abort = null;
           busy = false;
         }
       }
@@ -237,8 +267,7 @@
 
       // --- boot ---
       try {
-        setStat("loading CoACD wasm…");
-        await initFromUrl(`${WASM}/coacd.mjs`, `${WASM}/coacd.wasm`);
+        setStat("loading samples…");
         samples = await (await fetch("./samples.json")).json();
         const sel = document.getElementById("asset");
         for (const [k, v] of Object.entries(samples)) {
@@ -252,10 +281,12 @@
         });
         document.getElementById("thr").addEventListener("change", () => compile(sel.value));
         document.getElementById("drop").addEventListener("click", dropObjects);
+        document.getElementById("cancel").addEventListener("click", () => abort?.abort());
         tick();
+        // The worker loads CoACD lazily on this first compile (see the state line).
         await compile("torus");
       } catch (e) {
-        setStat(`<span class="err">init failed:</span> ${e.message}\n(the wasm package may not be published yet)`);
+        setStat(`<span class="err">init failed:</span> ${e.message}\n(could not load samples.json — serve this folder over HTTP)`);
         console.error(e);
       }
     </script>

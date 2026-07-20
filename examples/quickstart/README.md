@@ -8,6 +8,9 @@ drops the resulting convex hulls into a live [Rapier](https://rapier.rs) physics
 world rendered with [Three.js](https://threejs.org). Pick a shape, drag the
 concavity slider, and rain objects onto the compiled colliders.
 
+Decomposition runs in a Web Worker (`DecomposeWorker`), so the page stays
+interactive while CoACD works and the **Cancel** button aborts a slow compile.
+
 Everything loads from CDNs — the packages from esm.sh, the CoACD wasm from
 jsDelivr (`@autarkis/chitin-coacd-wasm`) — so there is no build step and nothing
 to host but this page.
@@ -25,7 +28,7 @@ python -m http.server -d examples/quickstart 8000
 ## How it works
 
 ```
-sample mesh ──▶ chitin-lite.decompose(threshold)   # CoACD wasm
+sample mesh ──▶ chitin-lite DecomposeWorker.decompose()  # CoACD wasm, off-thread
             ──▶ chitin-lite.writePhys()             # → .phys ArrayBuffer
             ──▶ chitin-web.parsePhys()              # read the sidecar back
             ──▶ selectLodHulls()  → Three.js meshes # one color per hull

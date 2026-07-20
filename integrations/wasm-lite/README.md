@@ -85,6 +85,60 @@ const physFile = parsePhys(physBuffer);
 const { colliders } = createColliders(RAPIER, physFile);
 ```
 
+### Off the main thread (worker API)
+
+`decompose()` runs CoACD synchronously on the calling thread, so a heavy mesh
+freezes the UI for the whole run (a detailed torus is several seconds).
+`DecomposeWorker` moves the work into a Web Worker, keeps the wasm loaded across
+calls, and supports cancellation via `AbortSignal`.
+
+```typescript
+import { DecomposeWorker, writePhys } from "@autarkis/chitin-lite";
+
+const worker = new DecomposeWorker({
+  js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
+  wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+});
+
+const controller = new AbortController();
+const result = await worker.decompose(vertices, faces, { threshold: 0.05 }, {
+  signal: controller.signal, // controller.abort() terminates the run
+  checkManifold: true, // optional precheck -> rejects with NON_MANIFOLD
+  onState: (state) => console.log(state), // "loading-wasm" -> "decomposing" -> "done"
+});
+const phys = writePhys(result.hulls);
+
+worker.terminate(); // release the worker when done
+```
+
+The input `vertices`/`faces` buffers are transferred to the worker by default
+(zero-copy) and detached on your side; pass `{ transferInput: false }` to keep
+them. Cancellation terminates the worker (CoACD can't be interrupted mid-run) and
+the next `decompose()` spawns a fresh one automatically.
+
+The worker resolves the module via `new URL("./worker.js", import.meta.url)`,
+which bundlers (Vite, webpack, Rollup) handle natively. Without a bundler — e.g.
+loading from a CDN — pass `workerUrl` pointing at the package's `dist/worker.js`:
+
+```typescript
+new DecomposeWorker(wasmUrls, {
+  workerUrl: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-lite@0.2.0/dist/worker.js",
+});
+```
+
+### Errors
+
+Failures throw (or reject with) a `ChitinError` carrying a `code`:
+
+| Code | Meaning |
+|------|---------|
+| `INVALID_MESH` | malformed input geometry (shape, finiteness, index bounds) |
+| `INVALID_CONFIG` | a decompose option is out of range |
+| `NON_MANIFOLD` | input failed the optional `checkManifold` precheck |
+| `OUT_OF_MEMORY` | the wasm heap could not grow during decomposition |
+| `CANCELLED` | the call was aborted and the worker terminated |
+| `WORKER_ERROR` | the worker failed to load or crashed |
+
 ## Config
 
 | Parameter | Default | Description |
@@ -101,4 +155,4 @@ const { colliders } = createColliders(RAPIER, physFile);
 
 ## Constraints
 
-Input meshes must be manifold (watertight, no self-intersections). The WASM build excludes OpenVDB's manifold repair to keep the module under 600KB. OBJ, GLB, and STL files from standard modeling tools are typically manifold. If your mesh isn't, run it through a manifold repair tool first.
+Input meshes must be manifold (watertight, no self-intersections). The WASM build excludes OpenVDB's manifold repair to keep the module under 600KB. OBJ, GLB, and STL files from standard modeling tools are typically manifold. If your mesh isn't, run it through a manifold repair tool first. To catch a bad mesh before decomposition, call `checkManifold(vertices, faces)` (or pass `checkManifold: true` to the worker), which throws `NON_MANIFOLD` on a boundary or non-manifold edge.
