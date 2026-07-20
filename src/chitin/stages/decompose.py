@@ -532,6 +532,13 @@ def decompose_and_build(
                 _plan.detected["coacd_timeouts"] = (
                     _plan.detected.get("coacd_timeouts", 0) + 1
                 )
+                # Tag the substituted bounding-box hull explicitly: a coarse AABB
+                # is fine for an interactive prop but disqualifying for robotics,
+                # so acceptance policies gate on this count rather than having to
+                # infer it from the timeout counter.
+                _plan.detected["fallback_hulls"] = (
+                    _plan.detected.get("fallback_hulls", 0) + 1
+                )
             return env_hulls + [_aabb_box_hull(np.asarray(tm.vertices))]
         out = env_hulls.copy()
         for verts, tris in parts:

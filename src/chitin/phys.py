@@ -13,6 +13,9 @@ FLAG_HAS_BIND_POSES = 0x02
 FLAG_HAS_LOD = 0x04
 KNOWN_FLAGS = FLAG_HAS_BONES | FLAG_HAS_BIND_POSES | FLAG_HAS_LOD
 SUPPORTED_VERSIONS = {2, 3}
+# Version stamped into freshly written .phys files (the exporter's format), as
+# opposed to the set of versions the reader accepts.
+WRITE_VERSION = 3
 
 LOD_TIER_HEADER_SIZE = 24
 

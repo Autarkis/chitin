@@ -37,7 +37,9 @@ def export_phys(result: ExtractionResult, path: str | Path) -> None:
         flags |= FLAG_HAS_BIND_POSES
     if has_lod:
         flags |= FLAG_HAS_LOD
-    version = 3
+    from chitin.phys import WRITE_VERSION
+
+    version = WRITE_VERSION
     descriptor_size = 44 if has_bones else 40
 
     all_hull_lists = [(result.hulls, "LOD0")]

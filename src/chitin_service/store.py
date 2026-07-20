@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import importlib.metadata
 import json
 import shutil
 import sqlite3
@@ -9,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-import chitin
+from chitin import provenance
 
 from .models import Job, JobConfig, JobEvent, JobInput, JobStatus
 
@@ -216,9 +214,12 @@ class Store:
             events=events,
         )
 
+    # Hashing and toolchain identity live in chitin.provenance now (core), so
+    # CLI-produced bundles carry the same provenance the service records. These
+    # stay as thin delegators to keep the cache key and public API unchanged.
     @staticmethod
     def hash_bytes(data: bytes) -> str:
-        return hashlib.sha256(data).hexdigest()
+        return provenance.hash_bytes(data)
 
     @staticmethod
     def hash_config(config: JobConfig, outputs: list[str], input_ext: str) -> str:
@@ -228,18 +229,10 @@ class Store:
         # cache identity: identical bytes submitted as .glb vs .obj must not
         # collide (they route through different adapters).
         d["input_ext"] = input_ext.lower()
-        blob = json.dumps(d, sort_keys=True).encode()
-        return hashlib.sha256(blob).hexdigest()
+        return provenance.hash_config(d)
 
     @staticmethod
     def compiler_version() -> str:
         # Include the versions of the deps that actually shape the output, so an
         # upgrade of CoACD (or Open3D/trimesh) invalidates persisted caches.
-        base = chitin.__version__ if hasattr(chitin, "__version__") else "0.1.0"
-        parts = [base]
-        for dep in ("coacd", "open3d", "trimesh"):
-            try:
-                parts.append(f"{dep}{importlib.metadata.version(dep)}")
-            except importlib.metadata.PackageNotFoundError:
-                pass
-        return "+".join(parts)
+        return provenance.compiler_version()

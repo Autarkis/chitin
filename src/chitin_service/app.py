@@ -223,7 +223,11 @@ async def list_artifacts(job_id: str):
         raise HTTPException(404, "job not found")
     if not job.status.terminal:
         raise HTTPException(409, f"job is {job.status.value}")
-    if job.status in (JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.REJECTED):
+    # A REJECTED job that ran the build has a bundle (report.json + manifest.json
+    # carrying the failing verdict) the client needs to see the rejection reason;
+    # a preflight-rejected job simply has no artifact_dir and returns []. FAILED
+    # and CANCELLED still expose nothing here.
+    if job.status in (JobStatus.FAILED, JobStatus.CANCELLED):
         raise HTTPException(409, f"job {job.status.value}, no artifacts")
 
     artifact_dir = store.artifacts_dir / job_id
@@ -240,7 +244,9 @@ async def download_artifact(job_id: str, filename: str):
     job = store.get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
-    if job.status != JobStatus.COMPLETE:
+    # REJECTED (failed acceptance) jobs serve their bundle so the client can
+    # download the report/manifest and see why the build was rejected.
+    if job.status not in (JobStatus.COMPLETE, JobStatus.REJECTED):
         raise HTTPException(409, f"job is {job.status.value}")
 
     artifact_dir = store.job_artifact_dir(job_id)

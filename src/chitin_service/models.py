@@ -33,7 +33,7 @@ VALID_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.PREFLIGHTED: {JobStatus.QUEUED, JobStatus.REJECTED},
     JobStatus.QUEUED: {JobStatus.RUNNING, JobStatus.CANCELLED},
     JobStatus.RUNNING: {JobStatus.EXPORTING, JobStatus.FAILED, JobStatus.CANCELLED},
-    JobStatus.EXPORTING: {JobStatus.COMPLETE, JobStatus.FAILED},
+    JobStatus.EXPORTING: {JobStatus.COMPLETE, JobStatus.FAILED, JobStatus.REJECTED},
     JobStatus.COMPLETE: set(),
     JobStatus.FAILED: set(),
     JobStatus.CANCELLED: set(),

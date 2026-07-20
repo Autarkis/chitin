@@ -130,6 +130,67 @@ def test_compiler_version_pins_dependency_versions():
     assert "coacd" in Store.compiler_version()
 
 
+def test_robotics_job_passes_and_carries_verdict(client, box_glb):
+    # A clean box under the strict robotics profile completes, and the report
+    # + manifest carry the acceptance verdict.
+    with open(box_glb, "rb") as f:
+        resp = client.post(
+            "/v1/jobs",
+            files={"file": ("box.glb", f, "model/gltf-binary")},
+            params={"outputs": "phys", "profile": "robotics"},
+        )
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "complete"
+    job_id = resp.json()["id"]
+
+    report = client.get(f"/v1/jobs/{job_id}/artifacts/report.json").json()
+    assert report["profile"] == "robotics"
+    assert report["verdict"]["passed"] is True
+    assert report["status"] == "complete"
+
+    names = client.get(f"/v1/jobs/{job_id}/artifacts").json()["artifacts"]
+    assert "manifest.json" in names
+    manifest = client.get(f"/v1/jobs/{job_id}/artifacts/manifest.json").json()
+    assert manifest["quality"]["verdict"]["passed"] is True
+    assert manifest["input"]["sha256"]
+
+
+def test_failed_acceptance_rejects_job(client, box_glb, monkeypatch):
+    # Force acceptance to fail and confirm the build is REJECTED (not silently
+    # completed), with the reason surfaced in the report and manifest.
+    from chitin.acceptance import Check, Verdict
+    from chitin_service import worker
+
+    def _fail(policy, metrics):
+        return Verdict(
+            profile=policy.name,
+            passed=False,
+            checks=(Check("forced", False, "forced failure for test"),),
+        )
+
+    monkeypatch.setattr(worker, "evaluate", _fail)
+
+    with open(box_glb, "rb") as f:
+        resp = client.post(
+            "/v1/jobs",
+            files={"file": ("box.glb", f, "model/gltf-binary")},
+            params={"outputs": "phys", "profile": "robotics"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "rejected"
+    assert "rejected" in [e["status"] for e in data["events"]]
+
+    job_id = data["id"]
+    report = client.get(f"/v1/jobs/{job_id}/artifacts/report.json").json()
+    assert report["status"] == "rejected"
+    assert report["verdict"]["passed"] is False
+    assert "forced failure for test" in report["verdict"]["reasons"]
+
+    manifest = client.get(f"/v1/jobs/{job_id}/artifacts/manifest.json").json()
+    assert manifest["quality"]["verdict"]["passed"] is False
+
+
 def test_404_unknown_job(client):
     resp = client.get("/v1/jobs/nonexistent")
     assert resp.status_code == 404

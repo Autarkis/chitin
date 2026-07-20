@@ -53,6 +53,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--profile` | interactive | Build profile: preset defaults + acceptance gate. `interactive` is permissive; `walkable`/`robotics` are strict (see [Acceptance profiles](#acceptance-profiles)). |
 | `--concavity` | 0.05 | CoACD concavity threshold. Lower = tighter fit, more hulls. |
 | `--opacity-threshold` | 0.1 | Minimum opacity to keep a point (splat inputs only). |
 | `--poisson-depth` | auto | Poisson reconstruction depth (point cloud inputs only). Auto-selects per cell based on point count. |
@@ -73,7 +74,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--target-height` | none | Uniformly rescale the input so its height (up-axis extent) is N meters before extraction (for non-metric source assets). |
 | `--target-footprint` | none | Real-world footprint (largest horizontal extent, meters) used instead of `--target-height` for flat objects like rugs. |
 | `--up-axis` | 1 | Which axis (0/1/2) is up/height for `--target-height` (default 1, glTF Y-up). |
-| `-b, --bundle` | off | Write full artifact bundle (scene.phys + build-plan.json + analysis.json + resolved-config.json) to a directory instead of a single file. |
+| `-b, --bundle` | off | Write full artifact bundle (scene.phys + build-plan.json + analysis.json + resolved-config.json + manifest.json) to a directory instead of a single file. |
 | `--no-hook` | off | Skip post-process hook. |
 
 **Examples:**
@@ -93,9 +94,43 @@ chitin extract model.obj -o colliders.phys \
 # USD Physics output for Isaac Sim / Omniverse
 chitin extract scan.ply -o colliders.usda
 
-# full artifact bundle (phys + build plan + analysis + resolved config)
+# full artifact bundle (phys + build plan + analysis + resolved config + provenance manifest)
 chitin extract model.obj -o out.phys --bundle
-# writes model_bundle/ with scene.phys, build-plan.json, analysis.json, resolved-config.json
+# writes model_bundle/ with scene.phys, build-plan.json, analysis.json, resolved-config.json, manifest.json
+
+# strict robotics profile: tighter decomposition + acceptance gate (exit 3 if rejected)
+chitin extract arm.glb -o arm.phys --profile robotics --bundle
+```
+
+### Acceptance profiles
+
+`--profile` selects preset build defaults *and* an acceptance policy that
+decides whether the result is good enough to ship. The verdict (pass/fail with
+reasons) is written into `report.json` and the bundle's `manifest.json`.
+
+| Profile | Presets | Accepts unless… |
+|---------|---------|-----------------|
+| `interactive` (default) | none | never rejects (permissive) |
+| `walkable` | coarser concavity (0.1), denser Poisson filtering | coverage below 85% |
+| `robotics` | tight concavity (0.01), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90% |
+
+A profile only fills fields you left at their default, so an explicit
+`--concavity` always overrides the profile's preset. A strict profile that
+rejects a build exits non-zero (`3`) and skips the post-process hook.
+
+### Provenance manifest
+
+Every bundle carries a `manifest.json` tying the build together: the input
+SHA-256, a SHA-256 for each emitted file, the compiler version and shaping-
+dependency versions (CoACD, trimesh, numpy, Open3D), the resolved-config hash,
+the `.phys` format version, and the acceptance verdict. It makes a bundle
+tamper-evident — recompute the declared hashes to confirm the artifacts match
+what the manifest claims:
+
+```python
+from chitin import verify_bundle
+
+problems = verify_bundle("model_bundle")  # [] means every artifact matches
 ```
 
 ### Inspect

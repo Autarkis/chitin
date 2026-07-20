@@ -7,8 +7,18 @@ try:
 except PackageNotFoundError:
     __version__ = "0.1.0"
 
+from chitin.acceptance import (
+    PROFILES,
+    AcceptancePolicy,
+    Profile,
+    Verdict,
+    apply_profile,
+    evaluate,
+    get_profile,
+)
 from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
+from chitin.manifest import build_manifest, verify_bundle, write_manifest
 from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig, resolve_config
@@ -30,6 +40,8 @@ def __getattr__(name):
 
 __all__ = [
     "__version__",
+    "PROFILES",
+    "AcceptancePolicy",
     "BoneInfo",
     "BuildPlan",
     "Config",
@@ -39,14 +51,22 @@ __all__ = [
     "PhysBone",
     "PhysFile",
     "PhysHull",
+    "Profile",
     "ResolvedConfig",
+    "Verdict",
     "analyze_arrays",
     "analyze_input",
+    "apply_profile",
+    "build_manifest",
+    "evaluate",
     "extract",
     "extract_from_arrays",
     "extract_from_mesh",
     "extract_from_rigged_mesh",
+    "get_profile",
     "read_phys",
     "resolve_config",
     "validate_phys",
+    "verify_bundle",
+    "write_manifest",
 ]

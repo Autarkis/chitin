@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import traceback
 
 import chitin
+from chitin.acceptance import Verdict, apply_profile, evaluate, get_profile, report_metrics
+from chitin.manifest import MANIFEST_FILENAME, write_manifest
 
 from .models import Job, JobStatus
 from .store import Store
@@ -24,7 +27,10 @@ def run_job(store: Store, job: Job) -> Job:
         if input_path is None:
             raise FileNotFoundError(f"no input file for job {job.id}")
 
-        config = job.config.to_core_config()
+        # The profile is no longer inert: it presets the config (where the
+        # client left defaults) and supplies the acceptance policy.
+        profile = get_profile(job.profile)
+        config = apply_profile(job.config.to_core_config(), profile)
         result = chitin.extract(input_path, config=config)
 
         job.transition(JobStatus.EXPORTING)
@@ -39,10 +45,42 @@ def run_job(store: Store, job: Job) -> Job:
             elif fmt == "usd":
                 result.to_usd(artifact_dir / "colliders.usda")
 
-        report = _build_report(result, config, job)
+        verdict = evaluate(profile.policy, report_metrics(result))
+        report = _build_report(result, config, job, verdict)
         (artifact_dir / "report.json").write_text(json.dumps(report, indent=2))
 
-        job.transition(JobStatus.COMPLETE, f"{len(result.hulls)} hulls generated")
+        # Provenance manifest over every artifact written above (report.json
+        # included), so a service bundle is auditable just like a CLI one.
+        output_files = [
+            p.name
+            for p in sorted(artifact_dir.iterdir())
+            if p.is_file() and p.name != MANIFEST_FILENAME
+        ]
+        resolved_dict = (
+            result.resolved.to_dict()
+            if result.resolved is not None and hasattr(result.resolved, "to_dict")
+            else None
+        )
+        write_manifest(
+            artifact_dir,
+            output_files=output_files,
+            input_path=input_path,
+            config_dict=dataclasses.asdict(config),
+            resolved_dict=resolved_dict,
+            metrics=report_metrics(result),
+            warnings=report["warnings"],
+            verdict=verdict.to_dict(),
+        )
+
+        if verdict.passed:
+            job.transition(
+                JobStatus.COMPLETE, f"{len(result.hulls)} hulls generated"
+            )
+        else:
+            job.transition(
+                JobStatus.REJECTED,
+                "; ".join(verdict.reasons) or "failed acceptance",
+            )
         store.update_job(job)
 
     except Exception as exc:
@@ -62,7 +100,10 @@ def run_job(store: Store, job: Job) -> Job:
 
 
 def _build_report(
-    result: chitin.ExtractionResult, config: chitin.Config, job: Job
+    result: chitin.ExtractionResult,
+    config: chitin.Config,
+    job: Job,
+    verdict: Verdict,
 ) -> dict:
     plan = result.build_plan
     warnings = []
@@ -77,6 +118,12 @@ def _build_report(
             "skipped (Open3D not installed); install chitin[splat] to enable it"
         )
 
+    if plan and plan.detected.get("fallback_hulls"):
+        n = plan.detected["fallback_hulls"]
+        warnings.append(
+            f"{n} AABB fallback hull(s) substituted after a CoACD timeout"
+        )
+
     bones_with_colliders = 0
     if result.bones:
         bone_names_with_hulls = {h.bone_name for h in result.hulls if h.bone_name}
@@ -88,7 +135,9 @@ def _build_report(
             )
 
     report = {
-        "status": "complete",
+        "status": "complete" if verdict.passed else "rejected",
+        "profile": job.profile,
+        "verdict": verdict.to_dict(),
         "input_kind": plan.input_kind if plan else "unknown",
         "collider_kind": plan.collider_kind if plan else "unknown",
         "pipeline": plan.pipeline if plan else [],

@@ -183,10 +183,18 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Which axis is up/height for --target-height (default: 1, glTF Y-up)",
     )
     p.add_argument(
+        "--profile",
+        choices=["interactive", "walkable", "robotics"],
+        default="interactive",
+        help="Build profile: preset defaults + acceptance gate (default: "
+        "interactive = permissive). walkable/robotics enforce coverage and, "
+        "for robotics, reject CoACD-timeout bounding-box fallbacks",
+    )
+    p.add_argument(
         "-b",
         "--bundle",
         action="store_true",
-        help="Write artifact bundle (build-plan.json, analysis.json, resolved-config.json) alongside output",
+        help="Write artifact bundle (build-plan.json, analysis.json, resolved-config.json, manifest.json) alongside output",
     )
     p.add_argument("-q", "--quiet", action="store_true")
 
@@ -270,18 +278,33 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         up_axis=args.up_axis,
     )
 
+    from chitin.acceptance import apply_profile, evaluate, get_profile, report_metrics
+
+    profile = get_profile(args.profile)
+    config = apply_profile(config, profile)
+
     if not args.quiet:
-        print(f"chitin: {args.input} -> {args.output} ({fmt})")
+        print(f"chitin: {args.input} -> {args.output} ({fmt}) [{profile.name}]")
 
     t0 = time.monotonic()
     result = extract(args.input, config)
     dt = time.monotonic() - t0
 
+    verdict = evaluate(profile.policy, report_metrics(result))
+
     if args.bundle:
         from chitin.exporters.bundle import export_bundle
 
         bundle_dir = args.output.parent / (args.output.stem + "_bundle")
-        export_bundle(result, bundle_dir, fmt=fmt, scene_name=args.scene_name)
+        export_bundle(
+            result,
+            bundle_dir,
+            fmt=fmt,
+            scene_name=args.scene_name,
+            input_path=args.input,
+            config=config,
+            verdict=verdict,
+        )
         if not args.quiet:
             print(f"chitin: bundle written to {bundle_dir}/")
     else:
@@ -319,6 +342,20 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             )
         if args.bundle:
             pr.to_json(bundle_dir / "probe.json")
+
+    # Acceptance gate. A permissive (interactive) profile has no checks and
+    # always passes; a failed strict build exits non-zero *before* the
+    # post-process hook, so a rejected asset is never published.
+    if not verdict.passed:
+        print(
+            f"chitin: {profile.name} acceptance REJECTED the build:",
+            file=sys.stderr,
+        )
+        for reason in verdict.reasons:
+            print(f"chitin:   - {reason}", file=sys.stderr)
+        sys.exit(3)
+    if profile.policy.mode == "strict" and not args.quiet:
+        print(f"chitin: {profile.name} acceptance passed")
 
     if not args.no_hook:
         hook_cmd = get_post_process_command(args.post_process)
