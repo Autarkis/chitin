@@ -4,6 +4,19 @@ All notable changes to Chitin are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The `.phys` binary
 format is versioned independently and noted where it changes.
 
+## [Unreleased]
+
+- Build profiles (`--profile interactive | walkable | robotics`): each profile
+  sets preset core-config defaults and an acceptance gate. `interactive`
+  (default) is permissive; `walkable`/`robotics` enforce coverage, and `robotics`
+  additionally rejects CoACD-timeout bounding-box fallbacks. A build that fails a
+  strict gate is rejected with a verdict instead of silently ending `COMPLETE`;
+  the same policy evaluation runs on the CLI and service paths. (#19)
+- Provenance manifest: `--bundle` writes a `manifest.json` (alongside
+  `build-plan.json`, `analysis.json`, `resolved-config.json`) recording the
+  manifest/`.phys` versions, compiler and dependency versions, input/output
+  content hashes, and quality warnings, with a `verify_bundle()` checker. (#20)
+
 ## [0.1.2] - 2026-07-19
 
 - Replace the GPL-licensed `plyfile` dependency with a small built-in permissive
