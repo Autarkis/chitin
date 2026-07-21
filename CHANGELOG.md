@@ -6,6 +6,12 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- Web Rapier adapter: `addToWorld()` now places rigged `.phys` assets at their
+  bind (rest) pose instead of refusing them — each bone-local hull is baked
+  through its bone's bind transform (`world = local @ bind_transform`, row-major)
+  before becoming a collider, so scale/shear in the matrix stay exact. Exposed as
+  `applyBindPose()`; assets with bone indices but no bind poses still error
+  clearly. (#14)
 - Build profiles (`--profile interactive | walkable | robotics`): each profile
   sets preset core-config defaults and an acceptance gate. `interactive`
   (default) is permissive; `walkable`/`robotics` enforce coverage, and `robotics`
