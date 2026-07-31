@@ -24,10 +24,24 @@ Requires **Python 3.12** (open3d has no 3.13 wheel yet).
 
 ```bash
 python -m pip install -e ".[dev]"   # installs open3d, coacd, trimesh, ruff, pytest, ...
+pre-commit install                  # install the git hook (do this once)
 pytest                              # full suite
 ruff check .                        # lint (the enforced linter)
 ruff format .                       # format
 ```
+
+`pre-commit install` wires `ruff check --fix`, `ruff format`, and a few
+whitespace/YAML hygiene hooks into `git commit`, so the two cheap CI gates fail
+locally in a second instead of on a pushed branch. If a hook rewrites a file, the
+commit is aborted — re-`git add` the fixed file and commit again. To check the
+whole tree at once: `pre-commit run --all-files`.
+
+The ruff version is pinned **exactly** in the `dev` extra and pinned again as the
+`rev` in `.pre-commit-config.yaml`; the two must stay equal. ruff's formatter
+output is not stable across minor releases, so if they drift, the hook and CI
+disagree and you get a commit that passes locally and fails `ruff format --check`
+in CI. `pre-commit autoupdate` bumps only the config — update `pyproject.toml` to
+match in the same commit.
 
 > **Important:** install the `[dev]` (or `[splat]`) extra so **open3d** is present.
 > Without it, the entire point-cloud / Poisson / spatial / CoACD test path **skips

@@ -43,7 +43,12 @@ dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
     "httpx>=0.27",
-    "ruff>=0.4",
+    # Pinned exactly, and kept in lockstep with the `rev` in
+    # .pre-commit-config.yaml. The formatter's output is not stable across ruff
+    # minor releases, so an unpinned range lets CI drift away from the version
+    # the pre-commit hook runs and reintroduces format-check-only CI failures.
+    "ruff==0.15.4",
+    "pre-commit>=4.0",
 ]
 
 [project.scripts]

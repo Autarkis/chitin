@@ -1,11 +1,17 @@
-# Optional but recommended: `pip install pre-commit && pre-commit install`
-# Run `pre-commit autoupdate` to bump the pinned ruff version.
+# Install with: `pip install -e ".[dev]" && pre-commit install`
 # We enforce ruff only (lint + format); type checking is intentionally not gated.
+#
+# The ruff `rev` below MUST match the pinned `ruff==` in pyproject.toml's `dev`
+# extra. pre-commit resolves ruff from this tag in its own isolated env, while CI
+# resolves it from the dev extra; if the two drift, the formatter styles can
+# disagree and a commit that passes the hook still fails `ruff format --check` in
+# CI. When running `pre-commit autoupdate`, update pyproject.toml to match.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.15.4
     hooks:
-      - id: ruff
+      # `ruff-check`, not the deprecated `ruff` alias, which warns on every run.
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/pre-commit/pre-commit-hooks
