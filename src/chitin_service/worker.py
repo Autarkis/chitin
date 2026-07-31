@@ -5,7 +5,13 @@ import json
 import traceback
 
 import chitin
-from chitin.acceptance import Verdict, apply_profile, evaluate, get_profile, report_metrics
+from chitin.acceptance import (
+    Verdict,
+    apply_profile,
+    evaluate,
+    get_profile,
+    report_metrics,
+)
 from chitin.manifest import MANIFEST_FILENAME, write_manifest
 
 from .models import Job, JobStatus
@@ -73,9 +79,7 @@ def run_job(store: Store, job: Job) -> Job:
         )
 
         if verdict.passed:
-            job.transition(
-                JobStatus.COMPLETE, f"{len(result.hulls)} hulls generated"
-            )
+            job.transition(JobStatus.COMPLETE, f"{len(result.hulls)} hulls generated")
         else:
             job.transition(
                 JobStatus.REJECTED,
@@ -120,9 +124,7 @@ def _build_report(
 
     if plan and plan.detected.get("fallback_hulls"):
         n = plan.detected["fallback_hulls"]
-        warnings.append(
-            f"{n} AABB fallback hull(s) substituted after a CoACD timeout"
-        )
+        warnings.append(f"{n} AABB fallback hull(s) substituted after a CoACD timeout")
 
     bones_with_colliders = 0
     if result.bones:

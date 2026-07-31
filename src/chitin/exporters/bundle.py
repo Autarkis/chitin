@@ -44,8 +44,9 @@ def export_bundle(
     if result.resolved is not None and hasattr(result.resolved, "to_dict"):
         _write_json(output_dir / "resolved-config.json", result.resolved.to_dict())
 
-    _write_manifest(output_dir, result, input_path=input_path, config=config,
-                    verdict=verdict)
+    _write_manifest(
+        output_dir, result, input_path=input_path, config=config, verdict=verdict
+    )
 
     return primary
 
