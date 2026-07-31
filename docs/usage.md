@@ -456,6 +456,8 @@ When a PLY file contains `scale_0/1/2` and `rot_0/1/2/3` attributes (standard 3D
 
 For PLY files without covariance attributes (plain point clouds, photogrammetry), chitin falls back to the standard pipeline: KD-tree normal estimation and no inflation.
 
+Covariance travels with the geometry under `target_height` / `target_footprint`: the same uniform factor that rescales the positions is applied to the per-splat scales, so inflation offsets and octree ghost-zone radii stay in the units of the normalized cloud. `splat_scale_is_log` (default `true`, the 3DGS convention) decides how — an additive `log(factor)` on log scales, a plain multiply on linear ones. Rotations are untouched; a uniform scale does not reorient a gaussian. The build plan records the applied factor as `normalize_covariance_scale`.
+
 ### Spatial Decomposition for Large Scenes
 
 When a splat scene exceeds `spatial_split_threshold` points (default 50K), chitin automatically partitions the scene into octree cells and processes each cell independently. This keeps each cell's point count manageable for Poisson reconstruction, avoids hitting the `max_decompose_vertices` decimation limit, and enables natural parallelism.

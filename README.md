@@ -255,7 +255,6 @@ chitin-server download <job_id> -o ./output
 - **FBX needs Blender.** trimesh has no FBX loader, so `chitin extract model.fbx` auto-converts the file to GLB via headless Blender (Blender must be on PATH) and extracts from that. `chitin convert` runs the same step explicitly. Without Blender, FBX extraction raises a clear error.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.
 - **Rigged runtime placement is bind-pose only.** The web `addToWorld()` helper bakes each rigged hull to its bone's bind (rest) pose on a single fixed body, and the Three.js debug meshes do the same. For *animated* skinning — hulls that track moving bones — use `createColliders()` and attach each `boneMap` entry to its own body, driven by your bone poses.
-- **Target normalization does not rescale splat covariance.** `target_height` / `target_footprint` scale point and mesh positions uniformly, but gaussian-splat covariance (scale) is left unchanged, so splat inflation and ghost-zone radii stay in the source scale. Normalize splats at the source if metric splat sizing matters.
 
 ## License
 

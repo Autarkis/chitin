@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from chitin import Config, extract_from_arrays, extract_from_mesh
-from chitin.stages.normalize import normalize_to_target
+from chitin.stages.normalize import normalize_to_target, rescale_covariance
 
 
 def _box_points(half=(1.0, 1.0, 1.0)):
@@ -157,3 +157,73 @@ def test_extract_from_arrays_honors_target_height():
     r = extract_from_arrays(pts, config=Config(target_height=10.0))
     assert r.build_plan.detected.get("normalized") is True
     assert r.build_plan.detected.get("normalize_scale") == pytest.approx(5.0)
+
+
+def test_rescale_covariance_log_adds_log_of_factor():
+    # 3DGS stores scale_0/1/2 as logs activated with exp, so a 5x position
+    # scale is a +log(5) shift there — the linear radii must come out 5x.
+    scales = np.log(np.array([[0.1, 0.2, 0.05], [1.0, 0.5, 0.25]]))
+    out = rescale_covariance(scales, 5.0, log_scale=True)
+    assert np.allclose(np.exp(out), np.exp(scales) * 5.0)
+
+
+def test_rescale_covariance_linear_multiplies():
+    scales = np.array([[0.1, 0.2, 0.05]])
+    out = rescale_covariance(scales, 5.0, log_scale=False)
+    assert np.allclose(out, scales * 5.0)
+
+
+def test_rescale_covariance_rejects_nonpositive_factor():
+    with pytest.raises(ValueError, match="must be positive"):
+        rescale_covariance(np.zeros((1, 3)), 0.0)
+
+
+def test_extract_from_arrays_rescales_splat_covariance():
+    # Covariance travels with the positions: the plan records the same factor
+    # that scaled the geometry, so splat radii are no longer left in source scale.
+    # Needs genuine 3D spread: with covariance present the splat path runs
+    # Open3D's tangent-plane orientation, whose qhull step fails on a line.
+    rng = np.random.default_rng(0)
+    pts = rng.random((50, 3))
+    pts[:, 1] = np.linspace(0.0, 2.0, 50)  # y-extent 2, the largest
+    scales = np.log(np.full((50, 3), 0.1))
+    rots = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (50, 1))
+    r = extract_from_arrays(
+        pts, scales=scales, rots=rots, config=Config(target_height=10.0)
+    )
+    assert r.build_plan.detected.get("normalize_scale") == pytest.approx(5.0)
+    assert r.build_plan.detected.get("normalize_covariance_scale") == pytest.approx(5.0)
+
+
+def test_normalize_without_covariance_records_no_covariance_scale():
+    pts = np.zeros((50, 3), dtype=np.float64)
+    pts[:, 1] = np.linspace(0.0, 2.0, 50)
+    r = extract_from_arrays(pts, config=Config(target_height=10.0))
+    assert "normalize_covariance_scale" not in r.build_plan.detected
+
+
+def test_normalized_splat_matches_pre_scaled_input():
+    # The invariant the fix buys: normalizing a source-scale splat cloud must
+    # land where feeding the already-metric cloud would, covariance included.
+    # Before covariance travelled with the positions, the inflation offsets and
+    # ghost-zone radii stayed 5x too small and the hulls diverged.
+    rng = np.random.default_rng(7)
+    pts = rng.random((300, 3))
+    pts[:, 1] *= 2.0  # y-extent ~2, the dimension the target matches
+    scales = np.log(np.full((300, 3), 0.05))
+    rots = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (300, 1))
+
+    normalized = extract_from_arrays(
+        pts, scales=scales, rots=rots, config=Config(target_height=10.0)
+    )
+    factor = normalized.build_plan.detected["normalize_scale"]
+    pre_scaled = extract_from_arrays(
+        pts * factor, scales=scales + np.log(factor), rots=rots, config=Config()
+    )
+
+    assert normalized.hulls and pre_scaled.hulls
+    assert len(normalized.hulls) == len(pre_scaled.hulls)
+    a = np.vstack([h.vertices for h in normalized.hulls])
+    b = np.vstack([h.vertices for h in pre_scaled.hulls])
+    assert a.shape == b.shape
+    assert np.allclose(np.sort(a, axis=0), np.sort(b, axis=0), atol=1e-9)

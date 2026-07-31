@@ -70,3 +70,30 @@ def normalize_to_target(
         "normalize_is_flat": is_flat,
     }
     return pos * scale, stats
+
+
+def rescale_covariance(
+    scales: np.ndarray,
+    factor: float,
+    *,
+    log_scale: bool = True,
+) -> np.ndarray:
+    """Apply a uniform position-scale factor to per-splat gaussian scales.
+
+    ``normalize_to_target`` scales positions about the origin. The gaussians
+    sitting at those positions have to grow by the same factor, or every
+    splat-derived radius downstream — the anisotropic inflation offsets, the
+    octree ghost-zone padding — stays in the source scale while the geometry is
+    metric, which under-covers the surface at the Poisson step.
+
+    3DGS writes ``scale_0/1/2`` as logarithms and activates them with ``exp`` at
+    use, so a multiplicative factor becomes an additive ``log(factor)`` there,
+    and a plain multiply when the scales are already linear (``log_scale=False``).
+    Rotations are untouched: a uniform scale does not reorient a gaussian.
+    """
+    scales = np.asarray(scales, dtype=np.float64)
+    if factor <= 0:
+        raise ValueError(f"covariance scale factor must be positive, got {factor}")
+    if log_scale:
+        return scales + np.log(factor)
+    return scales * factor

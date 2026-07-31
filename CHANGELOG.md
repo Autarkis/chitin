@@ -6,6 +6,14 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- Target normalization now rescales gaussian-splat covariance. `target_height` /
+  `target_footprint` previously scaled positions but left the per-splat scales
+  alone, so splat inflation offsets and octree ghost-zone radii stayed in the
+  source scale while the geometry was metric — under-covering the surface at the
+  Poisson step. The same uniform factor is now applied to the scales, additively
+  in log space or multiplicatively when `splat_scale_is_log` is `false`;
+  rotations are untouched. The build plan records `normalize_covariance_scale`
+  (replacing the `normalize_covariance_unscaled` warning flag). (#17)
 - Web Rapier adapter: `addToWorld()` now places rigged `.phys` assets at their
   bind (rest) pose instead of refusing them — each bone-local hull is baked
   through its bone's bind transform (`world = local @ bind_transform`, row-major)

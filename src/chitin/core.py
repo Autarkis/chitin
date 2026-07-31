@@ -21,25 +21,28 @@ from chitin.stages.splat import (
 )
 
 
-def _normalize_positions(
-    positions: np.ndarray | None,
+def _normalize_geometry(
+    positions: np.ndarray,
     config: Config,
     plan: BuildPlan,
     *,
-    has_covariance: bool = False,
-) -> np.ndarray | None:
-    """Rescale positions to the configured real-world target, recording stats.
+    scales: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Rescale geometry to the configured real-world target, recording stats.
 
     Shared by every non-skinned entry point so ``extract``, ``extract_from_mesh``
     and ``extract_from_arrays`` honour ``target_height`` / ``target_footprint``
-    identically. A no-op (no target, empty input) returns positions unchanged.
+    identically. Per-splat gaussian scales travel with the positions under the
+    same uniform factor, so splat inflation and octree ghost-zone radii stay in
+    the units of the normalized geometry. A no-op (no target, empty input)
+    returns its inputs unchanged.
     """
     if config.target_height is None and config.target_footprint is None:
-        return positions
-    if positions is None or not len(positions):
-        return positions
+        return positions, scales
+    if not len(positions):
+        return positions, scales
 
-    from chitin.stages.normalize import normalize_to_target
+    from chitin.stages.normalize import normalize_to_target, rescale_covariance
 
     positions, norm_stats = normalize_to_target(
         positions,
@@ -51,11 +54,13 @@ def _normalize_positions(
     if norm_stats:
         plan.step("normalize")
         plan.detected.update(norm_stats)
-        # Uniform scaling moves point positions but not per-splat covariance
-        # magnitudes, so splat inflation / ghost-zone radii stay in source scale.
-        if has_covariance and norm_stats.get("normalized"):
-            plan.detected["normalize_covariance_unscaled"] = True
-    return positions
+        if scales is not None and norm_stats.get("normalized"):
+            factor = norm_stats["normalize_scale"]
+            scales = rescale_covariance(
+                scales, factor, log_scale=config.splat_scale_is_log
+            )
+            plan.detected["normalize_covariance_scale"] = factor
+    return positions, scales
 
 
 def extract(
@@ -76,11 +81,11 @@ def extract(
             # would desync the rig; furniture (the target use case) is static.
             plan.detected["normalize_skipped_skinned"] = True
         else:
-            result.positions = _normalize_positions(
+            result.positions, result.scales = _normalize_geometry(
                 result.positions,
                 config,
                 plan,
-                has_covariance=result.scales is not None,
+                scales=result.scales,
             )
 
     analysis = analyze_arrays(
@@ -161,11 +166,11 @@ def extract_from_arrays(
         # Direct call (not via extract()): apply target normalization here so
         # every public entry point honours target_height / target_footprint.
         _plan = BuildPlan(input_kind="arrays", collider_kind="point_cloud")
-        positions = _normalize_positions(
+        positions, scales = _normalize_geometry(
             positions,
             config,
             _plan,
-            has_covariance=scales is not None and rots is not None,
+            scales=scales,
         )
     _plan.source_vertices = source_count
 
@@ -299,7 +304,7 @@ def extract_from_mesh(
         # Direct call (not via extract()): apply target normalization here so
         # every public entry point honours target_height / target_footprint.
         _plan = BuildPlan(input_kind="mesh", collider_kind="static")
-        vertices = _normalize_positions(vertices, config, _plan)
+        vertices, _ = _normalize_geometry(vertices, config, _plan)
     _plan.source_vertices = _plan.source_vertices or len(vertices)
     if _resolved is None:
         analysis = analyze_arrays(vertices, format="mesh", face_count=len(faces))
