@@ -1,7 +1,5 @@
-# Existing-check: scripts/, ~/.claude/scripts/, devops_tools/ - no match
-# (new pipeline stage, not a script; design in docs/plan-snugfit.md)
-"""Snug-fit hull refinement (phase 4): shrink face plane offsets onto the
-covered input samples. Design: docs/plan-snugfit.md."""
+"""Snug-fit hull refinement: shrink face plane offsets onto the covered input
+samples, so a hull tracks the geometry instead of CoACD's inflated envelope."""
 
 from __future__ import annotations
 
