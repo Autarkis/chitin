@@ -197,9 +197,16 @@ Raycast coverage probe. Fires a grid of downward rays through the scene AABB and
 chitin sweep <file.phys> [--grid 32] [--capsule-radius 0.3] [--capsule-height 1.8] [--step-height 0.3]
 ```
 
-Ground reachability test. Finds ground cells, builds an adjacency graph filtered by step height, flood-fills connected components, and reports what fraction of ground is reachable from the largest island. Rates results as excellent (>=95%), good (>=80%), fair (>=50%), or poor (<50%). Exits with code 2 on poor rating.
+Capsule traversability test. Resolves each grid column to a ground surface, drops the cells the capsule cannot occupy, builds an adjacency graph filtered by step height, flood-fills connected components, and reports what fraction of standable ground is reachable from the largest island. Rates results as excellent (>=95%), good (>=80%), fair (>=50%), or poor (<50%). Exits with code 2 on poor rating.
 
-This measures floor connectivity, not full capsule clearance: `--capsule-height` is accepted but currently unused, so low ceilings and narrow vertical gaps are not detected. `--capsule-radius` only trims the outer grid margin and deduplicates snag points.
+Both capsule dimensions are enforced:
+
+- `--capsule-height` picks the ground. Every hull a column crosses contributes a solid span; overlapping spans merge, and the ground is the lowest span top with at least this much free space above it. A floor roofed lower than the capsule is skipped in favour of the next surface up, so cells under a table resolve to the table top rather than the floor beneath it. Those cells are counted as `clearance_blocked`.
+- `--capsule-radius` clears the sides. Eight samples on a ring of this radius reject the cell when geometry crosses the band between step height and head height above its ground -- a capsule jammed against a wall or a table edge is not standable. Those cells are counted as `radius_blocked`. The radius also trims the outer grid margin and deduplicates snag points.
+
+`ground_cells` still counts every column that hit geometry at all; `standable_cells` is the subset the capsule fits in, and is the denominator of the reported fraction.
+
+One caveat: free space above the topmost surface is unbounded, so a room whose ceiling is lower than the capsule resolves to the roof rather than reporting no floor. The `clearance_blocked` count makes that case visible -- when it approaches `standable_cells`, the sweep is walking a roof, not a floor.
 
 ### Convert
 

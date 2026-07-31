@@ -98,7 +98,7 @@ The compiler is organized into four module groups:
 7. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
 8. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
 
-**`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does ground-reachability analysis -- a step-height-gated flood fill over ground cells; it reports reachable fraction and does not yet evaluate vertical or lateral capsule clearance (`--capsule-height` is currently unused). `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
+**`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does capsule-traversability analysis -- each grid column is reduced to per-hull solid spans, the ground is the lowest merged span top with `capsule_height` of free space above it, an eight-sample ring at `capsule_radius` drops cells whose sides are obstructed between step and head height, and the survivors get a step-height-gated flood fill; it reports the reachable fraction of standable cells plus the headroom and radius rejection counts. `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
 
 **`exporters/`** -- output serialization. `.phys` binary packing, JSON debug companion, USD Physics output, and artifact bundle (build-plan.json + analysis.json + resolved-config.json).
 

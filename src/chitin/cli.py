@@ -557,7 +557,9 @@ def _cmd_probe(args: argparse.Namespace) -> None:
 
 
 def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("sweep", help="ground reachability test for collision quality")
+    p = sub.add_parser(
+        "sweep", help="capsule traversability test for collision quality"
+    )
     p.add_argument("file", type=Path, help="path to .phys file")
     p.add_argument(
         "--grid",
@@ -569,14 +571,15 @@ def _add_sweep_parser(sub: argparse._SubParsersAction) -> None:
         "--capsule-radius",
         type=float,
         default=0.3,
-        help="Capsule radius in meters (default: 0.3)",
+        help="Capsule radius in meters, tested laterally around each cell "
+        "(default: 0.3)",
     )
     p.add_argument(
         "--capsule-height",
         type=float,
         default=1.8,
-        help="Capsule height in meters (default: 1.8; currently unused -- the "
-        "sweep measures ground reachability, not vertical clearance)",
+        help="Capsule height in meters; a cell's ground is the lowest surface "
+        "with this much free space above it (default: 1.8)",
     )
     p.add_argument(
         "--step-height",
@@ -618,6 +621,13 @@ def _cmd_sweep(args: argparse.Namespace) -> None:
 
     pct = result.traversability * 100
     print(f"ground:     {result.ground_cells}/{result.total_cells} cells")
+    print(f"standable:  {result.standable_cells} cells (capsule fits)")
+    if result.clearance_blocked:
+        print(
+            f"  headroom: {result.clearance_blocked} cells raised above a low surface"
+        )
+    if result.radius_blocked:
+        print(f"  radius:   {result.radius_blocked} cells dropped for lateral contact")
     print(f"traversable: {pct:.1f}% (largest island: {result.largest_component} cells)")
     print(f"islands:    {result.connected_components}")
     if result.seam_snags:

@@ -71,6 +71,37 @@ def ray_hits_any(
     return hit
 
 
+def ray_hull_spans(
+    origins: np.ndarray,
+    direction: np.ndarray,
+    hulls: list[PhysHull],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest and farthest hit distance for every ray/hull pair.
+
+    Returns two ``(n_rays, n_hulls)`` arrays holding the entry and exit
+    distance along ``direction``; both are ``inf`` where the ray misses the
+    hull. Hulls are convex, so the pair bounds one solid span along the ray --
+    callers can merge the spans of a column to reason about free space between
+    surfaces. Like the other helpers here, the AABB pre-filter assumes a
+    vertical (+/-Y) direction.
+    """
+    n_rays = len(origins)
+    near = np.full((n_rays, len(hulls)), np.inf, dtype=np.float64)
+    far = np.full((n_rays, len(hulls)), np.inf, dtype=np.float64)
+
+    for hull_index, hull in enumerate(hulls):
+        candidates = _xz_candidates(origins, hull)
+        if len(candidates) == 0:
+            continue
+
+        ok, t = _moller_trumbore(origins[candidates], direction, hull)
+        near[candidates, hull_index] = np.where(ok, t, np.inf).min(axis=1)
+        farthest = np.where(ok, t, -np.inf).max(axis=1)
+        far[candidates, hull_index] = np.where(np.isfinite(farthest), farthest, np.inf)
+
+    return near, far
+
+
 def ray_closest_hit(
     origins: np.ndarray,
     direction: np.ndarray,
