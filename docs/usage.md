@@ -451,6 +451,7 @@ for hull in phys.hulls:
 | `thin_shell_thickness` | float | 0.0 | Shell extrusion thickness. 0 = auto (2% of median mesh extent). |
 | `flatness_threshold` | float | 0.9 | PCA eigenvalue ratio to classify octree cells as flat. Flat cells get oriented boxes instead of CoACD. 0 = disabled. |
 | `auto_environment` | bool | True | Auto-detect environment scans and enable thin-shell + proximity filter. Set False to disable. |
+| `force_environment` | bool | False | Treat the input as an environment scan whatever detection says (`--environment`). |
 | `seam_repair` | bool | True | Re-merge octree cells at seam boundaries to eliminate height discontinuities. |
 
 ## Gaussian Splat Covariance
@@ -479,7 +480,9 @@ The build plan tracks `cell_count`, `padding_min`, `padding_median`, `padding_ma
 
 Poisson reconstruction produces watertight meshes. For object scans (a mug, a statue), this is correct -- the closed surface IS the collision boundary. For environment scans (a room, a cave, an outdoor scene), Poisson closes the open boundaries and CoACD decomposes the enclosed volume, filling walkable space with invisible collision blocks.
 
-Chitin auto-detects environment scans by checking whether fewer than 5% of points lie in the inner 50% of the scene AABB. When triggered, it enables both proximity filtering and thin-shell extrusion automatically. Use `--no-auto-environment` or `auto_environment=False` to disable.
+Chitin auto-detects environment scans on two signals, either of which is enough. The first is a hollow middle: fewer than 5% of points in the inner 50% of the scene AABB. The second is a shell signature -- a floor plane plus at least two wall planes found against the AABB faces, each one thin (the points hug a single depth rather than filling the slab, which is what separates a wall from a solid block) and covering at least 35% of its face. The second signal is what carries cluttered interiors: a central pillar, a heap of material, or a mid-floor row of shelving raises inner density past 5%, but the walls and floor are still there.
+
+When either fires, proximity filtering and thin-shell extrusion are enabled automatically. Use `--no-auto-environment` or `auto_environment=False` to disable, and `--environment` or `force_environment=True` to force the environment path when detection misses. Inputs that land between the two -- inner density in [0.05, 0.20) with no shell signature -- are treated as solid objects, and `chitin check` says so and points at `--environment`.
 
 Two mechanisms address the closure problem:
 

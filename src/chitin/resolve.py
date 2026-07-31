@@ -35,6 +35,7 @@ class ResolvedConfig:
     thin_shell_thickness: float
     flatness_threshold: float
     auto_environment: bool
+    force_environment: bool
     seam_repair: bool
     snug_fit: bool
 
@@ -66,6 +67,7 @@ class ResolvedConfig:
             "thin_shell_thickness": self.thin_shell_thickness,
             "flatness_threshold": self.flatness_threshold,
             "auto_environment": self.auto_environment,
+            "force_environment": self.force_environment,
             "seam_repair": self.seam_repair,
             "snug_fit": self.snug_fit,
             "use_spatial_split": self.use_spatial_split,
@@ -89,10 +91,16 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
 
     thin_shell = config.thin_shell
     proximity_filter = config.surface_proximity_filter
-    if config.auto_environment and analysis.is_environment_likely:
-        decisions["is_environment"] = (
-            f"detected: inner density ratio {analysis.inner_density_ratio:.3f}"
-        )
+    detected = config.auto_environment and analysis.is_environment_likely
+    if config.force_environment or detected:
+        if config.force_environment:
+            decisions["is_environment"] = "forced: --environment"
+        else:
+            decisions["is_environment"] = (
+                f"detected: inner density ratio {analysis.inner_density_ratio:.3f}, "
+                f"{analysis.wall_faces} wall faces, "
+                f"floor coverage {analysis.floor_coverage:.2f}"
+            )
         if not config.thin_shell:
             thin_shell = True
             decisions["thin_shell"] = "auto: environment detected"
@@ -157,6 +165,7 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
         thin_shell_thickness=config.thin_shell_thickness,
         flatness_threshold=config.flatness_threshold,
         auto_environment=config.auto_environment,
+        force_environment=config.force_environment,
         seam_repair=config.seam_repair,
         snug_fit=config.snug_fit,
         use_spatial_split=use_spatial_split,

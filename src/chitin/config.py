@@ -25,6 +25,7 @@ class Config:
     thin_shell_thickness: float = 0.0
     flatness_threshold: float = 0.9
     auto_environment: bool = True
+    force_environment: bool = False
     seam_repair: bool = True
     snug_fit: bool = False
     target_height: float | None = None

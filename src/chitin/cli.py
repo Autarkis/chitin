@@ -152,6 +152,12 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Disable auto-detection of environment scans (thin-shell, proximity filter)",
     )
     p.add_argument(
+        "--environment",
+        action="store_true",
+        help="Treat the input as an environment scan even if detection misses it "
+        "(cluttered rooms: central pillar, heaped material, mid-floor shelving)",
+    )
+    p.add_argument(
         "--no-seam-repair",
         action="store_true",
         help="Disable seam repair pass (skip re-merging cells at octree boundaries)",
@@ -271,6 +277,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         thin_shell_thickness=args.thin_shell_thickness,
         flatness_threshold=args.flatness_threshold,
         auto_environment=not args.no_auto_environment,
+        force_environment=args.environment,
         seam_repair=not args.no_seam_repair,
         snug_fit=args.snug_fit,
         target_height=args.target_height,
@@ -427,7 +434,16 @@ def _print_analysis(analysis) -> None:
     if a.is_environment_likely:
         print(
             "hint:       point distribution looks like an environment scan "
-            "(hollow shell) — consider --thin-shell --proximity-filter 5.0"
+            f"(inner density {a.inner_density_ratio:.3f}, {a.wall_faces} wall "
+            f"faces, floor coverage {a.floor_coverage:.2f}) — consider "
+            "--thin-shell --proximity-filter 5.0"
+        )
+    elif a.is_environment_ambiguous:
+        print(
+            f"hint:       inner density {a.inner_density_ratio:.3f} is ambiguous "
+            f"({a.wall_faces} wall faces, floor coverage {a.floor_coverage:.2f}); "
+            "treating as a solid object. If this is a cluttered room scan, "
+            "re-run with --environment"
         )
 
 
