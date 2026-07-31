@@ -14,6 +14,26 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+  # The web packages have no linter or formatter — their CI gate is `npm test`
+  # (vitest) plus `npm run build` (tsc). Each hook is scoped by `files:` to its
+  # own package, so a Python-only commit never pays for Node, and a change to one
+  # package doesn't run the other's suite.
+  - repo: local
+    hooks:
+      - id: web-gate
+        name: chitin-web (vitest + tsc)
+        entry: python scripts/npm_gate.py integrations/web
+        language: system
+        files: ^integrations/web/
+        pass_filenames: false
+
+      - id: wasm-lite-gate
+        name: chitin-lite (vitest + tsc)
+        entry: python scripts/npm_gate.py integrations/wasm-lite
+        language: system
+        files: ^integrations/wasm-lite/
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

@@ -62,6 +62,13 @@ npm test                   # vitest
 npm run build              # tsc
 ```
 
+The pre-commit hook runs both of those (via `scripts/npm_gate.py`) for whichever
+package a commit touches — a change under `integrations/web/` runs only the web
+suite, and a Python-only commit runs neither, so you don't pay for Node unless
+you edited TypeScript. It needs `npm ci` to have been run in that package; if
+`node_modules` is missing the hook tells you which directory to run it in rather
+than skipping the check.
+
 ## The `.phys` format is versioned
 
 `.phys` is a stable binary contract with readers in Python, TypeScript, C#, and
