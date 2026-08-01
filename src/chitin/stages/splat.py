@@ -238,7 +238,7 @@ def _process_single_cell(
             if tier_hulls:
                 lod_entries.append((tier_idx, tier_hulls))
 
-    return hulls, lod_entries, cell_plan.child_counters()
+    return hulls, lod_entries, cell_plan.child_signals()
 
 
 def extract_spatial(
@@ -371,8 +371,8 @@ def extract_spatial(
             cells_failed += 1
             failure_reasons[result] = failure_reasons.get(result, 0) + 1
             continue
-        hulls, lod_entries, cell_counters = result
-        plan.merge_counters(cell_counters)
+        hulls, lod_entries, cell_signals = result
+        plan.merge_signals(cell_signals)
         for hull in hulls:
             all_hulls.append(hull)
             hull_cell_map.append(cell_idx)

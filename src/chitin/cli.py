@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-from chitin.config import Config
+from chitin.config import DEFAULT_COACD_TIMEOUT_SECONDS, Config
 from chitin.core import extract
 from chitin.hooks import get_post_process_command, run_post_process
 from chitin.preflight import check as preflight_check
@@ -233,6 +233,23 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         help="Which axis is up/height for --target-height (default: 1, glTF Y-up)",
     )
     p.add_argument(
+        "--fast",
+        action="store_true",
+        help="Let CoACD use every core. Faster on concave assets (2-4x), but "
+        "its search then varies run to run: the same input yields different "
+        "hulls and different output bytes, so the build cannot be reproduced "
+        "from its manifest and the robotics profile rejects it",
+    )
+    p.add_argument(
+        "--coacd-timeout",
+        type=float,
+        default=DEFAULT_COACD_TIMEOUT_SECONDS,
+        help=f"Seconds before a single CoACD call is killed and a bounding box "
+        f"substituted (default: {DEFAULT_COACD_TIMEOUT_SECONDS:g}). A backstop "
+        f"against a native stall, not a quality knob -- lowering it below the "
+        f"real decomposition time silently coarsens output",
+    )
+    p.add_argument(
         "--profile",
         choices=["interactive", "walkable", "robotics"],
         default="interactive",
@@ -327,6 +344,8 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         target_height=args.target_height,
         target_footprint=args.target_footprint,
         up_axis=args.up_axis,
+        coacd_deterministic=not args.fast,
+        coacd_timeout=args.coacd_timeout,
     )
 
     from chitin.acceptance import apply_profile, evaluate, get_profile, report_metrics

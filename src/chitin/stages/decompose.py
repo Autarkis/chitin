@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+from chitin.config import DEFAULT_COACD_TIMEOUT_SECONDS
 from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig
 from chitin.result import ExtractionResult, Hull, LodHulls
@@ -17,14 +19,18 @@ from chitin.verify.convex import outward_face_planes as _outward_face_planes
 from chitin.verify.convex import points_inside as _per_vertex_inside
 
 _COACD_WORKER_SCRIPT = Path(__file__).parent / "_coacd_worker.py"
-# Hard-kill budget for a single CoACD call. Kept modest because the failure mode
-# (remesh explosion on non-watertight input) never finishes, and several calls
-# can run serially (seam repair). A cheap is_closed_surface check can't perfectly
-# predict which meshes explode, so one uniform budget is the reliable backstop;
-# the resolution cap below is what keeps the common case fast. Kept low because
-# several calls run serially (seam repair) on 2-core CI, and exploders never
-# finish anyway -- a legit small mesh decomposes in well under this.
-COACD_TIMEOUT_SECONDS = 15
+# Environment that pins CoACD's native thread pool to one thread. CoACD's search
+# is OpenMP-parallel and its scheduling decides which decomposition it settles
+# on, so an unpinned run returns a different hull count and different bytes each
+# time -- the same failure Poisson had (see the single-threaded note in
+# docs/architecture.md). Set on the worker subprocess rather than the parent so
+# only the decomposition is pinned.
+_DETERMINISTIC_ENV = {
+    "OMP_NUM_THREADS": "1",
+    "OMP_DYNAMIC": "FALSE",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+}
 # A non-watertight mesh forces CoACD's voxel-remesh; at high resolution that
 # explodes the triangle count (~150k+) and stalls MCTS. Capping the resolution
 # keeps the remesh small enough to decompose. Verified: open patches complete
@@ -60,13 +66,19 @@ def run_coacd_bounded(
     preprocess_mode: str,
     preprocess_resolution: int,
     max_convex_hull: int,
-    timeout: float = COACD_TIMEOUT_SECONDS,
+    timeout: float = DEFAULT_COACD_TIMEOUT_SECONDS,
+    deterministic: bool = True,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Run CoACD in a subprocess so a native stall can be hard-killed on timeout.
 
     Returns a list of (vertices, triangles) hulls, or raises CoACDTimeoutError
     when CoACD does not finish in ``timeout`` seconds (or the worker crashes) --
     e.g. the manifold-remesh explosion on non-watertight input.
+
+    With ``deterministic`` (the default) the worker runs single-threaded, so the
+    same mesh and config always produce the same hulls; it costs 2-4x the wall
+    time on concave assets. Turning it off restores CoACD's own parallelism and
+    with it a decomposition that varies run to run.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         in_path = Path(tmpdir) / "in.npz"
@@ -80,6 +92,9 @@ def run_coacd_bounded(
             preprocess_resolution=np.array([preprocess_resolution], dtype=np.int64),
             max_convex_hull=np.array([max_convex_hull], dtype=np.int64),
         )
+        env = None
+        if deterministic:
+            env = {**os.environ, **_DETERMINISTIC_ENV}
         try:
             result = subprocess.run(
                 [
@@ -90,6 +105,7 @@ def run_coacd_bounded(
                 ],
                 capture_output=True,
                 timeout=timeout,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise CoACDTimeoutError(f"coacd timeout after {timeout}s") from exc
@@ -515,6 +531,13 @@ def decompose_and_build(
         if _plan is not None:
             _plan.detected["nonwatertight_preprocess_cap"] = preprocess_resolution
 
+    if _plan is not None:
+        # Stamped where the decomposition actually happens, so a build that
+        # never reached CoACD (a planar box, an all-environment shell) carries
+        # no claim either way. The acceptance gate reads this to decide whether
+        # these hulls can be reproduced.
+        _plan.detected["coacd_deterministic"] = bool(config.coacd_deterministic)
+
     def _decompose(threshold: float) -> list[Hull]:
         # Bound CoACD (native, can stall on non-watertight input); fall back to
         # the mesh's bounding box rather than hang the pipeline.
@@ -526,6 +549,8 @@ def decompose_and_build(
                 preprocess_mode=config.coacd_preprocess_mode,
                 preprocess_resolution=preprocess_resolution,
                 max_convex_hull=config.max_hulls,
+                timeout=config.coacd_timeout,
+                deterministic=config.coacd_deterministic,
             )
         except CoACDTimeoutError:
             if _plan is not None:

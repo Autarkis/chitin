@@ -76,6 +76,8 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--up-axis` | 1 | Which axis (0/1/2) is up/height for `--target-height` (default 1, glTF Y-up). |
 | `-b, --bundle` | off | Write full artifact bundle (scene.phys + build-plan.json + analysis.json + resolved-config.json + manifest.json) to a directory instead of a single file. |
 | `--no-hook` | off | Skip post-process hook. |
+| `--fast` | off | Let CoACD use every core. 2-4x faster on concave assets, but its search then varies run to run, so the build is not reproducible and `--profile robotics` rejects it. See [Reproducible output](#reproducible-output). |
+| `--coacd-timeout` | 300 | Seconds before a single CoACD call is killed and a bounding box substituted. A backstop against a native stall, not a quality knob. |
 
 **Examples:**
 
@@ -114,13 +116,41 @@ job's `report.json`.
 |---------|---------|-----------------|
 | `interactive` (default) | none | never rejects (permissive) |
 | `walkable` | coarser concavity (0.1), denser Poisson filtering | coverage below 85% |
-| `robotics` | tight concavity (0.01), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90% |
+| `robotics` | tight concavity (0.01), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90%, or the build ran `--fast` (not reproducible) |
 
 A profile only fills fields you did not set, so an explicit `--concavity`
 always overrides the profile's preset -- including when the value you pass is
 the same as the default, which the CLI tells apart by checking which flags you
 actually typed. A strict profile that rejects a build exits non-zero (`3`) and
 skips the post-process hook.
+
+### Reproducible output
+
+Chitin's promise is that the same input bytes and the same config give the same
+output bytes — that is what makes the manifest hashes, the output cache, and
+a re-run of an old build meaningful.
+
+One dependency does not cooperate by default. CoACD's search is multithreaded,
+and its thread scheduling decides which decomposition it settles on: the same
+mesh yields a different hull count and different bytes on every run (measured on
+one 3.6k-face mesh: 47, 48, 50, 47 hulls over four runs, four distinct hashes).
+Chitin therefore runs CoACD pinned to a single thread. Reproducibility costs
+2-4x wall time on concave assets; on convex or near-convex ones it costs
+nothing, because the search never branches.
+
+`--fast` gives the time back and takes the guarantee away. Use it for a preview
+or a throwaway build, not for anything whose hashes you intend to trust: the
+mode is recorded in `resolved-config.json` and in the build plan, and
+`--profile robotics` rejects a build that used it.
+
+```bash
+chitin extract chair.glb -o chair.phys                 # reproducible (default)
+chitin extract chair.glb -o chair.phys --fast          # faster, not reproducible
+chitin extract chair.glb -o chair.phys --profile robotics --fast   # rejected
+```
+
+Recover the throughput at the batch level instead — several assets compiling in
+parallel, each pinned — rather than by unpinning one asset.
 
 ### Provenance manifest
 
@@ -447,6 +477,8 @@ for hull in phys.hulls:
 | `opacity_is_logit` | bool | False | Set True if opacity values are logits (pre-sigmoid). Auto-detected for PLY inputs. |
 | `coacd_preprocess_mode` | str | "auto" | CoACD preprocessing mode. |
 | `coacd_preprocess_resolution` | int | 50 | CoACD preprocessing resolution. |
+| `coacd_deterministic` | bool | True | Pin CoACD to one thread so the same input gives the same hulls and the same bytes. False (`--fast`) is 2-4x quicker on concave assets and not reproducible. See [Reproducible output](#reproducible-output). |
+| `coacd_timeout` | float | 300.0 | Seconds before a single CoACD call is killed and an axis-aligned bounding box substituted for it. Guards against a native stall; set it below the real decomposition time and output silently coarsens. |
 | `max_decompose_vertices` | int | 200000 | Decimate mesh before decomposition if it exceeds this count. |
 | `lod_concavities` | list[float] or None | None | Additional concavity thresholds for LOD tiers. Produces a v3 .phys file. |
 | `splat_scale_is_log` | bool | True | Whether splat scale values are log-space (standard 3DGS convention). |

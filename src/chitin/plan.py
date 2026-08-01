@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 # rejected build, it is an accepted one with a bounding box in it.
 CHILD_COUNTERS = ("coacd_timeouts", "fallback_hulls")
 
+# Gate-relevant facts that are true-or-false rather than countable, carried back
+# the same way. They merge by AND: one piece decomposed without CoACD pinned to
+# a single thread is enough to make the whole asset unreproducible.
+CHILD_FLAGS = ("coacd_deterministic",)
+
 
 @dataclass
 class BuildPlan:
@@ -26,19 +31,31 @@ class BuildPlan:
     def step(self, name: str) -> None:
         self.pipeline.append(name)
 
-    def child_counters(self) -> dict[str, int]:
-        """This plan's gate-relevant counters, ready to merge into a parent.
+    def child_signals(self) -> dict:
+        """This plan's gate-relevant counters and flags, ready to merge upward.
 
         Picklable, so it survives the process boundary an octree cell crosses.
         """
-        return {
+        signals: dict = {
             k: int(self.detected[k]) for k in CHILD_COUNTERS if self.detected.get(k)
         }
+        for k in CHILD_FLAGS:
+            if k in self.detected:
+                signals[k] = bool(self.detected[k])
+        return signals
 
-    def merge_counters(self, counters: dict[str, int]) -> None:
-        """Add a child's counters (from :meth:`child_counters`) into this plan."""
-        for key, value in counters.items():
-            self.detected[key] = int(self.detected.get(key, 0)) + int(value)
+    def merge_signals(self, signals: dict) -> None:
+        """Fold a child's signals (from :meth:`child_signals`) into this plan.
+
+        Counters add; flags AND, so a single unreproducible piece is not hidden
+        by the pieces around it.
+        """
+        for key, value in signals.items():
+            if key in CHILD_FLAGS:
+                current = self.detected.get(key, True)
+                self.detected[key] = bool(current) and bool(value)
+            else:
+                self.detected[key] = int(self.detected.get(key, 0)) + int(value)
 
     def to_dict(self) -> dict:
         return {

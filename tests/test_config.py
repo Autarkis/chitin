@@ -30,6 +30,8 @@ from chitin import Config
         ({"target_footprint": 0}, "target_footprint"),
         ({"up_axis": 3}, "up_axis"),
         ({"flat_aspect_ratio": 0}, "flat_aspect_ratio"),
+        ({"coacd_timeout": 0}, "coacd_timeout"),
+        ({"coacd_timeout": -5}, "coacd_timeout"),
     ],
 )
 def test_config_rejects_invalid_values(kwargs, message):
@@ -42,6 +44,17 @@ def test_config_accepts_normalization_params():
     assert config.target_height == 0.55
     assert config.target_footprint == 2.0
     assert config.up_axis == 2
+
+
+def test_config_defaults_to_reproducible_decomposition():
+    # The default has to be the reproducible one: manifest hashes, the output
+    # cache and the robotics gate all assume the same input gives the same
+    # bytes, which only holds with CoACD pinned to a single thread.
+    from chitin.config import DEFAULT_COACD_TIMEOUT_SECONDS
+
+    assert Config().coacd_deterministic is True
+    assert Config().coacd_timeout == DEFAULT_COACD_TIMEOUT_SECONDS
+    assert Config(coacd_deterministic=False).coacd_deterministic is False
 
 
 def test_config_adaptive_preprocess_defaults_on():

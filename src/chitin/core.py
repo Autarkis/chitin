@@ -423,7 +423,7 @@ def extract_from_rigged_mesh(
             _resolved,
             _plan=bone_plan,
         )
-        _plan.merge_counters(bone_plan.child_counters())
+        _plan.merge_signals(bone_plan.child_signals())
         for hull in result.hulls:
             hull.bone_name = name
             hull.bone_index = bone_idx

@@ -33,6 +33,7 @@ class AcceptancePolicy:
     mode: str = "permissive"  # "permissive" | "strict"
     require_hulls: bool = False
     allow_fallback_hulls: bool = True
+    require_deterministic: bool = False
     min_covered_fraction: float | None = None
     min_worst_cell_fraction: float | None = None
 
@@ -106,7 +107,9 @@ PROFILES: dict[str, Profile] = {
     ),
     # Robotics colliders: tight decomposition and snug fit. A coarse AABB
     # fallback would put a phantom box around the asset, so a CoACD timeout is
-    # disqualifying — the build is rejected rather than shipped.
+    # disqualifying — the build is rejected rather than shipped. So is a build
+    # run with --fast: a collider a simulation is validated against has to be
+    # reproducible from its manifest.
     "robotics": Profile(
         name="robotics",
         preset={"concavity": 0.01, "snug_fit": True},
@@ -115,6 +118,7 @@ PROFILES: dict[str, Profile] = {
             mode="strict",
             require_hulls=True,
             allow_fallback_hulls=False,
+            require_deterministic=True,
             min_covered_fraction=0.90,
             min_worst_cell_fraction=0.70,
         ),
@@ -175,6 +179,7 @@ def report_metrics(result) -> dict:
         "worst_decile_fraction": coverage.get("worst_decile_fraction"),
         "fallback_hulls": int(detected.get("fallback_hulls", 0)),
         "coacd_timeouts": int(detected.get("coacd_timeouts", 0)),
+        "coacd_deterministic": detected.get("coacd_deterministic"),
     }
 
 
@@ -209,6 +214,22 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 "no CoACD-timeout fallback hulls"
                 if fallback == 0
                 else f"{fallback} AABB fallback hull(s) from CoACD timeout",
+            )
+        )
+
+    if policy.require_deterministic:
+        flag = metrics.get("coacd_deterministic")
+        # Absent means no CoACD ran at all (a planar box, an all-environment
+        # build), so there is no unreproducible search to reject.
+        ok = flag is None or bool(flag)
+        checks.append(
+            Check(
+                "deterministic_decomposition",
+                ok,
+                "CoACD ran single-threaded (reproducible)"
+                if ok
+                else "CoACD ran multithreaded (--fast): hulls vary run to run "
+                "and cannot be reproduced from this manifest",
             )
         )
 

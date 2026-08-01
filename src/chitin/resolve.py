@@ -24,6 +24,8 @@ class ResolvedConfig:
     coacd_preprocess_mode: str
     coacd_preprocess_resolution: int
     coacd_adaptive_preprocess: bool
+    coacd_deterministic: bool
+    coacd_timeout: float
     max_decompose_vertices: int
     lod_concavities: list[float] | None
     splat_scale_is_log: bool
@@ -56,6 +58,8 @@ class ResolvedConfig:
             "coacd_preprocess_mode": self.coacd_preprocess_mode,
             "coacd_preprocess_resolution": self.coacd_preprocess_resolution,
             "coacd_adaptive_preprocess": self.coacd_adaptive_preprocess,
+            "coacd_deterministic": self.coacd_deterministic,
+            "coacd_timeout": self.coacd_timeout,
             "max_decompose_vertices": self.max_decompose_vertices,
             "lod_concavities": self.lod_concavities,
             "splat_scale_is_log": self.splat_scale_is_log,
@@ -154,6 +158,8 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
         coacd_preprocess_mode=config.coacd_preprocess_mode,
         coacd_preprocess_resolution=config.coacd_preprocess_resolution,
         coacd_adaptive_preprocess=config.coacd_adaptive_preprocess,
+        coacd_deterministic=config.coacd_deterministic,
+        coacd_timeout=config.coacd_timeout,
         max_decompose_vertices=config.max_decompose_vertices,
         lod_concavities=config.lod_concavities,
         splat_scale_is_log=config.splat_scale_is_log,

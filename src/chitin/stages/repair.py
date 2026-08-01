@@ -101,7 +101,7 @@ def extract_cell_hulls(
         verts, tris, len(cell_positions), len(verts), config, _plan=group_plan
     )
     if _plan is not None:
-        _plan.merge_counters(group_plan.child_counters())
+        _plan.merge_signals(group_plan.child_signals())
     return [h for h in result.hulls if aabb_overlaps_bounds(h, bounds_min, bounds_max)]
 
 

@@ -6,6 +6,22 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- **Fixed:** decomposition was not reproducible. CoACD's search is
+  OpenMP-parallel and its thread scheduling picks which decomposition it
+  settles on, so the same mesh and config returned a different hull count and
+  different bytes on every run (47/48/50 hulls, four distinct hashes, over four
+  runs of one 3.6k-face mesh) — which made the manifest hashes, the output
+  cache, and "same input bytes = same output bytes" untrue for every concave
+  asset. The CoACD worker now runs single-threaded by default, the same fix
+  Poisson already had. It costs 2-4x wall time on concave assets and nothing on
+  near-convex ones. `--fast` / `Config(coacd_deterministic=False)` restores the
+  old behaviour; the mode is recorded in `resolved-config.json` and the build
+  plan, and `--profile robotics` rejects a build that used it.
+- **Fixed:** the CoACD time budget was 15s, below the real decomposition time
+  of ordinary concave inputs, so a build that should have produced 46 hulls
+  silently shipped one bounding box instead (or, under `robotics`, failed).
+  The budget is a stall backstop, not a quality knob: it now defaults to 300s
+  and is settable per build with `--coacd-timeout` / `Config(coacd_timeout=…)`.
 - **Fixed:** the service's cache key ignored the build profile, so a `robotics`
   request could be served an `interactive` build — coarser geometry, plus a
   copied verdict its strict acceptance policy had never evaluated. The profile

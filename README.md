@@ -239,7 +239,7 @@ chitin-server download <job_id> -o ./output
 7. Reconstructs surface mesh via Poisson reconstruction (Open3D), with auto-selected depth per cell and subprocess crash isolation
 8. For environment scans: proximity-filters closure surfaces and optionally extrudes a thin shell to prevent interior volume fill
 9. PCA-based flatness detection replaces near-flat octree cells with oriented boxes instead of running CoACD
-10. Decomposes remaining cells into convex hulls (CoACD)
+10. Decomposes remaining cells into convex hulls (CoACD), in a subprocess and pinned to one thread so the same input yields the same hulls; `--fast` unpins it for 2-4x on concave assets and gives up reproducibility
 11. Seam repair: detects height discontinuities at octree cell boundaries, merges affected cells, and re-extracts for seamless coverage
 12. Deduplicates cross-cell hulls by AABB IOU
 13. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers

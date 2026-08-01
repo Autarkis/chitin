@@ -69,6 +69,39 @@ def test_rigged_plan(two_bone_rig):
     assert r.build_plan.detected["segment_count"] == 2
 
 
+def test_signals_merge_counters_by_sum_and_flags_by_and():
+    # Octree cells and bones report upward across a process boundary. Counters
+    # add; the reproducibility flag ANDs, so one piece decomposed unpinned is
+    # not averaged away by the pieces around it.
+    from chitin.plan import BuildPlan
+
+    parent = BuildPlan(input_kind="splat", collider_kind="static")
+    clean = BuildPlan(input_kind="splat", collider_kind="static")
+    clean.detected["coacd_deterministic"] = True
+    clean.detected["fallback_hulls"] = 1
+    dirty = BuildPlan(input_kind="splat", collider_kind="static")
+    dirty.detected["coacd_deterministic"] = False
+    dirty.detected["fallback_hulls"] = 2
+
+    parent.merge_signals(clean.child_signals())
+    assert parent.detected["coacd_deterministic"] is True
+    parent.merge_signals(dirty.child_signals())
+
+    assert parent.detected["fallback_hulls"] == 3
+    assert parent.detected["coacd_deterministic"] is False
+
+
+def test_decomposition_records_whether_it_was_reproducible(box_mesh):
+    verts, faces = box_mesh
+    r = extract_from_mesh(verts, faces, config=Config(concavity=0.5))
+    assert r.build_plan.detected["coacd_deterministic"] is True
+
+    fast = extract_from_mesh(
+        verts, faces, config=Config(concavity=0.5, coacd_deterministic=False)
+    )
+    assert fast.build_plan.detected["coacd_deterministic"] is False
+
+
 def test_plan_to_dict(box_mesh):
     verts, faces = box_mesh
     r = extract_from_mesh(verts, faces, config=Config(concavity=0.5))

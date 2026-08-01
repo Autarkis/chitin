@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Hard-kill budget for a single CoACD call. It is a backstop against a native
+# stall that never finishes (the manifold-remesh explosion on non-watertight
+# input), not a quality knob: a budget low enough to cut off legitimate work
+# silently substitutes a bounding box, which is worse than waiting. A concave
+# asset can take minutes with `coacd_deterministic` on, so the backstop is
+# generous.
+DEFAULT_COACD_TIMEOUT_SECONDS = 300.0
+
 
 @dataclass(frozen=True)
 class Config:
@@ -14,6 +22,13 @@ class Config:
     coacd_preprocess_mode: str = "auto"
     coacd_preprocess_resolution: int = 50
     coacd_adaptive_preprocess: bool = True
+    # CoACD's search is multithreaded, and its thread scheduling changes which
+    # decomposition it settles on: the same mesh yields different hull counts
+    # and different bytes run to run. Pinning it to one thread is what makes
+    # "same input bytes + same config = same output bytes" true, at 2-4x the
+    # wall time on concave assets. Off trades reproducible output for speed.
+    coacd_deterministic: bool = True
+    coacd_timeout: float = DEFAULT_COACD_TIMEOUT_SECONDS
     max_decompose_vertices: int = 200_000
     lod_concavities: list[float] | None = None
     splat_scale_is_log: bool = True
@@ -59,6 +74,10 @@ class Config:
             raise ValueError(
                 f"coacd_preprocess_resolution must be >= 1, "
                 f"got {self.coacd_preprocess_resolution}"
+            )
+        if self.coacd_timeout <= 0:
+            raise ValueError(
+                f"coacd_timeout must be positive, got {self.coacd_timeout}"
             )
         if not 0 <= self.poisson_density_quantile <= 1:
             raise ValueError(

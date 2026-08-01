@@ -207,19 +207,34 @@ def test_normalized_splat_matches_pre_scaled_input():
     # land where feeding the already-metric cloud would, covariance included.
     # Before covariance travelled with the positions, the inflation offsets and
     # ghost-zone radii stayed 5x too small and the hulls diverged.
+    #
+    # The concavity is coarse on purpose: at the default this cloud takes far
+    # longer to decompose than any test should, and the version of this test
+    # that used it compared two bounding-box fallbacks instead of two
+    # decompositions -- passing while proving nothing, and going flaky whenever
+    # one side happened to beat the budget. The fallback assertions below keep
+    # that from coming back.
     rng = np.random.default_rng(7)
     pts = rng.random((300, 3))
     pts[:, 1] *= 2.0  # y-extent ~2, the dimension the target matches
     scales = np.log(np.full((300, 3), 0.05))
     rots = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (300, 1))
+    tuned = {"concavity": 0.3, "max_hulls": 4}
 
     normalized = extract_from_arrays(
-        pts, scales=scales, rots=rots, config=Config(target_height=10.0)
+        pts, scales=scales, rots=rots, config=Config(target_height=10.0, **tuned)
     )
     factor = normalized.build_plan.detected["normalize_scale"]
     pre_scaled = extract_from_arrays(
-        pts * factor, scales=scales + np.log(factor), rots=rots, config=Config()
+        pts * factor, scales=scales + np.log(factor), rots=rots, config=Config(**tuned)
     )
+
+    for side in (normalized, pre_scaled):
+        assert side.build_plan.detected.get("fallback_hulls", 0) == 0, (
+            "a CoACD timeout substituted a bounding box, so this compares "
+            "AABBs rather than the covariance-dependent decomposition"
+        )
+    assert len(normalized.hulls) > 1, "too coarse to exercise the invariant"
 
     assert normalized.hulls and pre_scaled.hulls
     assert len(normalized.hulls) == len(pre_scaled.hulls)

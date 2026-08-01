@@ -15,6 +15,7 @@ CLEAN = {
     "covered_fraction": 0.99,
     "worst_cell_fraction": None,
     "fallback_hulls": 0,
+    "coacd_deterministic": True,
 }
 
 
@@ -37,6 +38,31 @@ def test_robotics_rejects_fallback_hulls():
     verdict = evaluate(policy, _with(fallback_hulls=1))
     assert not verdict.passed
     assert any("fallback" in r for r in verdict.reasons)
+
+
+def test_robotics_rejects_nondeterministic_build():
+    # --fast lets CoACD's threads pick a different decomposition each run, so
+    # the shipped hulls cannot be reproduced from the manifest that describes
+    # them. A collider a simulation is validated against has to be.
+    policy = get_profile("robotics").policy
+    verdict = evaluate(policy, _with(coacd_deterministic=False))
+    assert not verdict.passed
+    assert any("reproduce" in r for r in verdict.reasons)
+
+
+def test_robotics_accepts_a_build_with_no_coacd_run():
+    # Absent flag means no decomposition ran at all (planar box, environment
+    # shell): there is no unreproducible search to reject.
+    verdict = evaluate(get_profile("robotics").policy, _with(coacd_deterministic=None))
+    assert verdict.passed
+
+
+def test_walkable_allows_nondeterministic_build():
+    # Reproducibility is gated for robotics only; a walkable floor plate is
+    # allowed to trade it for speed.
+    assert evaluate(
+        get_profile("walkable").policy, _with(coacd_deterministic=False)
+    ).passed
 
 
 def test_robotics_passes_clean_build():
