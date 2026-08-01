@@ -5,7 +5,7 @@ Usage: python scripts/determinism_repro.py [N] [OUT_DIR]
 Runs N sequential `chitin extract` builds with the rebaseline config
 (concavity 0.1, density-quantile 0.3) against the garden splat, writing
 each bundle to OUT_DIR/run-i/, then prints the compare_bundles table.
-Defaults: N=3, OUT_DIR=/tmp/chitin-determinism-<timestamp>.
+Defaults: N=3, OUT_DIR=<system temp>/chitin-determinism-<timestamp>.
 """
 # Existing-check: scripts/ (compare_bundles.py reused for diffing),
 # ~/.claude/scripts/, devops_tools/ - no runner exists, creating new.
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -21,8 +22,18 @@ REPO = Path(__file__).resolve().parent.parent
 INPUT = (
     REPO / "examples/utility-proof/assets/garden-3dgs/mipnerf360_garden_crop_table.ply"
 )
-# repo venv, not PATH: the miniconda chitin is py3.13 and lacks open3d
-CHITIN = REPO / ".venv/bin/chitin"
+
+
+def chitin_command() -> list[str]:
+    """The CLI to build with: repo venv first, then whatever imports chitin.
+
+    A venv is preferred because the interpreter on PATH may be a Python without
+    open3d, which silently loses the point-cloud path this script exercises.
+    """
+    for candidate in (REPO / ".venv/bin/chitin", REPO / ".venv/Scripts/chitin.exe"):
+        if candidate.exists():
+            return [str(candidate)]
+    return [sys.executable, "-m", "chitin.cli"]
 
 
 def main() -> None:
@@ -30,7 +41,8 @@ def main() -> None:
     out_dir = (
         Path(sys.argv[2])
         if len(sys.argv) > 2
-        else Path(f"/tmp/chitin-determinism-{time.strftime('%Y%m%d-%H%M%S')}")
+        else Path(tempfile.gettempdir())
+        / f"chitin-determinism-{time.strftime('%Y%m%d-%H%M%S')}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -41,7 +53,7 @@ def main() -> None:
         t0 = time.time()
         subprocess.run(
             [
-                str(CHITIN),
+                *chitin_command(),
                 "extract",
                 str(INPUT),
                 "-o",

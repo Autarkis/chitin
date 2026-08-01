@@ -135,8 +135,12 @@ and its thread scheduling decides which decomposition it settles on: the same
 mesh yields a different hull count and different bytes on every run (measured on
 one 3.6k-face mesh: 47, 48, 50, 47 hulls over four runs, four distinct hashes).
 Chitin therefore runs CoACD pinned to a single thread. Reproducibility costs
-2-4x wall time on concave assets; on convex or near-convex ones it costs
-nothing, because the search never branches.
+2-4x wall time on a single concave mesh; on convex or near-convex ones it costs
+nothing, because the search never branches. A scene pays much less, because its
+cells decompose in parallel and the pool absorbs the difference: a 39-cell
+gaussian-splat scene went from 180s to 286s, and its `.phys` came out
+byte-identical across runs where the unpinned build produced a different hash
+every time.
 
 `--fast` gives the time back and takes the guarantee away. Use it for a preview
 or a throwaway build, not for anything whose hashes you intend to trust: the

@@ -20,8 +20,11 @@ format is versioned independently and noted where it changes.
 - **Fixed:** the CoACD time budget was 15s, below the real decomposition time
   of ordinary concave inputs, so a build that should have produced 46 hulls
   silently shipped one bounding box instead (or, under `robotics`, failed).
-  The budget is a stall backstop, not a quality knob: it now defaults to 300s
-  and is settable per build with `--coacd-timeout` / `Config(coacd_timeout=…)`.
+  On the 192 MB gaussian-splat scene in `examples/utility-proof`, 34 of 39
+  cells hit that budget: the collider was 34 bounding boxes and 28 hulls, where
+  a budget that lets the decomposition finish yields 266. The budget is a stall
+  backstop, not a quality knob: it now defaults to 300s and is settable per
+  build with `--coacd-timeout` / `Config(coacd_timeout=…)`.
 - **Fixed:** the service's cache key ignored the build profile, so a `robotics`
   request could be served an `interactive` build — coarser geometry, plus a
   copied verdict its strict acceptance policy had never evaluated. The profile
