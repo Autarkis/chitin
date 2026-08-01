@@ -41,6 +41,28 @@ describe("checkManifold", () => {
     expect(() => checkManifold(verts, faces)).toThrow(/degenerate triangle/);
   });
 
+  it("rejects a zero-area triangle built from distinct vertices", () => {
+    // Three collinear points: distinct indices, so the repeated-index check
+    // waves it through, but CoACD sees the same zero-area face.
+    const verts = new Float64Array([0, 0, 0, 1, 0, 0, 2, 0, 0, 0, 1, 0]);
+    const faces = new Int32Array([0, 1, 2]);
+    expect(() => checkManifold(verts, faces)).toThrow(/collinear or coincident/);
+  });
+
+  it("rejects coincident vertices at distinct indices", () => {
+    const verts = new Float64Array([0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const faces = new Int32Array([0, 1, 2]);
+    expect(() => checkManifold(verts, faces)).toThrow(/collinear or coincident/);
+  });
+
+  it("keeps a thin but real sliver", () => {
+    // A sliver 1e-6 of the mesh across is legitimate geometry, not degenerate;
+    // the area floor has to sit well below it.
+    const verts = new Float64Array([0, 0, 0, 1, 0, 0, 0.5, 1e-6, 0, 0, 1, 0]);
+    const faces = new Int32Array([0, 1, 2]);
+    expect(() => checkManifold(verts, faces)).toThrow(/boundary \(open\) edge/);
+  });
+
   it("throws a ChitinError with code NON_MANIFOLD", () => {
     const verts = new Float64Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
     const faces = new Int32Array([0, 1, 2]);

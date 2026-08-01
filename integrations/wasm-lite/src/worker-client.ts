@@ -166,17 +166,28 @@ export class DecomposeWorker {
         callOpts.transferInput === false
           ? []
           : dedupeBuffers([vertices.buffer, faces.buffer]);
-      worker.postMessage(
-        {
-          type: "decompose",
-          id,
-          vertices,
-          faces,
-          config,
-          checkManifold: callOpts.checkManifold ?? false,
-        },
-        transfer,
-      );
+      try {
+        worker.postMessage(
+          {
+            type: "decompose",
+            id,
+            vertices,
+            faces,
+            config,
+            checkManifold: callOpts.checkManifold ?? false,
+          },
+          transfer,
+        );
+      } catch (err) {
+        // postMessage can throw synchronously: a detached buffer in `transfer`
+        // (reusing arrays from a previous transferring call), or a `config`
+        // value structured-clone can't copy. Nothing was delivered, so the
+        // worker is still good -- but the pending slot has to be released or
+        // this client rejects every later call as "already in progress".
+        this.pending = null;
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
     });
   }
 

@@ -12,7 +12,16 @@ class FakeWorker implements WorkerLike {
   posted: WorkerRequest[] = [];
   terminated = false;
 
+  // Set to make the next decompose postMessage throw synchronously, the way a
+  // real Worker does on a detached transfer buffer or an uncloneable config.
+  throwOnDecompose: Error | null = null;
+
   postMessage(message: WorkerRequest): void {
+    if (message.type === "decompose" && this.throwOnDecompose) {
+      const err = this.throwOnDecompose;
+      this.throwOnDecompose = null;
+      throw err;
+    }
     this.posted.push(message);
   }
   terminate(): void {
@@ -165,6 +174,39 @@ describe("DecomposeWorker", () => {
     const msg = fakes[0].posted.find((m) => m.type === "decompose");
     expect(msg).toMatchObject({ checkManifold: true });
     w.terminate();
+  });
+
+  it("stays usable after postMessage throws synchronously", async () => {
+    // The pending slot used to survive the throw, so the client rejected every
+    // later call as "already in progress" -- permanently wedged.
+    const w = makeWorker();
+    const p1 = w.decompose(V, F);
+    const f = fakes[0];
+    f.emit({ type: "result", id: f.lastDecomposeId(), hulls: HULLS });
+    await p1;
+
+    f.throwOnDecompose = new Error("DataCloneError");
+    await expect(w.decompose(V, F)).rejects.toThrow(/DataCloneError/);
+
+    const p3 = w.decompose(V, F);
+    f.emit({ type: "result", id: f.lastDecomposeId(), hulls: HULLS });
+    await expect(p3).resolves.toMatchObject({ hulls: HULLS });
+  });
+
+  it("releases the abort listener when postMessage throws", async () => {
+    const w = makeWorker();
+    const ac = new AbortController();
+    // First call primes the worker; the second one throws on post.
+    const p1 = w.decompose(V, F, {}, { signal: ac.signal });
+    fakes[0].emit({ type: "result", id: fakes[0].lastDecomposeId(), hulls: HULLS });
+    await p1;
+
+    fakes[0].throwOnDecompose = new Error("DataCloneError");
+    await expect(w.decompose(V, F, {}, { signal: ac.signal })).rejects.toThrow(
+      /DataCloneError/,
+    );
+    // A listener left attached would fire into a null pending slot here.
+    expect(() => ac.abort()).not.toThrow();
   });
 
   it("terminate() rejects an in-flight call with CANCELLED", async () => {

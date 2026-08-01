@@ -53,6 +53,10 @@ describe("rapier adapter", () => {
     } as PhysFile;
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
     expect(() => addToWorld(RAPIER, world, phys)).toThrow(/bind poses/);
+    // And it leaves nothing behind: a body created before the hulls were
+    // validated would sit in the world with a partial collision shape.
+    expect(world.bodies.len()).toBe(0);
+    expect(world.colliders.len()).toBe(0);
   });
 
   it("applyBindPose reconstructs world = local @ bind_transform", () => {

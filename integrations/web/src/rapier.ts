@@ -46,24 +46,20 @@ export function addToWorld(
   position?: { x: number; y: number; z: number },
   opts?: ColliderOptions
 ): RAPIER.RigidBody {
-  const pos = position ?? { x: 0, y: 0, z: 0 };
-  const bodyDesc = rapier.RigidBodyDesc.fixed().setTranslation(
-    pos.x,
-    pos.y,
-    pos.z
-  );
-  const body = world.createRigidBody(bodyDesc);
-
   const hulls =
     opts?.lodConcavity !== undefined
       ? selectLodHulls(phys, opts.lodConcavity)
       : phys.hulls;
 
+  // Build every descriptor before touching the world. A hull that can't be
+  // placed throws, and a throw partway through attachment would otherwise
+  // strand a half-populated rigid body in the simulation.
+  //
   // Rigged hulls are stored bone-local; place each at its bone's bind pose so a
   // single fixed body carries the whole asset in its rest pose (rather than
   // collapsing every bone's hulls onto the body origin). The bind pose is the
   // asset's rest pose, so a single fixed body is the right home for it.
-  hulls.forEach((hull, i) => {
+  const descs = hulls.map((hull, i) => {
     let vertices = hull.vertices;
     if (hull.boneIndex !== null) {
       if (!phys.hasBindPoses) {
@@ -77,9 +73,26 @@ export function addToWorld(
       // poses are present, so this lookup is always in bounds here.
       vertices = applyBindPose(hull.vertices, phys.bones[hull.boneIndex].bindTransform);
     }
-    const desc = colliderFromVertices(rapier, vertices, hull.indices, i);
-    world.createCollider(desc, body);
+    return colliderFromVertices(rapier, vertices, hull.indices, i);
   });
+
+  const pos = position ?? { x: 0, y: 0, z: 0 };
+  const bodyDesc = rapier.RigidBodyDesc.fixed().setTranslation(
+    pos.x,
+    pos.y,
+    pos.z
+  );
+  const body = world.createRigidBody(bodyDesc);
+  try {
+    for (const desc of descs) {
+      world.createCollider(desc, body);
+    }
+  } catch (err) {
+    // Rapier can still reject a descriptor at attach time; don't leave the
+    // body behind when it does.
+    world.removeRigidBody(body);
+    throw err;
+  }
 
   return body;
 }
