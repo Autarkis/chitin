@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig
 from chitin.result import Hull
 from chitin.stages.decompose import aabb_overlaps_bounds
@@ -35,6 +36,7 @@ def extract_cell_hulls(
     rots: np.ndarray | None,
     max_radii: np.ndarray,
     config: ResolvedConfig,
+    _plan: BuildPlan | None = None,
 ) -> list[Hull]:
     strict_mask = np.all((positions >= bounds_min) & (positions <= bounds_max), axis=1)
     strict_radii = max_radii[strict_mask]
@@ -91,7 +93,15 @@ def extract_cell_hulls(
 
     from chitin.stages.decompose import decompose_and_build
 
-    result = decompose_and_build(verts, tris, len(cell_positions), len(verts), config)
+    # Own plan, counters merged back: a repaired group is a full decomposition
+    # and can hit the same CoACD timeout the cells did, so its fallbacks have to
+    # reach acceptance rather than dying with this local plan.
+    group_plan = BuildPlan(input_kind="splat", collider_kind="static")
+    result = decompose_and_build(
+        verts, tris, len(cell_positions), len(verts), config, _plan=group_plan
+    )
+    if _plan is not None:
+        _plan.merge_counters(group_plan.child_counters())
     return [h for h in result.hulls if aabb_overlaps_bounds(h, bounds_min, bounds_max)]
 
 
@@ -105,6 +115,7 @@ def seam_repair_pass(
     rots: np.ndarray | None,
     max_radii: np.ndarray,
     config: ResolvedConfig,
+    _plan: BuildPlan | None = None,
 ) -> list[Hull]:
     from chitin.verify.seam import find_hull_seam_snags
 
@@ -159,6 +170,7 @@ def seam_repair_pass(
             rots,
             max_radii,
             config,
+            _plan=_plan,
         )
         new_hulls.extend(repaired)
 

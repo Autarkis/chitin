@@ -163,9 +163,14 @@ def _process_single_cell(
     strict_min: np.ndarray,
     strict_max: np.ndarray,
     config: ResolvedConfig,
-) -> tuple[list[Hull], list[tuple[int, list[Hull]]]] | str:
-    """Process one padded octree cell. Returns (hulls, lod_entries) on
-    success, or a failure-reason string for the build plan."""
+) -> tuple[list[Hull], list[tuple[int, list[Hull]]], dict[str, int]] | str:
+    """Process one padded octree cell. Returns (hulls, lod_entries, counters)
+    on success, or a failure-reason string for the build plan.
+
+    ``counters`` carries the cell's gate-relevant diagnostics home: this runs
+    in a spawned worker, so the caller's plan is not reachable from here and a
+    CoACD fallback inside a cell would otherwise never reach acceptance.
+    """
     raw_cell_positions = cell_positions
     if config.splat_surface_ratio > 0:
         cell_positions = inflate_splat_points(
@@ -203,6 +208,7 @@ def _process_single_cell(
         if config.flatness_threshold > 0
         else (False, None)
     )
+    cell_plan = BuildPlan(input_kind="splat", collider_kind="static")
     if flat:
         box_hull = make_planar_box(cell_verts, flat_normal)
         cell_result = ExtractionResult(
@@ -217,6 +223,7 @@ def _process_single_cell(
             len(cell_positions),
             len(cell_verts),
             config,
+            _plan=cell_plan,
         )
 
     hulls = [
@@ -231,7 +238,7 @@ def _process_single_cell(
             if tier_hulls:
                 lod_entries.append((tier_idx, tier_hulls))
 
-    return hulls, lod_entries
+    return hulls, lod_entries, cell_plan.child_counters()
 
 
 def extract_spatial(
@@ -364,7 +371,8 @@ def extract_spatial(
             cells_failed += 1
             failure_reasons[result] = failure_reasons.get(result, 0) + 1
             continue
-        hulls, lod_entries = result
+        hulls, lod_entries, cell_counters = result
+        plan.merge_counters(cell_counters)
         for hull in hulls:
             all_hulls.append(hull)
             hull_cell_map.append(cell_idx)
@@ -387,6 +395,7 @@ def extract_spatial(
             rots,
             max_radii,
             config,
+            _plan=plan,
         )
         repaired_count = pre_repair - len(all_hulls)
         if repaired_count != 0:

@@ -327,6 +327,29 @@ def extract_from_mesh(
     return result
 
 
+def _safe_inverse(matrix: np.ndarray) -> np.ndarray | None:
+    """Invert a bind matrix, or None if it is singular (degenerate bone)."""
+    try:
+        return np.linalg.inv(matrix)
+    except np.linalg.LinAlgError:
+        return None
+
+
+def _pose_hull(hull: Hull, bind_transform: np.ndarray | None) -> Hull:
+    """Copy of ``hull`` moved from bone-local space back to model space."""
+    if bind_transform is None:
+        return hull
+    verts = np.asarray(hull.vertices, dtype=np.float64)
+    ones = np.ones((len(verts), 1), dtype=np.float64)
+    posed = (np.hstack([verts, ones]) @ bind_transform)[:, :3]
+    return Hull(
+        vertices=posed.astype(np.float32),
+        indices=hull.indices,
+        bone_name=hull.bone_name,
+        bone_index=hull.bone_index,
+    )
+
+
 def extract_from_rigged_mesh(
     vertices: np.ndarray,
     faces: np.ndarray,
@@ -367,6 +390,9 @@ def extract_from_rigged_mesh(
     _plan.detected["segment_count"] = len(segments)
 
     all_hulls = []
+    # Hulls are stored bone-local, so they cannot be measured against the
+    # model-space input directly; keep a bind-posed copy purely for coverage.
+    posed_hulls: list[Hull] = []
     lod_by_concavity: dict[float, list[Hull]] = {}
     total_mesh_verts = 0
     bones_skipped = 0
@@ -375,10 +401,12 @@ def extract_from_rigged_mesh(
             bones_skipped += 1
             continue
 
+        bind_transform = None
         if inverse_bind_matrices and bone_idx in inverse_bind_matrices:
             ibm = inverse_bind_matrices[bone_idx]
             ones = np.ones((len(seg_verts), 1), dtype=np.float64)
             seg_verts = (np.hstack([seg_verts, ones]) @ ibm)[:, :3]
+            bind_transform = _safe_inverse(ibm)
 
         total_mesh_verts += len(seg_verts)
         name = (
@@ -386,13 +414,21 @@ def extract_from_rigged_mesh(
             if bone_names and bone_idx < len(bone_names)
             else f"bone_{bone_idx}"
         )
+        bone_plan = BuildPlan(input_kind="mesh", collider_kind="rigged")
         result = decompose_and_build(
-            seg_verts, seg_faces, len(seg_verts), len(seg_verts), _resolved
+            seg_verts,
+            seg_faces,
+            len(seg_verts),
+            len(seg_verts),
+            _resolved,
+            _plan=bone_plan,
         )
+        _plan.merge_counters(bone_plan.child_counters())
         for hull in result.hulls:
             hull.bone_name = name
             hull.bone_index = bone_idx
             all_hulls.append(hull)
+            posed_hulls.append(_pose_hull(hull, bind_transform))
         # Merge each bone's LOD tiers by concavity so rigged multi-LOD requests
         # produce tiers (tagged bone-local) instead of silently dropping to LOD0.
         for tier in result.lod_tiers or []:
@@ -405,6 +441,15 @@ def extract_from_rigged_mesh(
     _plan.step("per_bone_decompose")
     _plan.detected["bones_skipped"] = bones_skipped
     _plan.processed_vertices = total_mesh_verts
+
+    # Coverage is an acceptance gate, and a missing measurement reads as a
+    # failure, so the rigged path has to produce one like the other two do.
+    # Measured bind-posed against the model-space input: bones dropped for
+    # being too small, and vertices no bone claimed, count as uncovered.
+    from chitin.verify.coverage import coverage_report
+
+    _plan.step("coverage")
+    _plan.detected["coverage"] = coverage_report(posed_hulls, vertices)
 
     lod_tiers = None
     if lod_by_concavity:
