@@ -6,6 +6,49 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- **Fixed:** the service's cache key ignored the build profile, so a `robotics`
+  request could be served an `interactive` build — coarser geometry, plus a
+  copied verdict its strict acceptance policy had never evaluated. The profile
+  is part of the key now, and an unknown profile is rejected with a `400` at
+  submission instead of failing later in the worker.
+- **Fixed:** rigged assets were rejected by every strict profile. The rigged
+  path never recorded coverage, so `covered_fraction` was `None` and the
+  coverage check could not pass. Coverage is now measured bind-posed against the
+  model-space input, which also counts bones that were too small to decompose.
+- **Fixed:** CoACD timeouts were invisible outside the single-mesh path. Per-bone,
+  per-octree-cell and seam-repair decompositions ran without a build plan, so
+  `fallback_hulls` read zero and a `robotics` build shipped bounding boxes it
+  should have rejected. Each sub-decomposition now carries its counters back to
+  the asset's plan (octree cells return theirs across the worker boundary).
+- **Fixed:** a bundle's `manifest.json` listed whatever was in the output
+  directory, hashing stale files from earlier runs, and missed `probe.json`
+  because `--auto-verify` wrote it after the manifest. `export_bundle()` now
+  tracks exactly what it wrote and takes a `post_export` hook so the probe lands
+  first.
+- **Fixed:** a profile preset overwrote an explicitly passed flag whose value
+  happened to equal the default (`--concavity 0.05 --profile robotics`). The CLI
+  now determines which flags were actually typed; `apply_profile()` takes an
+  optional `explicit` set.
+- **Fixed:** web `addToWorld()` created the rigid body before validating hulls,
+  leaving a body with partial colliders in the world when a bone-local hull had
+  no bind pose to place it.
+- **Fixed:** `@autarkis/chitin-lite`'s worker client was permanently wedged by a
+  synchronous `postMessage` failure (detached transfer buffer, uncloneable
+  config) — the pending slot and abort listener were never released.
+- **Fixed:** the manifold precheck only rejected triangles that repeated a
+  vertex index; distinct but collinear or coincident points passed. It now
+  applies a scale-relative area floor.
+- Service reports carry `effective_config` alongside the requested `config`, so
+  a profile-adjusted build no longer reports settings it wasn't built with.
+- CI: all pull-request checks (tests, WASM build, dependency review, PR
+  conventions) live in one workflow behind a single `gate` job, since branch
+  protection can only aggregate jobs within a workflow. `pr.yml` and
+  `build-wasm.yml` are folded into `ci.yml`.
+- CI: every GitHub Action bumped to its current major — `checkout` v4→v7,
+  `setup-node` v4→v7, `setup-python` v5→v7, `upload-artifact` v4→v7,
+  `download-artifact` v4→v8, `dependency-review-action` v4→v5,
+  `upload-pages-artifact` v3→v5, `deploy-pages` v4→v5, `configure-pages` v5→v6.
+  `setup-emsdk` moves to its new home at `emscripten-core/setup-emsdk`.
 - Target normalization now rescales gaussian-splat covariance. `target_height` /
   `target_footprint` previously scaled positions but left the per-splat scales
   alone, so splat inflation offsets and octree ghost-zone radii stayed in the
