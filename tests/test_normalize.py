@@ -188,8 +188,13 @@ def test_extract_from_arrays_rescales_splat_covariance():
     pts[:, 1] = np.linspace(0.0, 2.0, 50)  # y-extent 2, the largest
     scales = np.log(np.full((50, 3), 0.1))
     rots = np.tile(np.array([1.0, 0.0, 0.0, 0.0]), (50, 1))
+    # Coarse concavity: the assertions read the plan's scale factors, not the
+    # hulls, so a full-detail decomposition here is minutes spent on nothing.
     r = extract_from_arrays(
-        pts, scales=scales, rots=rots, config=Config(target_height=10.0)
+        pts,
+        scales=scales,
+        rots=rots,
+        config=Config(target_height=10.0, concavity=0.8),
     )
     assert r.build_plan.detected.get("normalize_scale") == pytest.approx(5.0)
     assert r.build_plan.detected.get("normalize_covariance_scale") == pytest.approx(5.0)

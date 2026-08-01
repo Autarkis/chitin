@@ -37,7 +37,11 @@ def test_opacity_filtering():
     opacity = np.ones(1000, dtype=np.float64)
     opacity[:900] = 0.0
 
-    r = extract_from_arrays(pts, opacity=opacity, config=Config(opacity_threshold=0.5))
+    # Coarse concavity: this asserts what the opacity filter counted, not hull
+    # shape, and the default spends minutes decomposing a result nothing reads.
+    r = extract_from_arrays(
+        pts, opacity=opacity, config=Config(opacity_threshold=0.5, concavity=0.8)
+    )
     assert r.source_vertex_count == 1000
 
 
@@ -624,16 +628,21 @@ def test_covariance_with_lod():
 @requires_open3d
 def test_spatial_split_triggered():
     rng = np.random.default_rng(42)
-    pts, scales, rots = _sphere_with_covariance(2000, rng=rng)
+    pts, scales, rots = _sphere_with_covariance(600, rng=rng)
     pts = pts * 5.0
 
+    # Sized so every cell finishes a real decomposition. With 2000 points at
+    # concavity 0.5, six of these eight cells exceeded the CoACD budget and
+    # shipped bounding boxes -- and the assertions below, which count rather
+    # than inspect, passed anyway. Same eight cells, a twentieth of the time.
     r = extract_from_arrays(
         pts,
         scales=scales,
         rots=rots,
-        config=Config(concavity=0.5, spatial_split_threshold=500),
+        config=Config(concavity=0.8, spatial_split_threshold=200),
     )
     assert len(r.hulls) >= 1
+    assert r.build_plan.detected.get("fallback_hulls", 0) == 0
     assert r.build_plan.detected.get("cell_count", 0) > 1
     assert "reconciled_hulls" in r.build_plan.detected
 
@@ -641,14 +650,16 @@ def test_spatial_split_triggered():
 @requires_open3d
 def test_spatial_plan_records_stage_deltas_and_coverage():
     rng = np.random.default_rng(42)
-    pts, scales, rots = _sphere_with_covariance(2000, rng=rng)
+    pts, scales, rots = _sphere_with_covariance(600, rng=rng)
     pts = pts * 5.0
 
+    # Same eight cells as the split test above, sized so the decomposition is
+    # real rather than a budget-truncated bounding box.
     r = extract_from_arrays(
         pts,
         scales=scales,
         rots=rots,
-        config=Config(concavity=0.5, spatial_split_threshold=500),
+        config=Config(concavity=0.8, spatial_split_threshold=200),
     )
     detected = r.build_plan.detected
     for key in (
@@ -666,7 +677,7 @@ def test_spatial_plan_records_stage_deltas_and_coverage():
 
     assert "coverage" in r.build_plan.pipeline
     coverage = detected["coverage"]
-    assert coverage["input_count"] == 2000
+    assert coverage["input_count"] == len(pts)
     assert 0.0 <= coverage["covered_fraction"] <= 1.0
     assert coverage["cell_count"] > 1
     assert (
