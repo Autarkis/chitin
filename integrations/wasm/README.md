@@ -36,9 +36,9 @@ imports it under Node.
 
 ## CI and releases
 
-`.github/workflows/build-wasm.yml` builds the module, runs the Node functional
-test, and enforces a size band on every PR that touches `integrations/wasm/`.
-On a `wasm-v*` tag it both attaches `coacd.mjs` + `coacd.wasm` to the GitHub
+The `wasm` job in `.github/workflows/ci.yml` builds the module, runs the Node
+functional test, and enforces a size band on every PR that touches
+`integrations/wasm/`. On a `wasm-v*` tag `release-wasm.yml` both attaches `coacd.mjs` + `coacd.wasm` to the GitHub
 Release and publishes them to npm as
 [`@autarkis/chitin-coacd-wasm`](https://www.npmjs.com/package/@autarkis/chitin-coacd-wasm),
 which is the one to use at runtime -- npm CDNs send CORS headers, so it is

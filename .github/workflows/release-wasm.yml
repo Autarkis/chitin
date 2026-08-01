@@ -18,9 +18,9 @@ jobs:
       EMSDK_VERSION: "5.0.7"
       COACD_REF: "1.0.11"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
@@ -35,7 +35,7 @@ jobs:
           fi
 
       - name: Set up Emscripten
-        uses: mymindstorm/setup-emsdk@v16
+        uses: emscripten-core/setup-emsdk@v16
         with:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
