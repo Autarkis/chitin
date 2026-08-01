@@ -222,13 +222,20 @@ class Store:
         return provenance.hash_bytes(data)
 
     @staticmethod
-    def hash_config(config: JobConfig, outputs: list[str], input_ext: str) -> str:
+    def hash_config(
+        config: JobConfig, outputs: list[str], input_ext: str, profile: str
+    ) -> str:
         d = config.to_dict()
         d["outputs"] = sorted(outputs)
         # Adapter dispatch is extension-based, so the input kind is part of the
         # cache identity: identical bytes submitted as .glb vs .obj must not
         # collide (they route through different adapters).
         d["input_ext"] = input_ext.lower()
+        # The profile presets the build config *and* selects the acceptance
+        # policy, and a cache hit copies the cached job's verdict wholesale. So
+        # a robotics request must never reuse an interactive build: that would
+        # hand back coarser geometry and a verdict the strict policy never saw.
+        d["profile"] = profile
         return provenance.hash_config(d)
 
     @staticmethod

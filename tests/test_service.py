@@ -114,14 +114,58 @@ def test_cache_hit(client, box_glb):
     assert resp2.json()["cached_from"] == first_id
 
 
+def test_cache_does_not_cross_profiles(client, box_glb):
+    # End-to-end guard for the same thing: the second request differs only by
+    # profile, so it must be built rather than served from the first job.
+    with open(box_glb, "rb") as f:
+        data = f.read()
+
+    resp1 = client.post(
+        "/v1/jobs",
+        files={"file": ("box.glb", data, "model/gltf-binary")},
+        params={"outputs": "phys"},
+    )
+    assert resp1.status_code == 201
+
+    resp2 = client.post(
+        "/v1/jobs",
+        files={"file": ("box.glb", data, "model/gltf-binary")},
+        params={"outputs": "phys", "profile": "robotics"},
+    )
+    assert resp2.status_code == 201
+    assert resp2.json().get("cached_from") is None
+
+
 def test_cache_key_distinguishes_input_kind():
     # Adapter dispatch is extension-based, so identical bytes + config submitted
     # as .glb vs .obj must produce different cache keys (they route through
     # different adapters). Regression for the cross-adapter cache-collision bug.
     cfg = JobConfig()
-    assert Store.hash_config(cfg, ["json"], ".glb") != Store.hash_config(
-        cfg, ["json"], ".obj"
+    assert Store.hash_config(cfg, ["json"], ".glb", "interactive") != Store.hash_config(
+        cfg, ["json"], ".obj", "interactive"
     )
+
+
+def test_cache_key_distinguishes_profile():
+    # The profile presets the build config and picks the acceptance policy, and
+    # a cache hit copies the cached verdict, so a robotics request must not be
+    # served an interactive build (coarse geometry + a verdict the strict policy
+    # never evaluated).
+    cfg = JobConfig()
+    assert Store.hash_config(cfg, ["phys"], ".glb", "robotics") != Store.hash_config(
+        cfg, ["phys"], ".glb", "interactive"
+    )
+
+
+def test_unknown_profile_is_rejected(client, box_glb):
+    with open(box_glb, "rb") as f:
+        resp = client.post(
+            "/v1/jobs",
+            files={"file": ("box.glb", f, "model/gltf-binary")},
+            params={"outputs": "phys", "profile": "nonexistent"},
+        )
+    assert resp.status_code == 400
+    assert "unknown profile" in resp.json()["detail"]
 
 
 def test_compiler_version_pins_dependency_versions():

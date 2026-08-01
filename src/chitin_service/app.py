@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from chitin.acceptance import get_profile
+
 from .models import Job, JobConfig, JobInput, JobStatus
 from .store import Store
 from .worker import run_job
@@ -105,6 +107,14 @@ async def submit_job(
             400, f"invalid coacd_preprocess_mode: {coacd_preprocess_mode}"
         )
 
+    # Reject an unknown profile here rather than at run time: it is part of the
+    # cache key, so an unresolvable one would otherwise mint a cache entry for a
+    # job the worker is going to fail anyway.
+    try:
+        get_profile(profile)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
     data = await file.read()
     if len(data) == 0:
         raise HTTPException(400, "empty file")
@@ -124,7 +134,9 @@ async def submit_job(
     )
 
     input_hash = Store.hash_bytes(data)
-    config_hash = Store.hash_config(job_config, output_list, Path(filename).suffix)
+    config_hash = Store.hash_config(
+        job_config, output_list, Path(filename).suffix, profile
+    )
     compiler_ver = Store.compiler_version()
 
     cached = store.find_cached(input_hash, config_hash, compiler_ver)
