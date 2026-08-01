@@ -6,9 +6,21 @@ on:
     branches:
       - main
 
+# Least privilege: nothing here writes to the repo. Forks get a read-only
+# token anyway, but this pins it for pushes to main too.
+permissions:
+  contents: read
+
+# A new push to a PR makes the in-flight run obsolete; don't pay for it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python:
     runs-on: ubuntu-latest
+    # The open3d/OpenMP hangs this suite has hit block for the full 6h default.
+    timeout-minutes: 30
     env:
       # Single-thread OpenMP/BLAS: the suspected hang is an open3d/OpenMP
       # deadlock on the 2-core runner. Harmless if that isn't the cause.
@@ -41,6 +53,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -68,3 +81,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # One stable check name for branch protection to require. Jobs can be added
+  # or renamed above without touching the repo's protection rules.
+  gate:
+    runs-on: ubuntu-latest
+    needs: [python, web]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          echo "python: ${{ needs.python.result }}"
+          echo "web:    ${{ needs.web.result }}"
+          [ "${{ needs.python.result }}" = "success" ] || exit 1
+          [ "${{ needs.web.result }}" = "success" ] || exit 1

@@ -1,0 +1,58 @@
+name: PR checks
+
+# Checks that only make sense on a pull request: what the diff brings in, and
+# whether the diff is coherent. The test suites live in ci.yml.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # This repo ships MIT and vendors licence notices for CoACD (MIT) and
+          # CDT (MPL-2.0); a copyleft dependency would break that promise.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0
+
+  conventions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PR title is scoped
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Same shape as the commit history: "scope: imperative subject".
+          if ! printf '%s' "$TITLE" | grep -qE '^[a-z0-9-]+: .+'; then
+            echo "PR title must be '<scope>: <subject>', got: $TITLE" >&2
+            echo "e.g. 'sweep: enforce capsule clearance' or 'docs: fix the flag table'" >&2
+            exit 1
+          fi
+          if [ ${#TITLE} -gt 72 ]; then
+            echo "PR title is ${#TITLE} chars; keep it under 72" >&2
+            exit 1
+          fi
+
+      - name: No internal roadmap docs
+        run: |
+          # docs/plan-*.md were working notes, removed once the repo went
+          # public. Catch a reintroduction before it lands.
+          if git ls-files 'docs/plan-*.md' | grep -q .; then
+            echo "docs/plan-*.md are internal working notes; keep them out of the repo" >&2
+            git ls-files 'docs/plan-*.md' >&2
+            exit 1
+          fi
