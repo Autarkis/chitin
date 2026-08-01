@@ -154,7 +154,12 @@ def _build_report(
         "bones_total": len(result.bones) if result.bones else 0,
         "warnings": warnings,
         "detected": plan.detected if plan else {},
+        # Both, because they differ: the profile presets fields the request
+        # left at their defaults, so `config` is what was asked for and
+        # `effective_config` is what the geometry and the manifest were
+        # actually built from.
         "config": job.config.to_dict(),
+        "effective_config": dataclasses.asdict(config),
         "compiler_version": job.compiler_version,
         "outputs": job.outputs,
         "artifacts": {

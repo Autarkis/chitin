@@ -95,12 +95,12 @@ The compiler is organized into four module groups:
 4. **flatness** -- PCA eigenvalue ratio classifies near-flat octree cells. Flat cells produce a single oriented box instead of running CoACD
 5. **decompose** -- CoACD convex decomposition, LOD tier generation, walkable hull extraction, cross-cell AABB IOU deduplication
 6. **repair** -- detects height discontinuities at octree cell boundaries via a downward-ray ground sweep, union-finds cells sharing seam snags, merges their bounds, and re-extracts
-7. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone
+7. **segment** -- bone segmentation for rigged assets: assign each vertex to its dominant bone. Each bone decomposes under its own build plan so per-bone pipeline steps stay off the asset's, with the acceptance-relevant counters (CoACD timeouts, fallback hulls) merged back; the same applies to octree cells, which decompose in a separate process and carry their counters home in the result
 8. **splat** -- covariance normal derivation, anisotropic inflation, octree spatial partitioning, per-cell reconstruction orchestration
 
 **`verify/`** -- post-build quality checks. `raycast.py` provides shared Moller-Trumbore ray-triangle intersection (AABB pre-filtered). `probe.py` fires downward ray grids for coverage metrics. `sweep.py` does capsule-traversability analysis -- each grid column is reduced to per-hull solid spans, the ground is the lowest merged span top with `capsule_height` of free space above it, an eight-sample ring at `capsule_radius` drops cells whose sides are obstructed between step and head height, and the survivors get a step-height-gated flood fill; it reports the reachable fraction of standable cells plus the headroom and radius rejection counts. `seam.py` detects height discontinuities at cell boundaries (used by `stages/repair.py` during the build).
 
-**`exporters/`** -- output serialization. `.phys` binary packing, JSON debug companion, USD Physics output, and artifact bundle (build-plan.json + analysis.json + resolved-config.json).
+**`exporters/`** -- output serialization. `.phys` binary packing, JSON debug companion, USD Physics output, and artifact bundle (build-plan.json + analysis.json + resolved-config.json). The bundle tracks the exact set of files it wrote and hashes only those into `manifest.json`, written last; a `post_export` hook lets an artifact derived from the bundle's own output (the `--auto-verify` probe, which needs a finished `.phys`) land before the manifest rather than after it.
 
 **`analyze.py` + `resolve.py`** -- the spine. `analyze_arrays()` produces an `InputAnalysis` (facts about the input: format, opacity, covariance, density, skinning). `resolve_config()` turns user `Config` + `InputAnalysis` into a frozen `ResolvedConfig` with a `decisions` dict explaining every auto-override. No downstream code mutates config after this point.
 

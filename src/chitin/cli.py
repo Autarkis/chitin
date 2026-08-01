@@ -11,7 +11,18 @@ from chitin.hooks import get_post_process_command, run_post_process
 from chitin.preflight import check as preflight_check
 
 
-def main(argv: list[str] | None = None) -> None:
+# Config fields an acceptance profile can preset, mapped to the argparse dest
+# of the flag that sets each one. Used to tell a typed flag from an omitted
+# one, so the profile never overwrites a value the caller chose -- including a
+# value that happens to equal the default.
+PRESET_FLAG_DESTS = {
+    "concavity": "concavity",
+    "poisson_density_quantile": "density_quantile",
+    "snug_fit": "snug_fit",
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="chitin",
         description="Convex collision geometry from point clouds and meshes",
@@ -25,8 +36,41 @@ def main(argv: list[str] | None = None) -> None:
     _add_probe_parser(sub)
     _add_sweep_parser(sub)
     _add_convert_parser(sub)
+    return parser
+
+
+def _supplied_dests(argv: list[str] | None) -> set[str] | None:
+    """Which options the caller actually typed, as argparse dest names.
+
+    Every flag has a default, so a parsed namespace cannot distinguish
+    ``--concavity 0.05`` from omitting it -- and a profile preset that only
+    fills "untouched" fields would overwrite the explicit one. Re-parsing
+    against a copy of the parser whose defaults are all ``SUPPRESS`` leaves
+    only what was supplied. Returns None if that re-parse can't be trusted,
+    in which case the caller falls back to comparing against the defaults.
+    """
+    try:
+        mirror = build_parser()
+        stack = [mirror]
+        while stack:
+            current = stack.pop()
+            for action in current._actions:
+                action.default = argparse.SUPPRESS
+                choices = getattr(action, "choices", None)
+                if isinstance(action, argparse._SubParsersAction) and choices:
+                    stack.extend(choices.values())
+        return set(vars(mirror.parse_args(argv)))
+    except SystemExit:
+        raise
+    except Exception:
+        return None
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
 
     args = parser.parse_args(argv)
+    args.supplied = _supplied_dests(argv)
     if args.command == "extract":
         _cmd_extract(args)
     elif args.command == "check":
@@ -288,7 +332,12 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     from chitin.acceptance import apply_profile, evaluate, get_profile, report_metrics
 
     profile = get_profile(args.profile)
-    config = apply_profile(config, profile)
+    explicit = None
+    if args.supplied is not None:
+        explicit = {
+            field for field, dest in PRESET_FLAG_DESTS.items() if dest in args.supplied
+        }
+    config = apply_profile(config, profile, explicit=explicit)
 
     if not args.quiet:
         print(f"chitin: {args.input} -> {args.output} ({fmt}) [{profile.name}]")
@@ -299,10 +348,25 @@ def _cmd_extract(args: argparse.Namespace) -> None:
 
     verdict = evaluate(profile.policy, report_metrics(result))
 
+    want_probe = args.auto_verify and fmt == "phys"
+    probe_result = None
+
     if args.bundle:
         from chitin.exporters.bundle import export_bundle
 
         bundle_dir = args.output.parent / (args.output.stem + "_bundle")
+
+        def _probe_bundle(phys_artifact):
+            # Runs inside export_bundle, after the .phys exists and before the
+            # manifest, so probe.json is one of the files the manifest covers.
+            nonlocal probe_result
+            from chitin.verify.probe import probe
+
+            probe_result = probe(phys_artifact, grid_resolution=32)
+            out = bundle_dir / "probe.json"
+            probe_result.to_json(out)
+            return out
+
         export_bundle(
             result,
             bundle_dir,
@@ -311,6 +375,7 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             input_path=args.input,
             config=config,
             verdict=verdict,
+            post_export=_probe_bundle if want_probe else None,
         )
         if not args.quiet:
             print(f"chitin: bundle written to {bundle_dir}/")
@@ -328,11 +393,13 @@ def _cmd_extract(args: argparse.Namespace) -> None:
             f"{result.source_vertex_count} source verts in {dt:.1f}s"
         )
 
-    phys_path = (bundle_dir / "scene.phys") if args.bundle else args.output
-    if args.auto_verify and fmt == "phys":
-        from chitin.verify.probe import probe
+    if want_probe:
+        if probe_result is not None:
+            pr = probe_result
+        else:
+            from chitin.verify.probe import probe
 
-        pr = probe(phys_path, grid_resolution=32)
+            pr = probe(args.output, grid_resolution=32)
         pct = pr.coverage * 100
         print(
             f"chitin: verify: {pct:.1f}% coverage "
@@ -347,8 +414,6 @@ def _cmd_extract(args: argparse.Namespace) -> None:
                 "or --thin-shell for environment scans",
                 file=sys.stderr,
             )
-        if args.bundle:
-            pr.to_json(bundle_dir / "probe.json")
 
     # Acceptance gate. A permissive (interactive) profile has no checks and
     # always passes; a failed strict build exits non-zero *before* the

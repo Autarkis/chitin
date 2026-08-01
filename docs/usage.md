@@ -105,8 +105,10 @@ chitin extract arm.glb -o arm.phys --profile robotics --bundle
 ### Acceptance profiles
 
 `--profile` selects preset build defaults *and* an acceptance policy that
-decides whether the result is good enough to ship. The verdict (pass/fail with
-reasons) is written into `report.json` and the bundle's `manifest.json`.
+decides whether the result is good enough to ship. The CLI records the verdict
+(pass/fail with reasons) in the bundle's `manifest.json` under `quality.verdict`
+and prints the failing reasons to stderr; the service also writes it to the
+job's `report.json`.
 
 | Profile | Presets | Accepts unless… |
 |---------|---------|-----------------|
@@ -114,18 +116,23 @@ reasons) is written into `report.json` and the bundle's `manifest.json`.
 | `walkable` | coarser concavity (0.1), denser Poisson filtering | coverage below 85% |
 | `robotics` | tight concavity (0.01), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90% |
 
-A profile only fills fields you left at their default, so an explicit
-`--concavity` always overrides the profile's preset. A strict profile that
-rejects a build exits non-zero (`3`) and skips the post-process hook.
+A profile only fills fields you did not set, so an explicit `--concavity`
+always overrides the profile's preset -- including when the value you pass is
+the same as the default, which the CLI tells apart by checking which flags you
+actually typed. A strict profile that rejects a build exits non-zero (`3`) and
+skips the post-process hook.
 
 ### Provenance manifest
 
 Every bundle carries a `manifest.json` tying the build together: the input
 SHA-256, a SHA-256 for each emitted file, the compiler version and shaping-
-dependency versions (CoACD, trimesh, numpy, Open3D), the resolved-config hash,
-the `.phys` format version, and the acceptance verdict. It makes a bundle
-tamper-evident — recompute the declared hashes to confirm the artifacts match
-what the manifest claims:
+dependency versions (CoACD, trimesh, numpy, Open3D), the effective config (its
+values and their hash, after any profile presets were applied), the
+auto-resolved config, the `.phys` format version, and the acceptance verdict.
+Only files this build wrote are listed, and the manifest is written last, so it
+covers every one of them — including `probe.json` when `--auto-verify` is on.
+It makes a bundle tamper-evident — recompute the declared hashes to confirm the
+artifacts match what the manifest claims:
 
 ```python
 from chitin import verify_bundle

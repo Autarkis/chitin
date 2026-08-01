@@ -56,6 +56,47 @@ def test_bundle_carries_manifest(tmp_path, box_input, box_result):
     assert MANIFEST_FILENAME not in names  # it never hashes itself
 
 
+def test_manifest_covers_post_export_output(tmp_path, box_input, box_result):
+    # An artifact derived from the bundle's own .phys (the verify probe) has to
+    # be written before the manifest, or the manifest certifies a bundle it
+    # doesn't fully describe.
+    bundle = tmp_path / "out"
+
+    def _write_probe(primary):
+        assert primary.exists()
+        out = bundle / "probe.json"
+        out.write_text('{"coverage": 1.0}')
+        return out
+
+    export_bundle(
+        box_result,
+        bundle,
+        fmt="phys",
+        input_path=box_input,
+        config=Config(),
+        post_export=_write_probe,
+    )
+
+    manifest = json.loads((bundle / MANIFEST_FILENAME).read_text())
+    assert "probe.json" in {o["file"] for o in manifest["outputs"]}
+    assert verify_bundle(bundle) == []
+
+
+def test_manifest_ignores_files_this_build_did_not_write(
+    tmp_path, box_input, box_result
+):
+    # Listing the directory hashed whatever a previous run left behind and
+    # certified it as part of this build.
+    bundle = tmp_path / "out"
+    bundle.mkdir()
+    (bundle / "scene.usda").write_text("stale output from an earlier run")
+
+    export_bundle(box_result, bundle, fmt="phys", input_path=box_input, config=Config())
+
+    manifest = json.loads((bundle / MANIFEST_FILENAME).read_text())
+    assert "scene.usda" not in {o["file"] for o in manifest["outputs"]}
+
+
 def test_verify_bundle_clean_then_tampered(tmp_path, box_input, box_result):
     bundle = tmp_path / "out"
     export_bundle(box_result, bundle, fmt="phys", input_path=box_input, config=Config())

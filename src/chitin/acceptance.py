@@ -14,6 +14,7 @@ unit-tested against synthetic reports with no pipeline run.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 from chitin.config import Config
@@ -71,7 +72,7 @@ class Profile:
     """A named build preset: config defaults plus an acceptance policy.
 
     ``preset`` maps :class:`~chitin.config.Config` field names to values that
-    fill in only where the caller left the field at its default (see
+    fill in only where the caller did not set the field (see
     :func:`apply_profile`), so an explicit ``--concavity`` always wins over the
     profile.
     """
@@ -134,20 +135,30 @@ def get_profile(name: str | None) -> Profile:
         ) from None
 
 
-def apply_profile(config: Config, profile: Profile) -> Config:
+def apply_profile(
+    config: Config, profile: Profile, explicit: Collection[str] | None = None
+) -> Config:
     """Layer a profile's presets onto ``config`` without clobbering intent.
 
-    A preset fills a field only where the caller left it at the ``Config``
-    default, so an explicitly customized value (from a CLI flag or an API
-    config) always wins over the profile's suggestion.
+    A preset fills a field only where the caller did not set it, so an
+    explicitly customized value always wins over the profile's suggestion.
+
+    ``explicit`` names the fields the caller actually supplied. Without it the
+    function has to infer that by comparing against ``Config()``, which cannot
+    tell ``--concavity 0.05`` (the default value, deliberately chosen) from no
+    flag at all and would overwrite it; pass the set whenever the caller knows.
     """
     if not profile.preset:
         return config
-    default = Config()
+    if explicit is None:
+        default = Config()
+        explicit = {
+            field
+            for field in profile.preset
+            if getattr(config, field) != getattr(default, field)
+        }
     overrides = {
-        field: value
-        for field, value in profile.preset.items()
-        if getattr(config, field) == getattr(default, field)
+        field: value for field, value in profile.preset.items() if field not in explicit
     }
     return replace(config, **overrides) if overrides else config
 

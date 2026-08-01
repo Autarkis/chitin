@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,7 +20,16 @@ def export_bundle(
     input_path: str | Path | None = None,
     config: Config | None = None,
     verdict: Verdict | None = None,
+    post_export: Callable[[Path], Path | None] | None = None,
 ) -> Path:
+    """Write a provenance bundle and return the primary artifact's path.
+
+    ``post_export`` is called with the primary artifact once it exists and
+    before the manifest is written, and may return one further path it wrote.
+    That hook is how an artifact derived from the bundle's own output -- the
+    verify probe, which needs a finished ``.phys`` to read -- still ends up
+    covered by the manifest instead of being appended after the fact.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,17 +45,38 @@ def export_bundle(
     else:
         primary = output_dir / f"scene.{fmt}"
 
+    # Exactly what this call emitted. Listing the directory instead would hash
+    # whatever a previous run left behind -- a stale scene.phys from another
+    # format, say -- and certify it as part of this build.
+    written = [primary]
+
     if result.build_plan is not None:
-        _write_json(output_dir / "build-plan.json", result.build_plan.to_dict())
+        written.append(
+            _write_json(output_dir / "build-plan.json", result.build_plan.to_dict())
+        )
 
     if result.analysis is not None and hasattr(result.analysis, "to_dict"):
-        _write_json(output_dir / "analysis.json", result.analysis.to_dict())
+        written.append(
+            _write_json(output_dir / "analysis.json", result.analysis.to_dict())
+        )
 
     if result.resolved is not None and hasattr(result.resolved, "to_dict"):
-        _write_json(output_dir / "resolved-config.json", result.resolved.to_dict())
+        written.append(
+            _write_json(output_dir / "resolved-config.json", result.resolved.to_dict())
+        )
+
+    if post_export is not None:
+        extra = post_export(primary)
+        if extra is not None:
+            written.append(Path(extra))
 
     _write_manifest(
-        output_dir, result, input_path=input_path, config=config, verdict=verdict
+        output_dir,
+        result,
+        written,
+        input_path=input_path,
+        config=config,
+        verdict=verdict,
     )
 
     return primary
@@ -54,6 +85,7 @@ def export_bundle(
 def _write_manifest(
     output_dir: Path,
     result: ExtractionResult,
+    written: list[Path],
     *,
     input_path: str | Path | None,
     config: Config | None,
@@ -63,11 +95,9 @@ def _write_manifest(
     from chitin.acceptance import report_metrics
     from chitin.manifest import MANIFEST_FILENAME, quality_warnings, write_manifest
 
-    output_files = [
-        p.name
-        for p in sorted(output_dir.iterdir())
-        if p.is_file() and p.name != MANIFEST_FILENAME
-    ]
+    output_files = sorted(
+        {p.name for p in written if p.is_file() and p.name != MANIFEST_FILENAME}
+    )
     resolved_dict = (
         result.resolved.to_dict()
         if result.resolved is not None and hasattr(result.resolved, "to_dict")
@@ -85,5 +115,6 @@ def _write_manifest(
     )
 
 
-def _write_json(path: Path, data: dict) -> None:
+def _write_json(path: Path, data: dict) -> Path:
     path.write_text(json.dumps(data, indent=2, default=str))
+    return path

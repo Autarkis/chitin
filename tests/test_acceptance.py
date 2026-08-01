@@ -102,6 +102,29 @@ def test_apply_profile_respects_explicit_values():
     assert applied.snug_fit is True  # still filled where left at default
 
 
+def test_apply_profile_respects_an_explicit_default_value():
+    # Comparing against Config() cannot tell "--concavity 0.05" (the default,
+    # deliberately typed) from no flag at all, so the caller passes the set of
+    # fields it actually saw and the profile leaves those alone.
+    default = Config().concavity
+    applied = apply_profile(
+        Config(concavity=default), get_profile("robotics"), explicit={"concavity"}
+    )
+    assert applied.concavity == default
+    # Fields the caller did not supply still get the preset.
+    assert applied.snug_fit is True
+
+
+def test_cli_maps_every_preset_field_to_a_flag():
+    # cli.py translates preset Config fields to argparse dests to decide what
+    # was explicit; a new preset field without a mapping would silently revert
+    # to the old guesswork.
+    from chitin.cli import PRESET_FLAG_DESTS
+
+    preset_fields = {f for p in PROFILES.values() for f in p.preset}
+    assert preset_fields <= set(PRESET_FLAG_DESTS)
+
+
 def test_interactive_profile_is_a_noop():
     base = Config(concavity=0.033)
     assert apply_profile(base, get_profile("interactive")) == base
