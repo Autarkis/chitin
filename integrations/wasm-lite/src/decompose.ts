@@ -146,12 +146,20 @@ export function validateConfig(config: DecomposeConfig): void {
       `prepResolution must be an integer in [5, 1000] (CoACD's supported range), got ${prepResolution}`,
     );
   }
+  if (
+    config.maxChVertex !== undefined &&
+    (!Number.isInteger(config.maxChVertex) || config.maxChVertex < 4)
+  ) {
+    throw new ChitinError(
+      "INVALID_CONFIG",
+      `maxChVertex must be an integer of at least 4, got ${config.maxChVertex}`,
+    );
+  }
   for (const key of [
     "sampleResolution",
     "mctsNodes",
     "mctsIteration",
     "mctsMaxDepth",
-    "maxChVertex",
   ] as const) {
     const v = config[key];
     if (v !== undefined && (!Number.isInteger(v) || v <= 0)) {

@@ -1,9 +1,8 @@
 import { ChitinError } from "./errors.js";
 
 // CoACD assumes a closed, edge-manifold input; boundary or non-manifold edges
-// make it produce garbage hulls or hang. This is an optional O(faces) precheck
-// the worker client runs when asked, so callers get a NON_MANIFOLD error up
-// front instead of a bad decomposition.
+// make the lightweight WASM build abort. The scene compiler runs this O(faces)
+// precheck by default so callers get a contextual NON_MANIFOLD error first.
 
 // Squared-area floor for a triangle, relative to the squared bounding
 // diagonal. Small enough that a real sliver survives; large enough to catch the
@@ -48,44 +47,42 @@ function doubleAreaSquared(
   return cx * cx + cy * cy + cz * cz;
 }
 
-/**
- * Verify that the triangle mesh is edge-manifold and closed: every undirected
- * edge is shared by exactly two triangles, and no triangle is degenerate.
- * Throws {@link ChitinError} with code `NON_MANIFOLD` on the first violation.
- *
- * Assumes the shape/index-range checks from `validateMeshInput` already hold;
- * it re-derives only what it needs to key edges.
- */
-export function checkManifold(vertices: Float64Array, faces: Int32Array): void {
-  const vertexCount = vertices.length / 3;
-  // Encode an undirected edge (a, b) as a single integer key with a < b. This
-  // stays exact as long as vertexCount^2 < 2^53, which holds for any real mesh.
-  const edgeUses = new Map<number, number>();
+export interface ManifoldAnalysis {
+  boundary_edge_count: number;
+  non_manifold_edge_count: number;
+  degenerate_triangle_count: number;
+  first_problem: string | null;
+  manifold: boolean;
+}
 
-  // Three distinct indices can still describe a zero-area triangle -- collinear
-  // or coincident points -- which CoACD chokes on exactly like a repeated
-  // index. Scale the area floor by the mesh's own size so the test means the
-  // same thing whether the asset is in millimetres or metres, and keep it tight
-  // enough that a genuinely thin sliver is not mistaken for a degenerate one.
+/** Measure every topology failure instead of stopping at the first bad edge. */
+export function analyzeManifold(
+  vertices: Float64Array,
+  faces: Int32Array,
+): ManifoldAnalysis {
+  const vertexCount = vertices.length / 3;
+  const edgeUses = new Map<number, number>();
   const diag2 = boundingDiagonalSquared(vertices);
   const minDoubleAreaSquared = DEGENERATE_AREA_EPS * diag2 * diag2;
+  let degenerateTriangleCount = 0;
+  let firstProblem: string | null = null;
 
   for (let f = 0; f < faces.length; f += 3) {
     const i0 = faces[f];
     const i1 = faces[f + 1];
     const i2 = faces[f + 2];
+    let degenerate: string | null = null;
     if (i0 === i1 || i1 === i2 || i0 === i2) {
-      throw new ChitinError(
-        "NON_MANIFOLD",
-        `degenerate triangle at face ${f / 3}: repeats a vertex (${i0}, ${i1}, ${i2})`,
-      );
-    }
-    if (doubleAreaSquared(vertices, i0, i1, i2) <= minDoubleAreaSquared) {
-      throw new ChitinError(
-        "NON_MANIFOLD",
+      degenerate = `degenerate triangle at face ${f / 3}: repeats a vertex (${i0}, ${i1}, ${i2})`;
+    } else if (doubleAreaSquared(vertices, i0, i1, i2) <= minDoubleAreaSquared) {
+      degenerate =
         `degenerate triangle at face ${f / 3}: zero area from distinct vertices ` +
-          `(${i0}, ${i1}, ${i2}) -- collinear or coincident points`,
-      );
+        `(${i0}, ${i1}, ${i2}) -- collinear or coincident points`;
+    }
+    if (degenerate) {
+      degenerateTriangleCount++;
+      firstProblem ??= degenerate;
+      continue;
     }
     for (const [a, b] of [
       [i0, i1],
@@ -97,15 +94,58 @@ export function checkManifold(vertices: Float64Array, faces: Int32Array): void {
     }
   }
 
+  let boundaryEdgeCount = 0;
+  let nonManifoldEdgeCount = 0;
   for (const [key, uses] of edgeUses) {
-    if (uses !== 2) {
-      const a = Math.floor(key / vertexCount);
-      const b = key % vertexCount;
-      const kind = uses === 1 ? "boundary (open) edge" : `non-manifold edge (${uses} triangles)`;
-      throw new ChitinError(
-        "NON_MANIFOLD",
-        `${kind} between vertices ${a} and ${b}`,
-      );
+    if (uses === 2) continue;
+    const a = Math.floor(key / vertexCount);
+    const b = key % vertexCount;
+    if (uses === 1) {
+      boundaryEdgeCount++;
+      firstProblem ??= `boundary (open) edge between vertices ${a} and ${b}`;
+    } else {
+      nonManifoldEdgeCount++;
+      firstProblem ??= `non-manifold edge (${uses} triangles) between vertices ${a} and ${b}`;
     }
   }
+
+  return {
+    boundary_edge_count: boundaryEdgeCount,
+    non_manifold_edge_count: nonManifoldEdgeCount,
+    degenerate_triangle_count: degenerateTriangleCount,
+    first_problem: firstProblem,
+    manifold:
+      boundaryEdgeCount === 0 &&
+      nonManifoldEdgeCount === 0 &&
+      degenerateTriangleCount === 0,
+  };
+}
+
+/**
+ * Verify that the triangle mesh is edge-manifold and closed: every undirected
+ * edge is shared by exactly two triangles, and no triangle is degenerate.
+ * Throws {@link ChitinError} with code `NON_MANIFOLD` and aggregate counts.
+ *
+ * Assumes the shape/index-range checks from `validateMeshInput` already hold;
+ * it re-derives only what it needs to key edges.
+ */
+export function checkManifold(vertices: Float64Array, faces: Int32Array): void {
+  const analysis = analyzeManifold(vertices, faces);
+  if (analysis.manifold) return;
+  const counts = [
+    `${analysis.boundary_edge_count} boundary edge${analysis.boundary_edge_count === 1 ? "" : "s"}`,
+    `${analysis.non_manifold_edge_count} non-manifold edge${analysis.non_manifold_edge_count === 1 ? "" : "s"}`,
+    `${analysis.degenerate_triangle_count} degenerate triangle${analysis.degenerate_triangle_count === 1 ? "" : "s"}`,
+  ].join(", ");
+  throw new ChitinError(
+    "NON_MANIFOLD",
+    `${analysis.first_problem}; topology summary: ${counts}`,
+    {
+      context: {
+        boundary_edges: analysis.boundary_edge_count,
+        non_manifold_edges: analysis.non_manifold_edge_count,
+        degenerate_triangles: analysis.degenerate_triangle_count,
+      },
+    },
+  );
 }

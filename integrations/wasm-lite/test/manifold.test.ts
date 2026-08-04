@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkManifold } from "../src/manifold.js";
+import { analyzeManifold, checkManifold } from "../src/manifold.js";
 
 // A closed unit cube: 8 corners, 12 triangles. Every undirected edge is shared
 // by exactly two triangles.
@@ -27,6 +27,12 @@ describe("checkManifold", () => {
     const verts = new Float64Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
     const faces = new Int32Array([0, 1, 2]);
     expect(() => checkManifold(verts, faces)).toThrow(/boundary \(open\) edge/);
+    expect(analyzeManifold(verts, faces)).toMatchObject({
+      manifold: false,
+      boundary_edge_count: 3,
+      non_manifold_edge_count: 0,
+      degenerate_triangle_count: 0,
+    });
   });
 
   it("rejects a non-manifold edge shared by three triangles", () => {
@@ -66,8 +72,13 @@ describe("checkManifold", () => {
   it("throws a ChitinError with code NON_MANIFOLD", () => {
     const verts = new Float64Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
     const faces = new Int32Array([0, 1, 2]);
-    expect(() => checkManifold(verts, faces)).toThrow(
-      expect.objectContaining({ code: "NON_MANIFOLD" }),
-    );
+    expect(() => checkManifold(verts, faces)).toThrow(expect.objectContaining({
+      code: "NON_MANIFOLD",
+      context: {
+        boundary_edges: 3,
+        non_manifold_edges: 0,
+        degenerate_triangles: 0,
+      },
+    }));
   });
 });

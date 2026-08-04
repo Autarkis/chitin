@@ -156,8 +156,40 @@ describe("DecomposeWorker", () => {
       id: f.lastDecomposeId(),
       code: "OUT_OF_MEMORY",
       message: "Cannot enlarge memory arrays",
+      stage: null,
+      suggestion: null,
+      retryable: false,
+      context: {},
     });
     await expect(p).rejects.toMatchObject({ code: "OUT_OF_MEMORY" });
+    expect(f.terminated).toBe(true);
+
+    const retry = w.decompose(V, F);
+    expect(fakes).toHaveLength(2);
+    fakes[1].emit({ type: "result", id: fakes[1].lastDecomposeId(), hulls: HULLS });
+    await expect(retry).resolves.toMatchObject({ hulls: HULLS });
+  });
+
+  it("preserves structured topology context from the worker", async () => {
+    const w = makeWorker();
+    const pending = w.decompose(V, F);
+    const f = fakes[0];
+    f.emit({
+      type: "error",
+      id: f.lastDecomposeId(),
+      code: "NON_MANIFOLD",
+      message: "mesh has open edges",
+      stage: null,
+      suggestion: "repair it",
+      retryable: false,
+      context: { boundary_edges: 3 },
+    });
+    await expect(pending).rejects.toMatchObject({
+      code: "NON_MANIFOLD",
+      suggestion: "repair it",
+      retryable: false,
+      context: { boundary_edges: 3 },
+    });
   });
 
   it("rejects with WORKER_ERROR when the worker faults", async () => {

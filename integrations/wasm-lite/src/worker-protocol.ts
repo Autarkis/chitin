@@ -1,4 +1,5 @@
 import { ChitinError, type ChitinErrorCode } from "./errors.js";
+import type { CompilationErrorInfo } from "./report.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
 
 // The message contract between DecomposeWorker (main thread) and worker.ts
@@ -42,6 +43,10 @@ export interface ErrorMessage {
   id: number;
   code: ChitinErrorCode;
   message: string;
+  stage: CompilationErrorInfo["stage"];
+  suggestion: string | null;
+  retryable: boolean;
+  context: CompilationErrorInfo["context"];
 }
 
 export type WorkerResponse = StateMessage | ResultMessage | ErrorMessage;
@@ -50,18 +55,21 @@ export type WorkerResponse = StateMessage | ResultMessage | ErrorMessage;
 // depending on build flags; match the ones CoACD's module can surface.
 const OOM_PATTERN = /cannot enlarge memory|out of memory|\boom\b|bad_alloc|allocation failed/i;
 
+type WorkerErrorInfo = Omit<CompilationErrorInfo, "code"> & { code: ChitinErrorCode };
+
 /**
  * Map an arbitrary error thrown inside the worker to a structured
- * `{ code, message }`. A {@link ChitinError} keeps its code; a heap-exhaustion
- * message becomes `OUT_OF_MEMORY`; anything else is a `WORKER_ERROR`.
+ * error payload. A {@link ChitinError} keeps all of its structured context; a
+ * heap-exhaustion message becomes `OUT_OF_MEMORY`; anything else is a
+ * `WORKER_ERROR`.
  */
-export function mapWorkerError(err: unknown): { code: ChitinErrorCode; message: string } {
+export function mapWorkerError(err: unknown): WorkerErrorInfo {
   if (err instanceof ChitinError) {
-    return { code: err.code, message: err.message };
+    return { ...err.toInfo(), code: err.code };
   }
   const message = err instanceof Error ? err.message : String(err);
   if (OOM_PATTERN.test(message)) {
-    return { code: "OUT_OF_MEMORY", message };
+    return { code: "OUT_OF_MEMORY", message, stage: null, suggestion: null, retryable: false, context: {} };
   }
-  return { code: "WORKER_ERROR", message };
+  return { code: "WORKER_ERROR", message, stage: null, suggestion: null, retryable: false, context: {} };
 }

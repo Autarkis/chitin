@@ -6,7 +6,14 @@ import { mapWorkerError } from "../src/worker-protocol.js";
 describe("mapWorkerError", () => {
   it("passes a ChitinError through with its code", () => {
     const err = new ChitinError("INVALID_MESH", "bad geometry");
-    expect(mapWorkerError(err)).toEqual({ code: "INVALID_MESH", message: "bad geometry" });
+    expect(mapWorkerError(err)).toEqual({
+      code: "INVALID_MESH",
+      message: "bad geometry",
+      stage: null,
+      suggestion: null,
+      retryable: false,
+      context: {},
+    });
   });
 
   it("maps heap-exhaustion messages to OUT_OF_MEMORY", () => {
