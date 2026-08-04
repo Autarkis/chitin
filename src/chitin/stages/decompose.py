@@ -498,6 +498,9 @@ def decompose_and_build(
         env_hulls, faces = extract_walkable_hulls(vertices, faces)
         if env_hulls and _plan is not None:
             _plan.detected["walkable_hulls"] = len(env_hulls)
+            _plan.detected["planar_substitute_hulls"] = _plan.detected.get(
+                "planar_substitute_hulls", 0
+            ) + len(env_hulls)
 
     if len(faces) < 4:
         return ExtractionResult(
