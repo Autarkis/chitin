@@ -37,7 +37,7 @@ def hash_config(config_dict: dict) -> str:
 def base_version() -> str:
     import chitin
 
-    return getattr(chitin, "__version__", "0.1.0")
+    return chitin.__version__
 
 
 def dependency_versions() -> dict[str, str]:

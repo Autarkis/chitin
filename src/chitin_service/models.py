@@ -4,6 +4,8 @@ import enum
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from chitin.provenance import compiler_version
+
 
 class JobStatus(str, enum.Enum):
     CREATED = "created"
@@ -106,7 +108,7 @@ class Job:
     status: JobStatus = JobStatus.CREATED
     input_hash: str | None = None
     config_hash: str | None = None
-    compiler_version: str = "0.1.0"
+    compiler_version: str = field(default_factory=compiler_version)
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     events: list[JobEvent] = field(default_factory=list)
