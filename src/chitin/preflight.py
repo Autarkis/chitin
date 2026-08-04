@@ -162,8 +162,8 @@ def _classify_point_distribution(positions) -> list[str] | None:
     hints = []
     if shell_fraction > 0.6:
         hints.append(
-            "point distribution looks like an environment scan "
-            "(hollow shell) — consider --thin-shell --proximity-filter 5.0"
+            "point distribution looks like a hollow shell; proximity "
+            "filtering already defaults on, --thin-shell is optional to try"
         )
     if is_flat and not hints:
         hints.append(

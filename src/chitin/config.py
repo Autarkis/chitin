@@ -35,7 +35,7 @@ class Config:
     splat_surface_ratio: float = 0.2
     spatial_split_threshold: int = 50_000
     poisson_density_quantile: float = 0.1
-    surface_proximity_filter: float = 0.0
+    surface_proximity_filter: float | None = None
     thin_shell: bool = False
     thin_shell_thickness: float = 0.0
     flatness_threshold: float = 0.9
@@ -93,7 +93,10 @@ class Config:
                 f"spatial_split_threshold must be >= 1, "
                 f"got {self.spatial_split_threshold}"
             )
-        if self.surface_proximity_filter < 0:
+        if (
+            self.surface_proximity_filter is not None
+            and self.surface_proximity_filter < 0
+        ):
             raise ValueError(
                 f"surface_proximity_filter must be >= 0, "
                 f"got {self.surface_proximity_filter}"
