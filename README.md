@@ -63,13 +63,50 @@ Requires Python 3.12. (`chitin[splat]` requires open3d, which does not yet have 
 
 ### Browser path
 
-For manifold meshes (OBJ, GLB, STL from standard modeling tools), you can skip Python entirely and run decomposition in the browser:
+For static GLB meshes, you can skip Python entirely and run decomposition in the browser:
 
 ```bash
 npm install @autarkis/chitin-lite
 ```
 
-This drives CoACD compiled to WebAssembly (558KB) in the browser and writes the same `.phys` format the Python compiler produces. The npm package ships the JavaScript/TypeScript wrapper only; the CoACD WASM module ships separately as [`@autarkis/chitin-coacd-wasm`](https://www.npmjs.com/package/@autarkis/chitin-coacd-wasm) (an ES module) — load `coacd.mjs` + `coacd.wasm` from a CDN or host your own copy, and point the loader at it. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for usage.
+This drives CoACD compiled to WebAssembly (558KB) in a Worker and writes the
+same `.phys` format the Python compiler produces. `compileGlb()` accepts a
+`File`, `Blob`, buffer, or URL and returns the sidecar, hulls, source facts, and
+the versioned compilation report. The CoACD runtime ships separately as
+`@autarkis/chitin-coacd-wasm` so applications can bundle or host the two assets
+deliberately. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for the API
+and [`examples/quickstart/`](examples/quickstart/) for the drag-and-drop Collider
+Lab.
+
+```typescript
+import { ChitinCompiler } from "@autarkis/chitin-lite";
+import ChitinWorker from "@autarkis/chitin-lite/worker?worker";
+import coacdModuleUrl from "@autarkis/chitin-coacd-wasm?url";
+import coacdWasmUrl from "@autarkis/chitin-coacd-wasm/coacd.wasm?url";
+
+const compiler = new ChitinCompiler({
+  wasm: { js: coacdModuleUrl, wasm: coacdWasmUrl, version: "0.2.0" },
+  workerFactory: () => new ChitinWorker(),
+  maxWorkers: 2,
+});
+const { phys, hulls, source, report } = await compiler.compileGlb(file, {
+  componentPolicy: { maxHulls: 128 },
+  onProgress: ({ stage, completed, total, eta_ms }) =>
+    console.log(stage, completed, total, eta_ms),
+});
+```
+
+Pass `quality: { surfaceSamples: 2048, volumeSamples: 8192 }` when an
+acceptance or benchmark lane needs deterministic sampled surface-coverage and
+false-fill metrics. This work is opt-in and does not promote the interactive
+report verdict beyond `not_evaluated`.
+
+`@autarkis/chitin-lite` uses a deterministic scene-aware budget for interactive
+detail: important parts get bounded CoACD search, tiny parts get one convex
+approximation, and hollow shells and scene-dominant bodies keep guarded
+minimum thresholds so a coarse setting cannot collapse them. Exact thresholds
+and config knobs are in
+[the interactive compiler budget](docs/usage.md#interactive-compiler-budget).
 
 Use `chitin check <file>` to see which path a given input needs:
 
@@ -86,7 +123,10 @@ path:       either
 reason:     manifold mesh, eligible for browser-side decomposition
 ```
 
-Point clouds, gaussian splats, and non-manifold meshes require the Python pipeline.
+Point clouds, gaussian splats, and non-manifold meshes require the Python
+pipeline. Its native CoACD build can voxel-remesh open geometry; the browser
+build reports the offending connected part because it intentionally omits that
+repair dependency.
 
 ## CLI
 
@@ -247,9 +287,9 @@ chitin-server download <job_id> -o ./output
 
 ## Limitations
 
-- **Environment scan auto-detection can misfire.** Chitin auto-detects hollow-shell point distributions and enables `--thin-shell` and `--proximity-filter` automatically. Use `--no-auto-environment` to disable if the heuristic is wrong for your scene.
+- **Environment scan auto-detection can misfire.** Auto-enabling `--thin-shell` and `--proximity-filter` and the preflight scan hint are two separate checks over different point sets, and only the first can change behavior: it fires when the scene has a hollow interior, or enough wall coverage plus floor coverage, and stays off below a minimum point count or bounding-box volume. The preflight hint checks a sampled shell fraction and only prints a suggestion — seeing it does not mean the flags were applied. Use `--no-auto-environment` to disable the automatic path, or pass `--thin-shell --proximity-filter` explicitly regardless of what either check decides.
 - **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes. Interleaved `byteStride` is handled, but multiple primitives and vertex reordering may produce incorrect bone segmentation.
-- **Flat surfaces over-decompose (mitigated).** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the Mip-NeRF 360 Garden scene this reduced hulls from 1,725 to 579 and build time from 27 min to 9 min. Scenes with unusual ground geometry may need threshold tuning or `--flatness-threshold 0` to disable.
+- **Flat surfaces can over-decompose.** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the one measured scene (Mip-NeRF 360 Garden, 585 hulls) it did not fire on any cell. See `examples/utility-proof/README.md` for the run and the `--flatness-threshold 0` escape hatch.
 - **No sparse voxel collision output yet.** Chitin currently emits convex hull artifacts, not viewer-native SVO/voxel grids for walk-mode raycasts.
 - **Python 3.12 only** until open3d ships a 3.13 wheel.
 - **FBX needs Blender.** trimesh has no FBX loader, so `chitin extract model.fbx` auto-converts the file to GLB via headless Blender (Blender must be on PATH) and extracts from that. `chitin convert` runs the same step explicitly. Without Blender, FBX extraction raises a clear error.

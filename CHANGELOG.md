@@ -6,6 +6,17 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- **Fixed:** PLY meshes were silently routed through the point-cloud/Poisson
+  path instead of the mesh path. `adapters.ply.load_ply` never populated
+  `AdapterResult.faces`, and `analyze._analyze_ply` hardcoded
+  `face_count=None`, so any `.ply` with a face element — the format
+  `docs/usage.md` lists as a mesh format — took the same branch as an
+  unstructured point cloud. The reader now parses the face element (ascii and
+  binary little-/big-endian, n-gons fan-triangulated, `vertex_indices` and
+  `vertex_index` both accepted), and PLY meshes take the mesh path. On the
+  Stanford Bunny (35,947 vertices, 69,451 faces): coverage 0.9386 → 1.0, hulls
+  105 → 20, wall clock 126.1s → 41.0s. Gaussian-splat and point-cloud PLY input
+  (no face element) is unaffected.
 - **Fixed:** decomposition was not reproducible. CoACD's search is
   OpenMP-parallel and its thread scheduling picks which decomposition it
   settles on, so the same mesh and config returned a different hull count and
