@@ -68,19 +68,21 @@ class EnvironmentSignals:
     is_environment_ambiguous: bool
 
 
-_EMPTY_SIGNALS = EnvironmentSignals(1.0, 0.0, 0, 0.0, False, False)
+_UNMEASURED_INNER_DENSITY = float("nan")
+
+_EMPTY_SIGNALS = EnvironmentSignals(
+    _UNMEASURED_INNER_DENSITY, 0.0, 0, 0.0, False, False
+)
 
 
 def _compute_inner_density(positions: np.ndarray) -> tuple[float, float]:
-    if len(positions) < 1000:
-        return 1.0, 0.0
+    if len(positions) == 0:
+        return _UNMEASURED_INNER_DENSITY, 0.0
 
     scene_min = positions.min(axis=0)
     scene_max = positions.max(axis=0)
     extent = scene_max - scene_min
     vol = float(np.prod(np.where(extent == 0, 1.0, extent)))
-    if vol < 10.0:
-        return 1.0, vol
 
     center = (scene_min + scene_max) / 2
     inner_extent = extent * 0.5
@@ -244,9 +246,9 @@ def analyze_input(path: str | Path) -> InputAnalysis:
 
 
 def _analyze_ply(path: Path) -> InputAnalysis:
-    from chitin.adapters.ply_reader import read_ply_vertex
+    from chitin.adapters.ply_reader import read_ply_mesh
 
-    vertex = read_ply_vertex(path)
+    vertex, faces = read_ply_mesh(path)
     positions = np.column_stack([vertex["x"], vertex["y"], vertex["z"]]).astype(
         np.float64
     )
@@ -272,7 +274,7 @@ def _analyze_ply(path: Path) -> InputAnalysis:
         is_skinned=False,
         is_manifold=None,
         point_count=len(positions),
-        face_count=None,
+        face_count=len(faces) if faces is not None else None,
         opacity_is_logit=opacity_is_logit,
         bbox_volume=env.bbox_volume,
         inner_density_ratio=env.inner_density_ratio,
@@ -356,7 +358,7 @@ def _analyze_gltf(path: Path) -> InputAnalysis:
         face_count=0,
         opacity_is_logit=False,
         bbox_volume=0.0,
-        inner_density_ratio=1.0,
+        inner_density_ratio=_UNMEASURED_INNER_DENSITY,
     )
 
 
