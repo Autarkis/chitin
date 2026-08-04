@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Autarkis/chitin/blob/main/docs/compilation-report.schema.json",
+  "title": "Chitin CompilationReport v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_version",
+    "status",
+    "profile",
+    "verdict",
+    "input",
+    "output",
+    "timings_ms",
+    "warnings",
+    "metrics",
+    "processing",
+    "runtime",
+    "reproducibility",
+    "config",
+    "artifacts"
+  ],
+  "properties": {
+    "report_version": { "const": 1 },
+    "status": { "enum": ["complete", "rejected"] },
+    "profile": { "type": ["string", "null"] },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "status", "reasons", "checks"],
+      "properties": {
+        "profile": { "type": ["string", "null"] },
+        "status": { "enum": ["pass", "fail", "not_evaluated"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "status", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "status": { "enum": ["pass", "fail", "not_evaluated"] },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source_vertices", "processed_vertices", "mesh_vertices"],
+      "properties": {
+        "kind": { "type": "string" },
+        "source_vertices": { "type": "integer", "minimum": 0 },
+        "processed_vertices": { "type": "integer", "minimum": 0 },
+        "mesh_vertices": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collider_kind", "hull_count", "vertex_count", "triangle_count", "lod_tier_count", "byte_length"],
+      "properties": {
+        "collider_kind": { "type": "string" },
+        "hull_count": { "type": "integer", "minimum": 0 },
+        "vertex_count": { "type": "integer", "minimum": 0 },
+        "triangle_count": { "type": "integer", "minimum": 0 },
+        "lod_tier_count": { "type": "integer", "minimum": 0 },
+        "byte_length": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "timings_ms": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0 }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/warning" }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/metric" }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pipeline", "fallbacks", "refinements"],
+      "properties": {
+        "pipeline": { "type": "array", "items": { "type": "string" } },
+        "fallbacks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decomposition_failure_hulls", "planar_substitute_hulls"],
+          "properties": {
+            "decomposition_failure_hulls": { "type": "integer", "minimum": 0 },
+            "planar_substitute_hulls": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "refinements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["snug_fit"],
+          "properties": {
+            "snug_fit": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "refined_hulls", "rejected_hulls", "skipped_hulls"],
+              "properties": {
+                "status": { "enum": ["applied", "skipped", "not_requested", "unknown"] },
+                "refined_hulls": { "type": ["integer", "null"], "minimum": 0 },
+                "rejected_hulls": { "type": ["integer", "null"], "minimum": 0 },
+                "skipped_hulls": { "type": ["integer", "null"], "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "implementation", "version", "compiler_version", "dependencies"],
+      "properties": {
+        "kind": { "type": "string" },
+        "implementation": { "type": "string" },
+        "version": { "type": "string" },
+        "compiler_version": { "type": "string" },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "deterministic", "artifact_sha256"],
+      "properties": {
+        "scope": { "const": "same_runtime_toolchain" },
+        "deterministic": { "type": ["boolean", "null"] },
+        "artifact_sha256": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective"],
+      "properties": {
+        "requested": { "type": ["object", "null"] },
+        "effective": { "type": ["object", "null"] }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "context"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "type": "string" },
+        "context": { "type": "object" }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "status"],
+      "properties": {
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "unit": { "type": "string" },
+        "status": { "enum": ["measured", "not_measured", "not_applicable"] }
+      }
+    }
+  }
+}
