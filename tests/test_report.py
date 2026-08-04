@@ -1,5 +1,8 @@
+import hashlib
+
 from fastapi.testclient import TestClient
 
+from chitin import __version__
 from chitin_service.app import app, set_store
 from chitin_service.store import Store
 
@@ -46,13 +49,29 @@ def test_report_fields(client, box_glb):
     assert report["processed_vertices"] > 0
     assert isinstance(report["warnings"], list)
     assert isinstance(report["detected"], dict)
-    from chitin import __version__
+    canonical = report["compilation_report"]
+    assert canonical["report_version"] == 1
+    assert canonical["verdict"]["status"] == "pass"
+    assert canonical["runtime"]["kind"] == "python_native"
+    assert canonical["reproducibility"]["scope"] == "same_runtime_toolchain"
 
     # compiler_version pins the base version plus dependency versions
     # (coacd/open3d/trimesh) so a dependency upgrade invalidates caches.
     assert report["compiler_version"].startswith(__version__)
     assert "coacd" in report["compiler_version"]
     assert "json" in report["artifacts"]
+
+    artifact_resp = client.get(
+        f"/v1/jobs/{job_id}/artifacts/{report['artifacts']['json']}"
+    )
+    assert artifact_resp.status_code == 200
+    artifact_bytes = artifact_resp.content
+
+    assert canonical["output"]["byte_length"] == len(artifact_bytes)
+    sha256 = canonical["reproducibility"]["artifact_sha256"]
+    assert sha256 is not None
+    assert len(sha256) == 64
+    assert sha256 == hashlib.sha256(artifact_bytes).hexdigest()
 
 
 def test_report_pipeline_has_parse_and_decompose(client, box_glb):
