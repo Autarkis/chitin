@@ -18,7 +18,9 @@ node_modules/
 examples/utility-proof/assets/
 examples/utility-proof/reports/
 examples/garden-colliders/
+examples/quickstart/test-results/
 integrations/walktest/test-results/
+integrations/walktest/.release-candidate/
 .serena/
 
 # Agent instructions (local only, not shipped in the public repo)

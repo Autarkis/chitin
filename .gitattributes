@@ -1,4 +1,34 @@
-# Shell scripts are executed by bash on Linux CI runners. CRLF would corrupt the
-# shebang and line continuations, so force LF regardless of the committing
-# client's OS or core.autocrlf setting.
-*.sh text eol=lf
+# Line-ending policy for this repo.
+#
+# Everything is stored as LF and checked out as LF, regardless of the committing
+# client's OS or its `core.autocrlf` setting. This repo builds and runs on Linux
+# (CI) as well as Windows, and some artifacts are byte-compared across platforms
+# — the `.phys` conformance corpus and cross-language determinism fixtures. A
+# CRLF working copy on one machine and LF on another turns those into spurious
+# diffs.
+#
+# The index here already contains zero CRLF files, so this is a no-op for existing
+# content; it just makes the guarantee explicit and silences the
+# "LF will be replaced by CRLF" warning on every commit.
+* text=auto eol=lf
+
+# Batch files are parsed by cmd.exe, which is genuinely CRLF-sensitive
+# (labels and `goto` can misbehave with LF).
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary — never diffed, never normalized.
+*.glb     binary
+*.phys    binary
+*.npz     binary
+*.parquet binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.ico     binary
+*.woff    binary
+*.woff2   binary
+*.pdf     binary
+*.mp4     binary
+*.tar.gz  binary
+*.zip     binary
