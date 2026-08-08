@@ -167,13 +167,18 @@ jobs:
 
       - name: Install release-candidate browser harness
         working-directory: integrations/walktest
+        run: npm ci
+
+      - name: Stage packed release candidate
+        working-directory: integrations/walktest
         run: |
-          npm ci
+          npm run prepare:release-candidate
+          npm run build:release-candidate
           npx playwright install --with-deps chromium firefox webkit
 
       - name: Packed-package browser gate
         working-directory: integrations/walktest
-        run: npm run test:release-candidate
+        run: npx playwright test tests/release-candidate.spec.ts
 
       - name: Build and test Collider Lab
         working-directory: examples/quickstart
