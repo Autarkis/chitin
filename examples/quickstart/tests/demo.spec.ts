@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { ChitinDemoApi } from "../src/demo-api.js";
 import { makeGlb, makeThinOpenTrayGlb } from "../../../integrations/wasm-lite/test/glb-fixture.js";
 
 test("opening index.html directly explains how to start the runtime", async ({ page }) => {
@@ -33,10 +34,18 @@ test("built-in GLB compiles into a downloadable collider artifact", async ({ pag
   expect(state.verdict).toBe("not_evaluated");
   expect(state.reportVersion).toBe(1);
   expect(state.appliedThreshold).toBe(0.1);
+  expect(state.qualityMeasured).toBe(false);
   expect(state.colliderRevealCount).toBe(1);
   await expect(page.locator(".viewport-panel")).toHaveAttribute("data-collider-reveal", "complete");
 
   await page.getByRole("button", { name: "View report" }).click();
+  await expect(page.locator("#report-panel")).toBeVisible();
+  await expect(page.locator("#report-status")).toHaveText("Complete");
+  await expect(page.locator("#report-profile")).toHaveText("Interactive");
+  await expect(page.locator("#report-verdict")).toHaveText("Not evaluated");
+  await expect(page.locator("#report-checks")).toContainText(
+    "Profile acceptance checks were not run.",
+  );
   await expect(page.locator("#report-output")).toContainText('"report_version": 1');
   await expect(page.locator("#report-output")).toContainText('"status": "not_evaluated"');
 
@@ -110,6 +119,26 @@ test("open GLBs keep their source preview and explain the full-compiler repair p
   expect(state.sourceMeshes).toBeGreaterThan(0);
 });
 
+test("replacing an artifact resets report and applied-detail state", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "View report" }).click();
+  await expect(page.getByRole("button", { name: "Hide report" })).toBeVisible();
+
+  await page.locator("#file-input").setInputFiles({
+    name: "open-panels.glb",
+    mimeType: "model/gltf-binary",
+    buffer: Buffer.from(makeGlb()),
+  });
+
+  await expect(page.locator("#error-code")).toContainText("GEOMETRY REPAIR NEEDED");
+  await expect(page.locator("#report-button")).toHaveText("View report");
+  await expect(page.locator("#report-output")).toBeHidden();
+  expect((await page.evaluate(() => window.__chitinDemo.state())).appliedThreshold).toBeNull();
+});
+
 test("preview layers and responsive controls remain usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -169,6 +198,44 @@ test("detail changes automatically recompile at the displayed setting", async ({
   await expect(page.locator("#result-summary")).toContainText("Detail 0.30 applied");
   const state = await page.evaluate(() => window.__chitinDemo.state());
   expect(state.appliedThreshold).toBe(0.3);
+});
+
+test("fit presets apply named detail budgets", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.locator("#threshold-status")).toContainText("Applied 0.10", {
+    timeout: 60_000,
+  });
+
+  const gameProp = page.getByRole("button", { name: /Game prop/i });
+  await gameProp.click();
+  await expect(gameProp).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#threshold")).toHaveValue("0.25");
+  await expect(page.locator("#threshold-status")).toContainText("Applied 0.25", {
+    timeout: 60_000,
+  });
+  expect((await page.evaluate(() => window.__chitinDemo.state())).appliedThreshold).toBe(0.25);
+});
+
+test("quality diagnostics measure fit on demand", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#quality-metrics")).toBeHidden();
+
+  await page.getByRole("button", { name: "Run quality diagnostics" }).click();
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).qualityMeasured,
+    { timeout: 60_000 },
+  ).toBe(true);
+  await expect(page.locator("#quality-metrics")).toBeVisible();
+  await expect(page.locator("#surface-coverage")).toHaveText("100.0%");
+  await expect(page.locator("#volume-precision")).toHaveText("100.0%");
+  await expect(page.locator("#false-fill")).toHaveText("0.0%");
+  await expect(page.locator("#measurement-note")).toContainText("Sampled locally");
+  await expect(page.getByRole("button", { name: "Rerun quality diagnostics" })).toBeEnabled();
 });
 
 test("detail changes reduce complexity for decomposable geometry", async ({ page }) => {
@@ -233,24 +300,6 @@ test("coarse requests expose the hollow-shell guard instead of silently filling 
 
 declare global {
   interface Window {
-    __chitinDemo: {
-      ready: boolean;
-      state(): {
-        busy: boolean;
-        hulls: number;
-        verdict: string | null;
-        reportVersion: number | null;
-        appliedThreshold: number | null;
-        sourceVisible: boolean;
-        colliderVisible: boolean;
-        sourceMeshes: number;
-        sourceFilledMeshes: number;
-        colliderRevealActive: boolean;
-        colliderRevealCount: number;
-        exploded: boolean;
-        explosionAmount: number;
-        reusedComponents: number;
-      };
-    };
+    __chitinDemo: ChitinDemoApi;
   }
 }

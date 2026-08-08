@@ -154,12 +154,18 @@
               <span class="step">02</span>
               <h2 id="settings-heading">Fit</h2>
             </div>
+            <div id="fit-presets" class="fit-presets" aria-label="Fit presets">
+              <button type="button" data-detail="0.10" aria-pressed="true"><strong>Precise</strong><small>Tightest fit</small></button>
+              <button type="button" data-detail="0.25" aria-pressed="false"><strong>Game prop</strong><small>Balanced</small></button>
+              <button type="button" data-detail="0.60" aria-pressed="false"><strong>Coarse</strong><small>Lowest cost</small></button>
+            </div>
             <div class="range-row">
               <label for="threshold">Detail</label>
               <output id="threshold-value" for="threshold">0.10</output>
             </div>
-            <input id="threshold" type="range" min="0.10" max="0.60" step="0.01" value="0.10" />
+            <input id="threshold" type="range" min="0.10" max="0.60" step="0.01" value="0.10" aria-describedby="threshold-help" />
             <div class="range-labels"><span>Tighter fit · more budget</span><span>Lower complexity</span></div>
+            <p id="threshold-help" class="setting-help">Controls concavity tolerance. Lower values preserve more shape detail.</p>
             <p id="threshold-status" class="setting-status" role="status">Choose geometry to apply this setting.</p>
           </section>
 
@@ -191,12 +197,37 @@
               <div><dt>Hulls</dt><dd id="hull-count">—</dd><small>convex parts</small></div>
               <div><dt>Ratio</dt><dd id="triangle-ratio">—</dd><small>collider / source</small></div>
             </dl>
-            <p class="measurement-note">Complexity is measured. Geometric fit and coverage are not evaluated yet.</p>
+            <dl id="quality-metrics" class="metrics quality-metrics" hidden>
+              <div><dt>Coverage</dt><dd id="surface-coverage">—</dd><small>source surface</small></div>
+              <div><dt>Precision</dt><dd id="volume-precision">—</dd><small>collider volume</small></div>
+              <div><dt>False fill</dt><dd id="false-fill">—</dd><small>source-free volume</small></div>
+              <div><dt>Deep fill</dt><dd id="deep-false-fill">—</dd><small>away from surface</small></div>
+            </dl>
+            <p id="measurement-note" class="measurement-note">Complexity is measured. Run local sampling to check geometric fit and coverage.</p>
+            <button id="quality-button" class="diagnostics-button" type="button">Run quality diagnostics</button>
             <div class="actions">
               <button id="download-button" class="primary-button" type="button">Download .phys <span>↓</span></button>
               <button id="report-button" class="secondary-button" type="button" aria-expanded="false">View report</button>
             </div>
-            <pre id="report-output" hidden></pre>
+            <div id="report-panel" class="report-panel" hidden>
+              <dl class="report-overview">
+                <div><dt>Compilation</dt><dd id="report-status">—</dd></div>
+                <div><dt>Profile</dt><dd id="report-profile">—</dd></div>
+                <div><dt>Verdict</dt><dd id="report-verdict">—</dd></div>
+              </dl>
+              <section class="report-group" aria-labelledby="report-warnings-heading">
+                <h3 id="report-warnings-heading">Warnings</h3>
+                <ul id="report-warnings"></ul>
+              </section>
+              <section class="report-group" aria-labelledby="report-checks-heading">
+                <h3 id="report-checks-heading">Profile checks</h3>
+                <ul id="report-checks"></ul>
+              </section>
+              <details>
+                <summary>Raw JSON</summary>
+                <pre id="report-output"></pre>
+              </details>
+            </div>
           </section>
 
           <p class="local-note"><span aria-hidden="true">◉</span> Your file stays in this browser tab.</p>

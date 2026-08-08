@@ -29,7 +29,7 @@ if errorlevel 1 goto :failed
 
 if not exist "node_modules\vite\bin\vite.js" (
   echo Installing demo dependencies...
-  call npm install
+  call npm ci
   if errorlevel 1 goto :failed
 )
 
@@ -44,7 +44,7 @@ exit /b %errorlevel%
 pushd "%~1"
 if not exist "node_modules\.bin\tsc.cmd" (
   echo Installing dependencies for %~1...
-  call npm install
+  call npm ci
   if errorlevel 1 (
     popd
     exit /b 1

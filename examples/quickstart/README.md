@@ -20,10 +20,10 @@ server, and opens the demo automatically.
 
 It includes verified offline fixtures for dense smooth, hollow multipart, and
 organic geometry. The result view compares measured source/collider complexity
-while explicitly leaving geometric fit and coverage unevaluated during normal
-interactive use. The opt-in sample benchmark runs deterministic artifact-fit
-sampling without changing that report verdict. Fixture provenance and licenses
-are recorded in [`public/assets/README.md`](public/assets/README.md).
+and offers on-demand, deterministic artifact-fit sampling for surface coverage,
+volume precision, and false fill. Sampling does not change the report verdict;
+profile acceptance checks remain explicitly unevaluated. Fixture provenance and
+licenses are recorded in [`public/assets/README.md`](public/assets/README.md).
 
 ## Run locally
 
@@ -45,7 +45,7 @@ build when necessary. Then:
 
 ```bash
 cd examples/quickstart
-npm install
+npm ci
 npm run dev
 # http://127.0.0.1:4179
 ```
@@ -86,6 +86,8 @@ with metric semantics documented in [`benchmarks/README.md`](benchmarks/README.m
 - Interactive planning: two workers plan against a deterministic hull budget.
   See [Interactive compiler budget](../../docs/usage.md#interactive-compiler-budget)
   for the ceiling, MCTS search settings, and the shell/importance/vertex guards.
+- Fit controls: named Precise, Game prop, and Coarse presets set the same
+  concavity-tolerance slider exposed for manual tuning.
 - Recompilation: prepared `File` geometry, the source preview, warm WASM workers,
   and completed compatible components are reused when the detail slider restarts
   a build. Obsolete work is cancelled as soon as the slider moves; the previous
@@ -95,9 +97,10 @@ with metric semantics documented in [`benchmarks/README.md`](benchmarks/README.m
 - Progress: connected-part completion and an estimated remaining time are shown
   during decomposition.
 - Verdict: `not_evaluated` until artifact-level outcome checks are implemented.
-- Quality benchmark: `?qualityBenchmark=1` enables deterministic, sampled
-  source-surface coverage and collider false-fill measurements. It is reserved
-  for regression testing so normal slider interaction does not pay that cost.
+- Quality diagnostics: the result panel can run deterministic, sampled
+  source-surface coverage, collider-volume precision, and false-fill
+  measurements on demand. `?qualityBenchmark=1` enables the same work
+  automatically for regression testing.
 
 The package dependencies intentionally use local `file:` references. Switch
 them to released versions only when the npm artifacts containing this API are
