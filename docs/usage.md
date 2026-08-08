@@ -451,7 +451,7 @@ with convex-hull decimation enabled.
 
 Reusing the same `ChitinCompiler` and immutable `File`/`Blob` also reuses parsed
 geometry and compatible completed components across detail changes. Set
-`componentPolicy.enabled` to `false` for legacy full-detail-per-part behavior,
+`componentPolicy.enabled` to `false` for uniform full-detail-per-part behavior,
 or tune `maxHulls`, `smallComponentMaxDiagonalRatio`,
 `smallComponentMaxVolumeRatio`, `smallComponentThreshold`, and
 `detailedComponentMinThreshold`, `importantComponentMaxThreshold`,
@@ -462,6 +462,8 @@ scene importance and normalized source complexity so a detailed articulated
 shell is not starved by a simpler sibling with a larger AABB. The default
 minimum is `0.10`; set
 it to `0` when an application deliberately accepts unbounded fine-detail waits.
+`decompose.maxConvexHull` remains a per-component low-level ceiling;
+`componentPolicy.maxHulls` is the only total scene budget.
 The Collider Lab keeps the last completed collider visible while a replacement
 detail setting compiles, then reveals the replacement only after it is ready.
 

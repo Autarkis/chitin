@@ -96,16 +96,7 @@ const { phys, hulls, source, report } = await compiler.compileGlb(file, {
 });
 ```
 
-Pass `quality: { surfaceSamples: 2048, volumeSamples: 8192 }` when an
-acceptance or benchmark lane needs deterministic sampled surface-coverage and
-false-fill metrics. This work is opt-in and does not promote the interactive
-report verdict beyond `not_evaluated`.
-
-`@autarkis/chitin-lite` uses a deterministic scene-aware budget for interactive
-detail: important parts get bounded CoACD search, tiny parts get one convex
-approximation, and hollow shells and scene-dominant bodies keep guarded
-minimum thresholds so a coarse setting cannot collapse them. Exact thresholds
-and config knobs are in
+Artifact-fit sampling and the interactive component policy are documented in
 [the interactive compiler budget](docs/usage.md#interactive-compiler-budget).
 
 Use `chitin check <file>` to see which path a given input needs:

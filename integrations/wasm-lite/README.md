@@ -70,24 +70,24 @@ self-contained GLB 2.0 file. It applies the full node hierarchy, preserves mesh
 instancing, and merges indexed/unindexed primitives. Before decomposition it
 welds exactly coincident render-seam vertices, removes exact duplicate and
 zero-area triangles, and processes disconnected triangle components
-independently. The interactive compiler applies a deterministic scene-aware budget: parts
-are ranked by scene-relative size, tiny parts collapse to one convex
-approximation, and hollow shells and scene-dominant bodies retain guarded
-minimum thresholds so a coarse detail setting cannot over-simplify them.
+independently. The interactive compiler applies a deterministic scene-aware
+budget: parts are ranked by scene-relative size, tiny parts collapse to one
+convex approximation, and hollow shells and scene-dominant bodies retain
+guarded minimum thresholds so a coarse detail setting cannot over-simplify them.
 Per-hull vertex ceilings adapt separately from scene-relative size and
 roundness. Full thresholds, MCTS defaults, and `componentPolicy` knobs are
 documented in
 [`docs/usage.md`](../../docs/usage.md#interactive-compiler-budget); this
 README covers the package API surface only.
 
-`componentPolicy.maxHulls` (or the compatible
-`decompose.maxConvexHull`) is enforced as one total budget and must satisfy the
+`componentPolicy.maxHulls` is enforced as one total budget and must satisfy the
 one-hull-per-component minimum plus any configured hollow-shell reservations.
-Use `componentPolicy: { enabled: false }`
-to recover the legacy full-detail-per-part behavior, or `maxHulls: -1` to opt
-out of the total cap. Skins, morph targets,
-non-triangle primitives, external buffers, and Draco/meshopt compression are
-rejected with `UNSUPPORTED_GLTF` instead of being silently miscompiled. Only
+`decompose.maxConvexHull` retains its low-level meaning as an additional
+per-component ceiling. Use `componentPolicy: { enabled: false }` for uniform
+full-detail-per-part behavior, or `maxHulls: -1` to opt out of the total cap.
+Skins, morph targets, non-triangle primitives, external buffers, and
+Draco/meshopt compression are rejected with `UNSUPPORTED_GLTF` instead of being
+silently miscompiled. Only
 the `interactive` profile is currently accepted; its report verdict remains
 `not_evaluated` until artifact-level outcome checks ship.
 
@@ -102,13 +102,10 @@ console.log(result.report.metrics.false_fill_fraction);
 console.log(result.report.metrics.deep_false_fill_fraction);
 ```
 
-The deterministic sampler measures source-surface representation per connected
-component and estimates collider volume that occupies source-free space.
-`deep_false_fill_fraction` excludes shallow shell thickness and measures
-free-space penetration deeper than 2% of each component's diagonal. Normal
-interactive compiles leave it disabled to avoid adding verification latency.
-Measured metrics do not imply a profile pass: the report verdict remains
-`not_evaluated` until a caller or profile applies explicit acceptance policy.
+The sampler measures source-surface representation and collider volume in
+source-free space. It is disabled during normal interactive compilation.
+Metric definitions and verdict semantics live in the
+[compilation report contract](../../docs/compilation-report.md).
 
 A reusable compiler caches the prepared geometry for the same immutable
 `Blob`/`File`. It also caches completed component results. Slider changes can
@@ -205,8 +202,8 @@ const report = createCompilationReport({
 console.log(report.verdict.status); // "not_evaluated"
 ```
 
-The serialized contract uses snake_case so browser and Python reports have the
-same JSON shape. See [`docs/compilation-report.md`](../../docs/compilation-report.md).
+See the [compilation report contract](../../docs/compilation-report.md) for
+serialization and compatibility rules.
 
 ### Full pipeline: GLB to a Rapier world
 
@@ -294,7 +291,7 @@ Failures throw (or reject with) a `ChitinError` carrying a `code`:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `threshold` | 0.05 low-level; 0.10 effective minimum high-level | CoACD concavity threshold. Lower = more hulls, tighter fit. Set `detailedComponentMinThreshold: 0` to remove the interactive minimum. |
-| `maxConvexHull` | -1 low-level; detail-scaled ceiling of 128 high-level | Low-level per-call maximum. In `compileGlb`, a compatible alias for an explicit total component-policy budget, which is not detail-scaled. |
+| `maxConvexHull` | -1 low-level | Per-call maximum. In `compileGlb`, this is an additional ceiling for each connected component; use `componentPolicy.maxHulls` for the total budget. |
 | `prepResolution` | 50 | Preprocessing resolution. |
 | `sampleResolution` | 2000 | Surface sampling resolution. |
 | `mctsNodes` | 20 low-level; 8 high-level | MCTS tree width. |
