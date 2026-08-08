@@ -1,10 +1,5 @@
 name: CI
 
-# Everything a pull request must pass lives in this one workflow, because
-# `needs:` cannot reach across workflow files: a gate job can only aggregate
-# its own workflow's jobs. Splitting the checks up would mean branch protection
-# had to name each one, and a path-filtered check named directly never reports
-# on an unrelated PR -- which blocks the merge forever rather than allowing it.
 on:
   pull_request:
   push:
@@ -12,20 +7,15 @@ on:
       - main
   workflow_dispatch:
 
-# Least privilege: nothing here writes to the repo. Forks get a read-only
-# token anyway, but this pins it for pushes to main too.
 permissions:
   contents: read
 
-# A new push to a PR makes the in-flight run obsolete; don't pay for it.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Scopes the expensive WASM build to PRs that can actually affect it. This is
-  # a job-level skip rather than a workflow-level `paths:` filter so the gate
-  # below still reports on every PR.
+  # Keep the gate reportable on every PR while skipping unrelated WASM builds.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -58,12 +48,10 @@ jobs:
     # The open3d/OpenMP hangs this suite has hit block for the full 6h default.
     timeout-minutes: 30
     env:
-      # Single-thread OpenMP/BLAS: the suspected hang is an open3d/OpenMP
-      # deadlock on the 2-core runner. Harmless if that isn't the cause.
+      # Avoid open3d/OpenMP deadlocks on two-core runners.
       OMP_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
-      # Dump native + Python stacks on a fatal signal so a hang is diagnosable.
       PYTHONFAULTHANDLER: "1"
     steps:
       - uses: actions/checkout@v7
@@ -118,8 +106,6 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Builds CoACD to WASM and runs the end-to-end chain through it. No publish
-  # authority; releases go through release-wasm.yml.
   wasm:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -201,8 +187,6 @@ jobs:
             integrations/wasm/dist/coacd.wasm
           if-no-files-found: error
 
-  # What the diff brings in. Only meaningful on a PR (it compares against the
-  # base), so it skips elsewhere and the gate treats that skip as a pass.
   dependency-review:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -213,8 +197,7 @@ jobs:
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
-          # This repo ships MIT and vendors licence notices for CoACD (MIT) and
-          # CDT (MPL-2.0); a copyleft dependency would break that promise.
+          # Preserve the repository's published license boundary.
           deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0
 
   conventions:
@@ -249,8 +232,7 @@ jobs:
             exit 1
           fi
 
-  # One stable check name for branch protection to require. Jobs can be added
-  # or renamed above without touching the repo's protection rules.
+  # Stable branch-protection target for the jobs above.
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -261,9 +243,6 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          # A job that skipped on purpose -- the WASM build on a PR that can't
-          # affect it, or a PR-only check on a push -- is not a failure. Every
-          # other non-success is.
           echo "$RESULTS"
           echo "$RESULTS" | python3 -c '
           import json, sys
