@@ -211,6 +211,9 @@ def _process_single_cell(
     cell_plan = BuildPlan(input_kind="splat", collider_kind="static")
     if flat:
         box_hull = make_planar_box(cell_verts, flat_normal)
+        cell_plan.detected["planar_substitute_hulls"] = (
+            cell_plan.detected.get("planar_substitute_hulls", 0) + 1
+        )
         cell_result = ExtractionResult(
             hulls=[box_hull],
             source_vertex_count=len(cell_positions),

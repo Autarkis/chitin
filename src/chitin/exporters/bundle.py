@@ -94,6 +94,8 @@ def _write_manifest(
     # Written last so it can hash every other file the bundle emitted.
     from chitin.acceptance import report_metrics
     from chitin.manifest import MANIFEST_FILENAME, quality_warnings, write_manifest
+    from chitin import provenance
+    from chitin.report import build_compilation_report, select_primary_artifact
 
     output_files = sorted(
         {p.name for p in written if p.is_file() and p.name != MANIFEST_FILENAME}
@@ -103,15 +105,41 @@ def _write_manifest(
         if result.resolved is not None and hasattr(result.resolved, "to_dict")
         else None
     )
+    warning_messages = quality_warnings(result)
+    primary = select_primary_artifact(p for p in written if p.name != MANIFEST_FILENAME)
+    artifact_bytes = primary.stat().st_size if primary and primary.is_file() else None
+    artifact_sha256 = (
+        provenance.hash_file(primary) if primary and primary.is_file() else None
+    )
+    artifacts: dict[str, str] = {}
+    for path in written:
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lstrip(".")
+        key = {"phys": "phys", "usda": "usd"}.get(suffix, path.stem.replace("-", "_"))
+        artifacts[key] = path.name
+    config_dict = dataclasses.asdict(config) if config is not None else None
+    report = build_compilation_report(
+        result,
+        profile=verdict.profile if verdict is not None else None,
+        verdict=verdict,
+        warnings=warning_messages,
+        requested_config=config_dict,
+        effective_config=config_dict,
+        artifacts=artifacts,
+        artifact_bytes=artifact_bytes,
+        artifact_sha256=artifact_sha256,
+    ).to_dict()
     write_manifest(
         output_dir,
         output_files=output_files,
         input_path=input_path,
-        config_dict=dataclasses.asdict(config) if config is not None else None,
+        config_dict=config_dict,
         resolved_dict=resolved_dict,
         metrics=report_metrics(result),
-        warnings=quality_warnings(result),
+        warnings=warning_messages,
         verdict=verdict.to_dict() if verdict is not None else None,
+        compilation_report=report,
     )
 
 

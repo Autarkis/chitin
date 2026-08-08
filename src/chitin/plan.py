@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 # at all. These counters have to be carried back either way: a strict profile
 # reads a missing counter as zero, so an unmerged CoACD timeout is not a
 # rejected build, it is an accepted one with a bounding box in it.
-CHILD_COUNTERS = ("coacd_timeouts", "fallback_hulls")
+CHILD_COUNTERS = ("coacd_timeouts", "fallback_hulls", "planar_substitute_hulls")
 
 # Gate-relevant facts that are true-or-false rather than countable, carried back
 # the same way. They merge by AND: one piece decomposed without CoACD pinned to

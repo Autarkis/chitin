@@ -87,6 +87,10 @@ def extract_cell_hulls(
     )
     if flat:
         hull = make_planar_box(verts, flat_normal)
+        if _plan is not None:
+            _plan.detected["planar_substitute_hulls"] = (
+                _plan.detected.get("planar_substitute_hulls", 0) + 1
+            )
         if aabb_overlaps_bounds(hull, bounds_min, bounds_max):
             return [hull]
         return []

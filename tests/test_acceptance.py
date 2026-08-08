@@ -1,5 +1,10 @@
 import pytest
 
+from chitin._metric_names import (
+    HULL_COUNT,
+    SOURCE_SURFACE_COVERAGE,
+    WORST_COMPONENT_SURFACE_COVERAGE,
+)
 from chitin.acceptance import (
     PROFILES,
     AcceptancePolicy,
@@ -11,9 +16,9 @@ from chitin.config import Config
 
 # A clean, fully-covered single-unit build (no per-cell split, no fallback).
 CLEAN = {
-    "hull_count": 6,
-    "covered_fraction": 0.99,
-    "worst_cell_fraction": None,
+    HULL_COUNT: 6,
+    SOURCE_SURFACE_COVERAGE: 0.99,
+    WORST_COMPONENT_SURFACE_COVERAGE: None,
     "fallback_hulls": 0,
     "coacd_deterministic": True,
 }
@@ -30,7 +35,7 @@ def test_interactive_passes_anything():
     # Permissive: no checks, so even an empty/degenerate report is accepted.
     policy = get_profile("interactive").policy
     assert evaluate(policy, {}).passed
-    assert evaluate(policy, _with(hull_count=0, fallback_hulls=3)).passed
+    assert evaluate(policy, _with(**{HULL_COUNT: 0}, fallback_hulls=3)).passed
 
 
 def test_robotics_rejects_fallback_hulls():
@@ -72,17 +77,17 @@ def test_robotics_passes_clean_build():
 
 
 def test_robotics_requires_hulls():
-    verdict = evaluate(get_profile("robotics").policy, _with(hull_count=0))
+    verdict = evaluate(get_profile("robotics").policy, _with(**{HULL_COUNT: 0}))
     assert not verdict.passed
     assert any("no hulls" in r for r in verdict.reasons)
 
 
 def test_walkable_coverage_gate():
     policy = get_profile("walkable").policy
-    assert evaluate(policy, _with(covered_fraction=0.90)).passed
-    low = evaluate(policy, _with(covered_fraction=0.50))
+    assert evaluate(policy, _with(**{SOURCE_SURFACE_COVERAGE: 0.90})).passed
+    low = evaluate(policy, _with(**{SOURCE_SURFACE_COVERAGE: 0.50}))
     assert not low.passed
-    assert any("covered_fraction" in r for r in low.reasons)
+    assert any(SOURCE_SURFACE_COVERAGE in r for r in low.reasons)
 
 
 def test_walkable_allows_fallback():
@@ -92,15 +97,15 @@ def test_walkable_allows_fallback():
 
 def test_worst_cell_gate_absent_passes_but_low_fails():
     policy = AcceptancePolicy("t", mode="strict", min_worst_cell_fraction=0.7)
-    assert evaluate(policy, _with(worst_cell_fraction=None)).passed
-    assert evaluate(policy, _with(worst_cell_fraction=0.9)).passed
-    assert not evaluate(policy, _with(worst_cell_fraction=0.3)).passed
+    assert evaluate(policy, _with(**{WORST_COMPONENT_SURFACE_COVERAGE: None})).passed
+    assert evaluate(policy, _with(**{WORST_COMPONENT_SURFACE_COVERAGE: 0.9})).passed
+    assert not evaluate(policy, _with(**{WORST_COMPONENT_SURFACE_COVERAGE: 0.3})).passed
 
 
 def test_missing_coverage_metric_fails_gate():
     # A coverage threshold with no measured coverage is a failure, not a pass.
     policy = AcceptancePolicy("t", mode="strict", min_covered_fraction=0.9)
-    assert not evaluate(policy, _with(covered_fraction=None)).passed
+    assert not evaluate(policy, _with(**{SOURCE_SURFACE_COVERAGE: None})).passed
 
 
 def test_verdict_to_dict_shape():

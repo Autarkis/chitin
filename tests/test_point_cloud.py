@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from chitin import Config, extract_from_arrays
+from chitin._metric_names import SOURCE_SURFACE_COVERAGE, WORST_DECILE_SURFACE_COVERAGE
 
 try:
     import open3d  # noqa: F401
@@ -289,7 +290,7 @@ def test_sphere_coverage_floor(sphere_points):
     r = extract_from_arrays(
         sphere_points, normals=sphere_points, config=Config(concavity=0.5)
     )
-    assert r.build_plan.detected["coverage"]["covered_fraction"] >= 0.8
+    assert r.build_plan.detected["coverage"][SOURCE_SURFACE_COVERAGE] >= 0.8
 
 
 def test_cull_removes_contained_hull():
@@ -572,7 +573,7 @@ def test_mixed_sign_covariance_normals_still_extracts():
     )
     assert len(r.hulls) >= 1
     assert "orient_normals" in r.build_plan.pipeline
-    assert r.build_plan.detected["coverage"]["covered_fraction"] > 0.7
+    assert r.build_plan.detected["coverage"][SOURCE_SURFACE_COVERAGE] > 0.7
 
 
 def test_covariance_normals_match_sphere_surface():
@@ -678,10 +679,12 @@ def test_spatial_plan_records_stage_deltas_and_coverage():
     assert "coverage" in r.build_plan.pipeline
     coverage = detected["coverage"]
     assert coverage["input_count"] == len(pts)
-    assert 0.0 <= coverage["covered_fraction"] <= 1.0
+    assert 0.0 <= coverage[SOURCE_SURFACE_COVERAGE] <= 1.0
     assert coverage["cell_count"] > 1
     assert (
-        0.0 <= coverage["worst_decile_fraction"] <= coverage["covered_fraction"] + 1e-9
+        0.0
+        <= coverage[WORST_DECILE_SURFACE_COVERAGE]
+        <= coverage[SOURCE_SURFACE_COVERAGE] + 1e-9
     )
 
 
@@ -692,7 +695,7 @@ def test_non_spatial_plan_records_coverage(sphere_points):
     )
     coverage = r.build_plan.detected["coverage"]
     assert coverage["input_count"] == len(sphere_points)
-    assert 0.0 <= coverage["covered_fraction"] <= 1.0
+    assert 0.0 <= coverage[SOURCE_SURFACE_COVERAGE] <= 1.0
     assert "coverage" in r.build_plan.pipeline
 
 

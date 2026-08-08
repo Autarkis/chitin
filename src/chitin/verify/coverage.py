@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
+from chitin._metric_names import (
+    SOURCE_SURFACE_COVERAGE,
+    WORST_COMPONENT_SURFACE_COVERAGE,
+    WORST_DECILE_SURFACE_COVERAGE,
+)
 from chitin.verify.convex import outward_face_planes, point_plane_margins
 
 MAX_COVERAGE_SAMPLES = 200_000
@@ -30,7 +35,7 @@ def coverage_report(
     """
     n_input = len(points)
     if n_input == 0:
-        return {"input_count": 0, "sample_count": 0, "covered_fraction": 0.0}
+        return {"input_count": 0, "sample_count": 0, SOURCE_SURFACE_COVERAGE: 0.0}
 
     if n_input > max_samples:
         rng = np.random.default_rng(seed)
@@ -66,7 +71,7 @@ def coverage_report(
         "input_count": n_input,
         "sample_count": int(len(pts)),
         "tolerance": round(tol, 6),
-        "covered_fraction": round(float(covered.mean()), 4),
+        SOURCE_SURFACE_COVERAGE: round(float(covered.mean()), 4),
         "uncovered_count": int((~covered).sum()),
     }
 
@@ -89,12 +94,12 @@ def coverage_report(
             fractions.sort(key=lambda f: f[1])
             decile = max(1, len(fractions) // 10)
             report["cell_count"] = len(fractions)
-            report["worst_cell_fraction"] = round(fractions[0][1], 4)
-            report["worst_decile_fraction"] = round(
+            report[WORST_COMPONENT_SURFACE_COVERAGE] = round(fractions[0][1], 4)
+            report[WORST_DECILE_SURFACE_COVERAGE] = round(
                 float(np.mean([f[1] for f in fractions[:decile]])), 4
             )
             report["worst_cells"] = [
-                {"cell": cid, "covered_fraction": round(frac, 4), "samples": cnt}
+                {"cell": cid, SOURCE_SURFACE_COVERAGE: round(frac, 4), "samples": cnt}
                 for cid, frac, cnt in fractions[:10]
             ]
 
