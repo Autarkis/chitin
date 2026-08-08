@@ -165,8 +165,9 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--proximity-filter",
         type=float,
-        default=0.0,
-        help="Remove mesh vertices farther than N * median_nn_distance from input points (0 = disabled)",
+        default=None,
+        help="Remove mesh vertices farther than N * median_nn_distance from input points "
+        "(default: 5.0 for point-cloud/splat reconstructions, 0 disables)",
     )
     p.add_argument(
         "--thin-shell",
@@ -519,8 +520,8 @@ def _print_analysis(analysis) -> None:
         print(
             "hint:       point distribution looks like an environment scan "
             f"(inner density {a.inner_density_ratio:.3f}, {a.wall_faces} wall "
-            f"faces, floor coverage {a.floor_coverage:.2f}) — consider "
-            "--thin-shell --proximity-filter 5.0"
+            f"faces, floor coverage {a.floor_coverage:.2f}); proximity "
+            "filtering already defaults on, --thin-shell is optional to try"
         )
     elif a.is_environment_ambiguous:
         print(

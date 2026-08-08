@@ -28,15 +28,22 @@ def test_solid_block_not_environment():
 
 
 def test_small_cloud_never_environment():
-    # Fewer than 1000 points returns the dummy ratio 1.0.
+    # Fewer than 1000 points fails the point-count gate, but the ratio is real.
     analysis = analyze_arrays(_hollow_shell(n=500))
     assert not analysis.is_environment_likely
-    assert analysis.inner_density_ratio == 1.0
+    assert analysis.inner_density_ratio < 0.05
 
 
 def test_small_volume_never_environment():
-    # Hollow but tiny: bbox volume below the 10.0 floor is skipped.
+    # Hollow but tiny: bbox volume below the 10.0 floor fails the gate.
     analysis = analyze_arrays(_hollow_shell(radius=0.5))
+    assert not analysis.is_environment_likely
+
+
+def test_small_volume_reports_real_ratio():
+    # Bbox volume below the 10.0 floor still gets a measured, not sentinel, ratio.
+    analysis = analyze_arrays(_hollow_shell(radius=0.5))
+    assert analysis.inner_density_ratio < 0.05
     assert not analysis.is_environment_likely
 
 

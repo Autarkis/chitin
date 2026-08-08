@@ -94,9 +94,10 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
         decisions["poisson_depth"] = f"user: {config.poisson_depth}"
 
     thin_shell = config.thin_shell
-    proximity_filter = config.surface_proximity_filter
-    detected = config.auto_environment and analysis.is_environment_likely
-    if config.force_environment or detected:
+    is_environment = config.force_environment or (
+        config.auto_environment and analysis.is_environment_likely
+    )
+    if is_environment:
         if config.force_environment:
             decisions["is_environment"] = "forced: --environment"
         else:
@@ -108,11 +109,18 @@ def resolve_config(config: Config, analysis: InputAnalysis) -> ResolvedConfig:
         if not config.thin_shell:
             thin_shell = True
             decisions["thin_shell"] = "auto: environment detected"
-        if config.surface_proximity_filter == 0.0:
-            proximity_filter = 5.0
-            decisions["surface_proximity_filter"] = (
-                "auto: environment detected, set to 5.0"
-            )
+
+    is_point_cloud_reconstruction = analysis.face_count is None
+    if config.surface_proximity_filter is not None:
+        proximity_filter = config.surface_proximity_filter
+    elif is_environment:
+        proximity_filter = 5.0
+        decisions["surface_proximity_filter"] = "auto: environment detected, set to 5.0"
+    elif is_point_cloud_reconstruction:
+        proximity_filter = 5.0
+        decisions["surface_proximity_filter"] = "auto: splat reconstruction default"
+    else:
+        proximity_filter = 0.0
 
     opacity_is_logit = config.opacity_is_logit
     if analysis.opacity_is_logit and not config.opacity_is_logit:
