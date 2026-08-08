@@ -13,7 +13,7 @@ export interface WorkerLike {
   postMessage(message: WorkerRequest, transfer?: Transferable[]): void;
   terminate(): void;
   onmessage: ((ev: MessageEvent<WorkerResponse>) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
+  onerror: ((ev: ErrorEvent) => void) | null;
 }
 
 export interface DecomposeWorkerOptions {
@@ -102,7 +102,19 @@ export class DecomposeWorker {
     // error
     p.cleanup();
     this.pending = null;
-    p.reject(new ChitinError(msg.code, msg.message));
+    // Emscripten aborts leave the module instance unusable. Discard the worker
+    // so a retry gets a newly initialized WASM runtime instead of failing from
+    // the poisoned instance immediately.
+    if (msg.code === "WORKER_ERROR" || msg.code === "OUT_OF_MEMORY") {
+      this.worker?.terminate();
+      this.worker = null;
+    }
+    p.reject(new ChitinError(msg.code, msg.message, {
+      stage: msg.stage,
+      suggestion: msg.suggestion,
+      retryable: msg.retryable,
+      context: msg.context,
+    }));
   }
 
   private onWorkerError(): void {
