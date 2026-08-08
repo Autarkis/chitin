@@ -6,9 +6,12 @@
   "type": "module",
   "scripts": {
     "build": "esbuild harness/scene.ts --bundle --outfile=harness/dist/scene.js --format=esm --platform=browser",
+    "build:release-candidate": "esbuild harness/release-candidate.ts --bundle --outfile=harness/dist/release-candidate.js --format=esm --platform=browser",
+    "prepare:release-candidate": "node scripts/prepare-release-candidate.mjs",
     "pretest": "npm run build",
-    "test": "npx playwright test",
-    "test:headed": "npx playwright test --headed"
+    "test": "npx playwright test tests/walktest.spec.ts",
+    "test:release-candidate": "npm run prepare:release-candidate && npm run build:release-candidate && npx playwright test tests/release-candidate.spec.ts",
+    "test:headed": "npx playwright test tests/walktest.spec.ts --headed"
   },
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
