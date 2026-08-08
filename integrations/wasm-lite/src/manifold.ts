@@ -51,6 +51,7 @@ export interface ManifoldAnalysis {
   boundary_edge_count: number;
   non_manifold_edge_count: number;
   degenerate_triangle_count: number;
+  inconsistent_winding_edge_count: number;
   first_problem: string | null;
   manifold: boolean;
 }
@@ -62,6 +63,12 @@ export function analyzeManifold(
 ): ManifoldAnalysis {
   const vertexCount = vertices.length / 3;
   const edgeUses = new Map<number, number>();
+  // Signed accumulator per undirected edge key: +1 for each half-edge
+  // traversed a < b, -1 for each traversed a > b. A consistently wound
+  // closed manifold visits every edge once in each direction, so the two
+  // half-edges cancel to 0. If both triangles traverse it the same way
+  // (both +1 or both -1), the sum is +/-2 and the winding is inconsistent.
+  const edgeDirections = new Map<number, number>();
   const diag2 = boundingDiagonalSquared(vertices);
   const minDoubleAreaSquared = DEGENERATE_AREA_EPS * diag2 * diag2;
   let degenerateTriangleCount = 0;
@@ -91,18 +98,26 @@ export function analyzeManifold(
     ]) {
       const key = a < b ? a * vertexCount + b : b * vertexCount + a;
       edgeUses.set(key, (edgeUses.get(key) ?? 0) + 1);
+      edgeDirections.set(key, (edgeDirections.get(key) ?? 0) + (a < b ? 1 : -1));
     }
   }
 
   let boundaryEdgeCount = 0;
   let nonManifoldEdgeCount = 0;
+  let inconsistentWindingEdgeCount = 0;
   for (const [key, uses] of edgeUses) {
-    if (uses === 2) continue;
     const a = Math.floor(key / vertexCount);
     const b = key % vertexCount;
     if (uses === 1) {
       boundaryEdgeCount++;
       firstProblem ??= `boundary (open) edge between vertices ${a} and ${b}`;
+    } else if (uses === 2) {
+      if (Math.abs(edgeDirections.get(key) ?? 0) === 2) {
+        inconsistentWindingEdgeCount++;
+        firstProblem ??=
+          `inconsistent winding at edge between vertices ${a} and ${b}: ` +
+          `both triangles traverse it in the same direction`;
+      }
     } else {
       nonManifoldEdgeCount++;
       firstProblem ??= `non-manifold edge (${uses} triangles) between vertices ${a} and ${b}`;
@@ -113,17 +128,24 @@ export function analyzeManifold(
     boundary_edge_count: boundaryEdgeCount,
     non_manifold_edge_count: nonManifoldEdgeCount,
     degenerate_triangle_count: degenerateTriangleCount,
+    inconsistent_winding_edge_count: inconsistentWindingEdgeCount,
     first_problem: firstProblem,
     manifold:
       boundaryEdgeCount === 0 &&
       nonManifoldEdgeCount === 0 &&
-      degenerateTriangleCount === 0,
+      degenerateTriangleCount === 0 &&
+      inconsistentWindingEdgeCount === 0,
   };
 }
 
 /**
- * Verify that the triangle mesh is edge-manifold and closed: every undirected
- * edge is shared by exactly two triangles, and no triangle is degenerate.
+ * Verify that the triangle mesh is edge-manifold, closed, and consistently
+ * wound: every undirected edge is shared by exactly two triangles, one
+ * traversing it in each direction, and no triangle is degenerate. A mesh
+ * where each edge is used exactly twice but both uses run the same direction
+ * (e.g. a mirrored modifier or boolean export that left some faces flipped)
+ * passes the undirected edge-count check yet is not consistently wound;
+ * `inconsistent_winding_edge_count` catches that case.
  * Throws {@link ChitinError} with code `NON_MANIFOLD` and aggregate counts.
  *
  * Assumes the shape/index-range checks from `validateMeshInput` already hold;
@@ -136,6 +158,7 @@ export function checkManifold(vertices: Float64Array, faces: Int32Array): void {
     `${analysis.boundary_edge_count} boundary edge${analysis.boundary_edge_count === 1 ? "" : "s"}`,
     `${analysis.non_manifold_edge_count} non-manifold edge${analysis.non_manifold_edge_count === 1 ? "" : "s"}`,
     `${analysis.degenerate_triangle_count} degenerate triangle${analysis.degenerate_triangle_count === 1 ? "" : "s"}`,
+    `${analysis.inconsistent_winding_edge_count} inconsistent-winding edge${analysis.inconsistent_winding_edge_count === 1 ? "" : "s"}`,
   ].join(", ");
   throw new ChitinError(
     "NON_MANIFOLD",
@@ -145,6 +168,7 @@ export function checkManifold(vertices: Float64Array, faces: Int32Array): void {
         boundary_edges: analysis.boundary_edge_count,
         non_manifold_edges: analysis.non_manifold_edge_count,
         degenerate_triangles: analysis.degenerate_triangle_count,
+        inconsistent_winding_edges: analysis.inconsistent_winding_edge_count,
       },
     },
   );

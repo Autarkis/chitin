@@ -1,37 +1,12 @@
+import { packGlb } from "../../../scripts/glb-pack.mjs";
+
+export { packGlb };
+
 export interface FixtureOptions {
   nodeScale?: [number, number, number];
   primitiveMode?: number;
   externalBuffer?: boolean;
   morphTargets?: boolean;
-}
-
-function padded(length: number): number {
-  return (length + 3) & ~3;
-}
-
-export function packGlb(doc: object, binary: ArrayBuffer, declaredBinaryLength = binary.byteLength): ArrayBuffer {
-  const jsonText = JSON.stringify(doc);
-  const jsonBytes = new TextEncoder().encode(jsonText);
-  const jsonLength = padded(jsonBytes.length);
-  const binLength = padded(declaredBinaryLength);
-  const total = 12 + 8 + jsonLength + 8 + binLength;
-  const output = new ArrayBuffer(total);
-  const view = new DataView(output);
-  view.setUint32(0, 0x46546c67, true);
-  view.setUint32(4, 2, true);
-  view.setUint32(8, total, true);
-  view.setUint32(12, jsonLength, true);
-  view.setUint32(16, 0x4e4f534a, true);
-  const jsonOutput = new Uint8Array(output, 20, jsonLength);
-  jsonOutput.fill(0x20);
-  jsonOutput.set(jsonBytes);
-  const binHeader = 20 + jsonLength;
-  view.setUint32(binHeader, binLength, true);
-  view.setUint32(binHeader + 4, 0x004e4942, true);
-  new Uint8Array(output, binHeader + 8, binLength).set(
-    new Uint8Array(binary, 0, declaredBinaryLength),
-  );
-  return output;
 }
 
 export function makeGlb(options: FixtureOptions = {}): ArrayBuffer {

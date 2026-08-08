@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+
+import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -27,25 +30,29 @@ const RUNTIME = {
   dependencies: { coacd: "1.0.11", emscripten: "5.0.7" },
 };
 
+function reportFixture() {
+  return createCompilationReport({
+    profile: "walkable",
+    input: {
+      kind: "glb",
+      source_vertices: 4,
+      processed_vertices: 4,
+      mesh_vertices: 4,
+    },
+    hulls: HULLS,
+    phys_bytes: 128,
+    deterministic: true,
+    artifact_sha256: "a".repeat(64),
+    runtime: RUNTIME,
+    metrics: {
+      source_surface_coverage: { value: 0.98, unit: "ratio", status: "measured" },
+    },
+  });
+}
+
 describe("CompilationReport", () => {
   it("builds the versioned browser shape without implying acceptance", () => {
-    const report = createCompilationReport({
-      profile: "walkable",
-      input: {
-        kind: "glb",
-        source_vertices: 4,
-        processed_vertices: 4,
-        mesh_vertices: 4,
-      },
-      hulls: HULLS,
-      phys_bytes: 128,
-      deterministic: true,
-      artifact_sha256: "a".repeat(64),
-      runtime: RUNTIME,
-      metrics: {
-        source_surface_coverage: { value: 0.98, unit: "ratio", status: "measured" },
-      },
-    });
+    const report = reportFixture();
 
     expect(report.report_version).toBe(COMPILATION_REPORT_VERSION);
     expect(report.profile).toBe("walkable");
@@ -79,5 +86,14 @@ describe("CompilationReport", () => {
     expect(problems).toContain("missing field: verdict");
     expect(problems.some((problem) => problem.includes("report_version"))).toBe(true);
     expect(problems.some((problem) => problem.includes("same_runtime_toolchain"))).toBe(true);
+  });
+
+  it("matches the canonical cross-runtime JSON Schema", () => {
+    const schema = JSON.parse(
+      readFileSync(new URL("../../../docs/compilation-report.schema.json", import.meta.url), "utf8"),
+    );
+    const validate = new Ajv2020({ strict: false }).compile(schema);
+    const report = reportFixture();
+    expect(validate(report), JSON.stringify(validate.errors, null, 2)).toBe(true);
   });
 });

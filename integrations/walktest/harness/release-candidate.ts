@@ -8,6 +8,8 @@ import {
 import { parsePhys } from "@autarkis/chitin-web";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
 
+import { packGlb } from "../../../scripts/glb-pack.mjs";
+
 interface CandidateManifest {
   packages: Record<string, string>;
 }
@@ -91,24 +93,7 @@ function lPrismGlb(): ArrayBuffer {
     ],
     buffers: [{ byteLength: indexOffset + indices.byteLength }],
   };
-  const json = new TextEncoder().encode(JSON.stringify(document));
-  const jsonLength = (json.byteLength + 3) & ~3;
-  const total = 12 + 8 + jsonLength + 8 + binaryLength;
-  const glb = new ArrayBuffer(total);
-  const view = new DataView(glb);
-  view.setUint32(0, 0x46546c67, true);
-  view.setUint32(4, 2, true);
-  view.setUint32(8, total, true);
-  view.setUint32(12, jsonLength, true);
-  view.setUint32(16, 0x4e4f534a, true);
-  const jsonChunk = new Uint8Array(glb, 20, jsonLength);
-  jsonChunk.fill(0x20);
-  jsonChunk.set(json);
-  const binHeader = 20 + jsonLength;
-  view.setUint32(binHeader, binaryLength, true);
-  view.setUint32(binHeader + 4, 0x004e4942, true);
-  new Uint8Array(glb, binHeader + 8, binaryLength).set(binary);
-  return glb;
+  return packGlb(document, binary);
 }
 
 async function sha256(buffer: ArrayBuffer): Promise<string> {

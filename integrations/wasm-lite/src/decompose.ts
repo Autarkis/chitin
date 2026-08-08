@@ -1,4 +1,5 @@
 import { ChitinError } from "./errors.js";
+import { resolveDecomposeConfig } from "./defaults.js";
 import type { ConvexHull, DecomposeConfig, DecomposeResult } from "./types.js";
 
 // Embind handles must be released with delete(); the wrapper types make that
@@ -179,19 +180,20 @@ export async function decompose(
   validateMeshInput(vertices, faces);
   validateConfig(config);
   const mod = await getModule();
+  const resolved = resolveDecomposeConfig(config);
 
   const result = mod.decompose(
     vertices,
     faces,
-    config.threshold ?? 0.05,
-    config.maxConvexHull ?? -1,
-    config.prepResolution ?? 50,
-    config.sampleResolution ?? 2000,
-    config.mctsNodes ?? 20,
-    config.mctsIteration ?? 150,
-    config.mctsMaxDepth ?? 3,
-    config.maxChVertex ?? 256,
-    config.merge ?? true,
+    resolved.threshold,
+    resolved.maxConvexHull,
+    resolved.prepResolution,
+    resolved.sampleResolution,
+    resolved.mctsNodes,
+    resolved.mctsIteration,
+    resolved.mctsMaxDepth,
+    resolved.maxChVertex,
+    resolved.merge,
   );
 
   // Every Embind handle we obtain (the result, its hull vector, each hull, and
