@@ -16,7 +16,8 @@ unpublished. It does not upload the selected asset.
 Do not open `index.html` directly: the browser's `file://` mode cannot run the
 module Worker or load WebAssembly. On Windows, double-click `START_DEMO.cmd` in
 this directory. It prepares the local packages, starts the required local-only
-server, and opens the demo automatically.
+server, and opens the demo automatically. On macOS or Linux, run `./start_demo.sh`
+instead.
 
 It includes verified offline fixtures for dense smooth, hollow multipart, and
 organic geometry. The result view compares measured source/collider complexity
