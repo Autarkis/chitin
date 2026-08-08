@@ -20,6 +20,13 @@ repos:
   # package doesn't run the other's suite.
   - repo: local
     hooks:
+      - id: generated-contracts
+        name: generated cross-runtime contracts
+        entry: node scripts/gen-contracts.mjs
+        language: system
+        files: ^(docs/(compilation-report\.schema|metric-vocabulary|shared-constants)\.json|scripts/gen-(contracts|metric-names|report-constants|shared-constants)\.mjs|src/chitin/_(metric_names|shared_constants)\.py|integrations/wasm-lite/src/(metric-names|report-schema-constants|shared-constants)\.ts)$
+        pass_filenames: false
+
       - id: web-gate
         name: chitin-web (vitest + tsc)
         entry: python scripts/npm_gate.py integrations/web

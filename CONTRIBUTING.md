@@ -100,5 +100,10 @@ and the CoACD source, then `./build.sh`.
   readers (see above).
 - Commit messages: a short imperative subject line (`scope: do the thing`); a body
   only when there's a non-obvious *why*.
+- PRs are **squash-merged**. The PR title becomes the merge commit subject, so
+  use the same `scope: subject` format — the CI conventions check enforces it.
+- All PRs require the `gate` CI job to pass before merge.
+- External contributions require one approving review from a
+  [code owner](.github/CODEOWNERS) before merge.
 
 By contributing, you agree your work is licensed under the repository's MIT License.
