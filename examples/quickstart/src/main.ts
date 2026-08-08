@@ -9,7 +9,7 @@ import coacdModuleUrl from "@autarkis/chitin-coacd-wasm?url";
 import coacdWasmUrl from "@autarkis/chitin-coacd-wasm/coacd.wasm?url";
 
 import type { ChitinDemoApi } from "./demo-api";
-import { PreviewController } from "./preview-controller";
+import { NullPreviewController, PreviewController, type PreviewApi } from "./preview-controller";
 import {
   appliedThresholdCopy,
   hasQualityDiagnostics,
@@ -80,14 +80,20 @@ const showColliders = $("#show-colliders") as HTMLInputElement;
 const explodeColliders = $("#explode-colliders") as HTMLInputElement;
 const explodeDistance = $("#explode-distance") as HTMLInputElement;
 
-const previewController = new PreviewController({
-  canvas,
-  viewportPanel,
-  showSource,
-  showColliders,
-  explodeColliders,
-  explodeDistance,
-});
+let previewController: PreviewApi;
+try {
+  previewController = new PreviewController({
+    canvas,
+    viewportPanel,
+    showSource,
+    showColliders,
+    explodeColliders,
+    explodeDistance,
+  });
+} catch {
+  previewController = new NullPreviewController();
+  viewportPanel.hidden = true;
+}
 
 const compiler = new ChitinCompiler({
   wasm: {

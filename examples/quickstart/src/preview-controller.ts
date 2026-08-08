@@ -24,6 +24,17 @@ export type PreviewState = {
   explosionAmount: number;
 };
 
+export interface PreviewApi {
+  hasSource(): boolean;
+  showSourcePreview(file: File): Promise<void>;
+  showColliderPreview(result: CompileGlbResult): void;
+  clearColliders(): void;
+  updateLayers(): void;
+  updateExplosionControls(): void;
+  state(): PreviewState;
+  dispose(): void;
+}
+
 type PreviewControls = {
   canvas: HTMLCanvasElement;
   viewportPanel: HTMLElement;
@@ -52,7 +63,7 @@ function disposeObject(root: THREE.Object3D): void {
   });
 }
 
-export class PreviewController {
+export class PreviewController implements PreviewApi {
   private readonly viewportPanel: HTMLElement;
   private readonly showSource: HTMLInputElement;
   private readonly showColliders: HTMLInputElement;
@@ -425,4 +436,37 @@ export class PreviewController {
     }
     if (complete) this.finishColliderReveal();
   }
+}
+
+export class NullPreviewController implements PreviewApi {
+  hasSource(): boolean {
+    return false;
+  }
+
+  showSourcePreview(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  showColliderPreview(): void {}
+
+  clearColliders(): void {}
+
+  updateLayers(): void {}
+
+  updateExplosionControls(): void {}
+
+  state(): PreviewState {
+    return {
+      sourceVisible: false,
+      colliderVisible: false,
+      sourceMeshes: 0,
+      sourceFilledMeshes: 0,
+      colliderRevealActive: false,
+      colliderRevealCount: 0,
+      exploded: false,
+      explosionAmount: 0,
+    };
+  }
+
+  dispose(): void {}
 }

@@ -10,14 +10,10 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4179",
     headless: playwrightDefaults.headless,
   },
-  // Firefox excluded: headless Firefox lacks software WebGL.
-  // WASM correctness on Firefox is gated by integrations/walktest.
-  projects: playwrightDefaults.browsers
-    .filter((device) => !device.includes("Firefox"))
-    .map((device) => ({
-      name: device.split(" ").pop()!.toLowerCase(),
-      use: { ...devices[device] },
-    })),
+  projects: playwrightDefaults.browsers.map((device) => ({
+    name: device.split(" ").pop()!.toLowerCase(),
+    use: { ...devices[device] },
+  })),
   webServer: {
     command: "npm run preview",
     port: 4179,
