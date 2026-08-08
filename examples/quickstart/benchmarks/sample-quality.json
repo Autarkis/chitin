@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "runtime": "pinned_chromium_browser_wasm",
+  "sampling": {
+    "method": "deterministic_halton_v1",
+    "surface_samples": 2048,
+    "volume_samples": 8192,
+    "surface_tolerance_ratio": 0.02
+  },
+  "samples": {
+    "wicker": {
+      "detail": 0.1,
+      "regression": {
+        "min_detailed_surface_coverage": 0.99,
+        "min_worst_detailed_component_coverage": 0.99,
+        "max_deep_false_fill": 0.01,
+        "min_hulls": 1,
+        "max_hulls": 1,
+        "max_triangles": 220
+      },
+      "target": {
+        "min_detailed_surface_coverage": 0.99,
+        "min_worst_detailed_component_coverage": 0.99,
+        "max_deep_false_fill": 0.01
+      }
+    },
+    "dish": {
+      "detail": 0.6,
+      "regression": {
+        "min_detailed_surface_coverage": 0.99,
+        "min_worst_detailed_component_coverage": 0.99,
+        "max_deep_false_fill": 0.03,
+        "min_hulls": 111,
+        "max_hulls": 111,
+        "max_triangles": 5300
+      },
+      "target": {
+        "min_detailed_surface_coverage": 0.99,
+        "min_worst_detailed_component_coverage": 0.99,
+        "max_deep_false_fill": 0.01
+      }
+    },
+    "fish": {
+      "detail": 0.6,
+      "regression": {
+        "min_detailed_surface_coverage": 0.98,
+        "min_worst_detailed_component_coverage": 0.9,
+        "max_deep_false_fill": 0.02,
+        "min_hulls": 5,
+        "max_hulls": 8,
+        "max_triangles": 450
+      },
+      "target": {
+        "min_detailed_surface_coverage": 0.99,
+        "min_worst_detailed_component_coverage": 0.95,
+        "max_deep_false_fill": 0.01
+      }
+    }
+  }
+}
