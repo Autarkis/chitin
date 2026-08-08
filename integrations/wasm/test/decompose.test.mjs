@@ -65,4 +65,60 @@ hulls.forEach((h, i) => {
     `hull ${i}: bad index count (${h.indexCount})`,
   );
 });
+
+// Prove the binding actually enables CoACD's hull decimator. A triangulated
+// sphere has far more convex-hull vertices than this cap; this failed when the
+// binding passed decimate=false even though maxChVertex was exposed publicly.
+function makeUvSphere(latitudeBands = 10, longitudeBands = 20) {
+  const points = [[0, 1, 0]];
+  for (let latitude = 1; latitude < latitudeBands; latitude++) {
+    const phi = (Math.PI * latitude) / latitudeBands;
+    for (let longitude = 0; longitude < longitudeBands; longitude++) {
+      const theta = (2 * Math.PI * longitude) / longitudeBands;
+      points.push([
+        Math.sin(phi) * Math.cos(theta),
+        Math.cos(phi),
+        Math.sin(phi) * Math.sin(theta),
+      ]);
+    }
+  }
+  const bottom = points.length;
+  points.push([0, -1, 0]);
+  const triangles = [];
+  for (let longitude = 0; longitude < longitudeBands; longitude++) {
+    const next = (longitude + 1) % longitudeBands;
+    triangles.push([0, 1 + next, 1 + longitude]);
+  }
+  for (let latitude = 0; latitude < latitudeBands - 2; latitude++) {
+    const current = 1 + latitude * longitudeBands;
+    const nextRing = current + longitudeBands;
+    for (let longitude = 0; longitude < longitudeBands; longitude++) {
+      const next = (longitude + 1) % longitudeBands;
+      triangles.push(
+        [current + longitude, current + next, nextRing + next],
+        [current + longitude, nextRing + next, nextRing + longitude],
+      );
+    }
+  }
+  const lastRing = 1 + (latitudeBands - 2) * longitudeBands;
+  for (let longitude = 0; longitude < longitudeBands; longitude++) {
+    const next = (longitude + 1) % longitudeBands;
+    triangles.push([lastRing + longitude, lastRing + next, bottom]);
+  }
+  return {
+    vertices: new Float64Array(points.flat()),
+    faces: new Int32Array(triangles.flat()),
+  };
+}
+
+const sphere = makeUvSphere();
+const decimatedResult = mod.decompose(
+  sphere.vertices, sphere.faces, 1, 1, 50, 2000, 8, 40, 2, 12, true,
+);
+const decimatedHulls = marshalHulls(decimatedResult);
+assert.equal(decimatedHulls.length, 1, "expected one convex sphere hull");
+assert.ok(
+  decimatedHulls[0].vertexFloats / 3 <= 12,
+  `maxChVertex was not enforced (${decimatedHulls[0].vertexFloats / 3} vertices)`,
+);
 console.log("OK: CoACD WASM decompose functional test passed");

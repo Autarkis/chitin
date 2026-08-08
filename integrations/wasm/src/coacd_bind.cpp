@@ -65,7 +65,7 @@ WasmResult decompose(
         mcts_max_depth,
         false,  // pca
         merge,
-        false,  // decimate
+        true,   // decimate: enforce max_ch_vertex on every emitted hull
         max_ch_vertex,
         false,  // extrude
         0.01,   // extrude_margin

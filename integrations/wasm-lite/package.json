@@ -26,14 +26,23 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": "./dist/worker.js"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsc",
+    "generate:contracts": "node ../../scripts/gen-contracts.mjs",
     "test": "vitest run"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   },

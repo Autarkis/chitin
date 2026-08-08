@@ -1,5 +1,6 @@
 export interface DecomposeConfig {
   threshold?: number;
+  /** Maximum hulls emitted by one low-level decomposition call. */
   maxConvexHull?: number;
   prepResolution?: number;
   sampleResolution?: number;

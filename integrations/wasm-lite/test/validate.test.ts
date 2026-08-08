@@ -78,4 +78,9 @@ describe("validateConfig", () => {
     expect(() => validateConfig({ sampleResolution: -1 })).toThrow(/sampleResolution/);
     expect(() => validateConfig({ mctsNodes: 2.5 })).toThrow(/mctsNodes/);
   });
+
+  it("requires enough vertices to form a 3D convex hull", () => {
+    expect(() => validateConfig({ maxChVertex: 3 })).toThrow(/at least 4/);
+    expect(() => validateConfig({ maxChVertex: 4 })).not.toThrow();
+  });
 });
