@@ -1,5 +1,10 @@
 import numpy as np
 
+from chitin._metric_names import (
+    SOURCE_SURFACE_COVERAGE,
+    WORST_COMPONENT_SURFACE_COVERAGE,
+    WORST_DECILE_SURFACE_COVERAGE,
+)
 from chitin.result import Hull
 from chitin.verify.coverage import coverage_report
 
@@ -35,7 +40,7 @@ def test_all_points_inside_box_covered():
     rng = np.random.default_rng(0)
     pts = rng.uniform(-0.9, 0.9, (500, 3))
     report = coverage_report([_box_hull()], pts)
-    assert report["covered_fraction"] == 1.0
+    assert report[SOURCE_SURFACE_COVERAGE] == 1.0
     assert report["uncovered_count"] == 0
     assert report["slack_p50"] > 0.0
     assert report["sample_count"] == 500
@@ -46,27 +51,27 @@ def test_outside_points_uncovered():
     inside = rng.uniform(-0.9, 0.9, (100, 3))
     outside = rng.uniform(-0.9, 0.9, (100, 3)) + np.array([10.0, 0.0, 0.0])
     report = coverage_report([_box_hull()], np.vstack([inside, outside]))
-    assert report["covered_fraction"] == 0.5
+    assert report[SOURCE_SURFACE_COVERAGE] == 0.5
     assert report["uncovered_count"] == 100
 
 
 def test_on_face_point_within_tolerance():
     pts = np.array([[1.0, 0.0, 0.0], [1.5, 0.0, 0.0], [-1.0, 0.5, 0.5]])
     report = coverage_report([_box_hull()], pts)
-    assert report["covered_fraction"] == round(2 / 3, 4)
+    assert report[SOURCE_SURFACE_COVERAGE] == round(2 / 3, 4)
 
 
 def test_no_hulls_means_zero_coverage():
     pts = np.zeros((10, 3))
     pts[:, 0] = np.linspace(-1, 1, 10)
     report = coverage_report([], pts)
-    assert report["covered_fraction"] == 0.0
+    assert report[SOURCE_SURFACE_COVERAGE] == 0.0
     assert report["uncovered_count"] == 10
 
 
 def test_empty_points():
     report = coverage_report([_box_hull()], np.empty((0, 3)))
-    assert report["covered_fraction"] == 0.0
+    assert report[SOURCE_SURFACE_COVERAGE] == 0.0
     assert report["sample_count"] == 0
 
 
@@ -78,8 +83,8 @@ def test_per_cell_worst_decile():
     cells = [np.arange(50), np.arange(50, 100)]
     report = coverage_report([_box_hull()], pts, cell_indices=cells)
     assert report["cell_count"] == 2
-    assert report["worst_cell_fraction"] == 0.0
-    assert report["worst_decile_fraction"] == 0.0
+    assert report[WORST_COMPONENT_SURFACE_COVERAGE] == 0.0
+    assert report[WORST_DECILE_SURFACE_COVERAGE] == 0.0
     assert report["worst_cells"][0]["cell"] == 1
     assert report["worst_cells"][0]["samples"] == 50
 
@@ -100,4 +105,4 @@ def test_two_hulls_union_coverage():
     far = rng.uniform(-0.9, 0.9, (100, 3)) + np.array([10.0, 0.0, 0.0])
     hulls = [_box_hull(), _box_hull(center=(10.0, 0.0, 0.0))]
     report = coverage_report(hulls, np.vstack([near, far]))
-    assert report["covered_fraction"] == 1.0
+    assert report[SOURCE_SURFACE_COVERAGE] == 1.0

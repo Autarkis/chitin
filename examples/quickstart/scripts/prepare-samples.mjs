@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseGlb } from "@autarkis/chitin-lite";
-import { packGlb } from "../../../scripts/glb-pack.mjs";
+import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDirectory = resolve(root, "public/assets");
 
@@ -38,36 +38,12 @@ function flattenedGeometryGlb(source) {
   const mesh = parseGlb(sourceBuffer);
   const positions = Float32Array.from(mesh.vertices);
   const indices = Uint32Array.from(mesh.faces);
-  const indexOffset = (positions.byteLength + 3) & ~3;
-  const binary = new Uint8Array(indexOffset + indices.byteLength);
-  binary.set(new Uint8Array(positions.buffer));
-  binary.set(new Uint8Array(indices.buffer), indexOffset);
 
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < positions.length; i += 3) {
-    for (let axis = 0; axis < 3; axis++) {
-      min[axis] = Math.min(min[axis], positions[i + axis]);
-      max[axis] = Math.max(max[axis], positions[i + axis]);
-    }
-  }
-
-  return packGlb({
-    asset: { version: "2.0", generator: "Chitin geometry-only sample preparation" },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] }],
-    accessors: [
-      { bufferView: 0, componentType: 5126, count: positions.length / 3, type: "VEC3", min, max },
-      { bufferView: 1, componentType: 5125, count: indices.length, type: "SCALAR" },
-    ],
-    bufferViews: [
-      { buffer: 0, byteOffset: 0, byteLength: positions.byteLength, target: 34962 },
-      { buffer: 0, byteOffset: indexOffset, byteLength: indices.byteLength, target: 34963 },
-    ],
-    buffers: [{ byteLength: binary.byteLength }],
-  }, binary);
+  const { document, binary } = buildMinimalGltf(positions, indices, {
+    generator: "Chitin geometry-only sample preparation",
+    mode: 4,
+  });
+  return packGlb(document, binary);
 }
 
 await mkdir(outputDirectory, { recursive: true });

@@ -54,6 +54,11 @@ def is_closed_surface(faces: np.ndarray) -> bool:
     return bool(np.all(counts == 2))
 
 
+def aabb(vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Axis-aligned bounding box of ``vertices`` as (min_corner, max_corner)."""
+    return vertices.min(axis=0), vertices.max(axis=0)
+
+
 class CoACDTimeoutError(RuntimeError):
     """CoACD exceeded its time budget or the worker crashed."""
 
@@ -118,8 +123,9 @@ def run_coacd_bounded(
 
 def _aabb_box_hull(vertices: np.ndarray) -> Hull:
     """Axis-aligned bounding box of ``vertices`` as a fallback convex hull."""
-    mn = vertices.min(axis=0).astype(np.float32)
-    mx = vertices.max(axis=0).astype(np.float32)
+    mn, mx = aabb(vertices)
+    mn = mn.astype(np.float32)
+    mx = mx.astype(np.float32)
     corners = np.array(
         [
             [x, y, z]
@@ -209,8 +215,7 @@ def adaptive_preprocess_resolution(face_count: int, configured: int) -> int:
 def aabb_overlaps_bounds(
     hull: Hull, bounds_min: np.ndarray, bounds_max: np.ndarray
 ) -> bool:
-    h_min = hull.vertices.min(axis=0)
-    h_max = hull.vertices.max(axis=0)
+    h_min, h_max = aabb(hull.vertices)
     return bool(
         h_max[0] >= bounds_min[0]
         and h_min[0] <= bounds_max[0]
@@ -222,8 +227,8 @@ def aabb_overlaps_bounds(
 
 
 def aabb_iou(a: Hull, b: Hull) -> float:
-    a_min, a_max = a.vertices.min(axis=0), a.vertices.max(axis=0)
-    b_min, b_max = b.vertices.min(axis=0), b.vertices.max(axis=0)
+    a_min, a_max = aabb(a.vertices)
+    b_min, b_max = aabb(b.vertices)
     inter_min = np.maximum(a_min, b_min)
     inter_max = np.minimum(a_max, b_max)
     inter_dims = np.maximum(inter_max - inter_min, 0)
@@ -267,7 +272,7 @@ def cull_contained_hulls(hulls: list[Hull]) -> list[Hull]:
         return hulls
     volumes = []
     for h in hulls:
-        mn, mx = h.vertices.min(axis=0), h.vertices.max(axis=0)
+        mn, mx = aabb(h.vertices)
         volumes.append(float(np.prod(np.maximum(mx - mn, 1e-10))))
     order = sorted(range(len(hulls)), key=lambda i: volumes[i], reverse=True)
     contained: set[int] = set()
@@ -297,7 +302,7 @@ def consolidate_near_contained_hulls(
     aabb_data = []
     volumes = []
     for h in hulls:
-        mn, mx = h.vertices.min(axis=0), h.vertices.max(axis=0)
+        mn, mx = aabb(h.vertices)
         aabb_data.append((mn, mx))
         volumes.append(float(np.prod(np.maximum(mx - mn, 1e-10))))
 

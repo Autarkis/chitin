@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+import functools
+import importlib.resources
+import json
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -14,6 +17,21 @@ from pathlib import Path
 from typing import Any
 
 from chitin import provenance
+from chitin._metric_names import (
+    HULL_COUNT,
+    SOURCE_SURFACE_COVERAGE,
+    WORST_COMPONENT_SURFACE_COVERAGE,
+    WORST_DECILE_SURFACE_COVERAGE,
+)
+
+_PACKAGED_SCHEMA = importlib.resources.files("chitin").joinpath(
+    "compilation-report.schema.json"
+)
+_SOURCE_SCHEMA = (
+    Path(__file__).resolve().parent.parent.parent
+    / "docs"
+    / "compilation-report.schema.json"
+)
 
 REPORT_VERSION = 1
 REPORT_FIELDS = (
@@ -134,13 +152,20 @@ def _verdict_dict(profile: str | None, verdict) -> dict:
     }
 
 
-def _report_warnings(result, extra: list[str] | None) -> tuple[ReportWarning, ...]:
+def detected_issues(result) -> list[ReportWarning]:
+    """Non-fatal quality issues derived from ``result.build_plan.detected``.
+
+    This is the single source of truth for what counts as a build-plan
+    warning; both :class:`CompilationReport` (via :func:`_report_warnings`)
+    and :func:`chitin.manifest.quality_warnings` derive from it so a new
+    ``detected`` key only needs to be taught here once.
+    """
     plan = result.build_plan
     detected = plan.detected if plan is not None else {}
-    warnings: list[ReportWarning] = []
+    issues: list[ReportWarning] = []
     fallback = int(detected.get("fallback_hulls", 0))
     if fallback:
-        warnings.append(
+        issues.append(
             ReportWarning(
                 code="COACD_TIMEOUT_FALLBACK",
                 message=f"{fallback} AABB fallback hull(s) from CoACD timeout",
@@ -148,22 +173,25 @@ def _report_warnings(result, extra: list[str] | None) -> tuple[ReportWarning, ..
             )
         )
     if plan is not None and plan.decimated:
-        warnings.append(
+        issues.append(
             ReportWarning(
                 code="INPUT_DECIMATED",
                 message="mesh was decimated before decomposition",
             )
         )
     if detected.get("decimation_skipped"):
-        warnings.append(
+        issues.append(
             ReportWarning(
                 code="DECIMATION_SKIPPED",
-                message="mesh exceeded max_decompose_vertices but decimation was skipped",
+                message=(
+                    "mesh exceeded max_decompose_vertices but decimation was "
+                    "skipped (Open3D not installed)"
+                ),
                 context={"vertex_count": int(detected["decimation_skipped"])},
             )
         )
     if detected.get("bones_skipped"):
-        warnings.append(
+        issues.append(
             ReportWarning(
                 code="BONES_SKIPPED",
                 message=(
@@ -173,7 +201,11 @@ def _report_warnings(result, extra: list[str] | None) -> tuple[ReportWarning, ..
                 context={"bone_count": int(detected["bones_skipped"])},
             )
         )
+    return issues
 
+
+def _report_warnings(result, extra: list[str] | None) -> tuple[ReportWarning, ...]:
+    warnings = detected_issues(result)
     known_messages = {warning.message for warning in warnings}
     for message in extra or []:
         if message not in known_messages:
@@ -258,11 +290,15 @@ def build_compilation_report(
     hull_vertices = sum(len(hull.vertices) for hull in result.hulls)
     hull_triangles = sum(len(hull.indices) // 3 for hull in result.hulls)
     metrics = {
-        "hull_count": _metric(flat_metrics["hull_count"], "count"),
-        "covered_fraction": _metric(flat_metrics["covered_fraction"], "ratio"),
-        "worst_cell_fraction": _metric(flat_metrics["worst_cell_fraction"], "ratio"),
-        "worst_decile_fraction": _metric(
-            flat_metrics["worst_decile_fraction"], "ratio"
+        HULL_COUNT: _metric(flat_metrics[HULL_COUNT], "count"),
+        SOURCE_SURFACE_COVERAGE: _metric(
+            flat_metrics[SOURCE_SURFACE_COVERAGE], "ratio"
+        ),
+        WORST_COMPONENT_SURFACE_COVERAGE: _metric(
+            flat_metrics[WORST_COMPONENT_SURFACE_COVERAGE], "ratio"
+        ),
+        WORST_DECILE_SURFACE_COVERAGE: _metric(
+            flat_metrics[WORST_DECILE_SURFACE_COVERAGE], "ratio"
         ),
         "fallback_hulls": _metric(flat_metrics["fallback_hulls"], "count"),
         "coacd_timeouts": _metric(flat_metrics["coacd_timeouts"], "count"),
@@ -334,8 +370,32 @@ def build_compilation_report(
     return report
 
 
+@functools.lru_cache(maxsize=1)
+def _load_schema() -> dict:
+    try:
+        payload = _PACKAGED_SCHEMA.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        payload = _SOURCE_SCHEMA.read_text(encoding="utf-8")
+    return json.loads(payload)
+
+
 def validate_compilation_report(report: dict) -> list[str]:
-    """Return structural contract problems without requiring jsonschema."""
+    """Return schema violations, or structural problems without ``jsonschema``."""
+    try:
+        import jsonschema
+    except ImportError:
+        return _validate_compilation_report_hand_rolled(report)
+
+    validator = jsonschema.Draft202012Validator(_load_schema())
+    problems = []
+    for error in validator.iter_errors(report):
+        path = ".".join(str(part) for part in error.absolute_path)
+        problems.append(f"{path}: {error.message}" if path else error.message)
+    return problems
+
+
+def _validate_compilation_report_hand_rolled(report: dict) -> list[str]:
+    """Validate the report shape without optional dependencies."""
     problems: list[str] = []
     missing = [field for field in REPORT_FIELDS if field not in report]
     if missing:

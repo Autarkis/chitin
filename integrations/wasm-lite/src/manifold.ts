@@ -1,4 +1,5 @@
 import { ChitinError } from "./errors.js";
+import { meshBounds, triangleCrossProduct, vertexCount } from "./geometry.js";
 
 // CoACD assumes a closed, edge-manifold input; boundary or non-manifold edges
 // make the lightweight WASM build abort. The scene compiler runs this O(faces)
@@ -11,15 +12,7 @@ const DEGENERATE_AREA_EPS = 1e-20;
 
 function boundingDiagonalSquared(vertices: Float64Array): number {
   if (vertices.length === 0) return 0;
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < vertices.length; i += 3) {
-    for (let axis = 0; axis < 3; axis++) {
-      const v = vertices[i + axis];
-      if (v < min[axis]) min[axis] = v;
-      if (v > max[axis]) max[axis] = v;
-    }
-  }
+  const { min, max } = meshBounds(vertices);
   let sum = 0;
   for (let axis = 0; axis < 3; axis++) {
     const d = max[axis] - min[axis];
@@ -35,15 +28,7 @@ function doubleAreaSquared(
   i1: number,
   i2: number,
 ): number {
-  const ax = vertices[i1 * 3] - vertices[i0 * 3];
-  const ay = vertices[i1 * 3 + 1] - vertices[i0 * 3 + 1];
-  const az = vertices[i1 * 3 + 2] - vertices[i0 * 3 + 2];
-  const bx = vertices[i2 * 3] - vertices[i0 * 3];
-  const by = vertices[i2 * 3 + 1] - vertices[i0 * 3 + 1];
-  const bz = vertices[i2 * 3 + 2] - vertices[i0 * 3 + 2];
-  const cx = ay * bz - az * by;
-  const cy = az * bx - ax * bz;
-  const cz = ax * by - ay * bx;
+  const [cx, cy, cz] = triangleCrossProduct(vertices, i0, i1, i2);
   return cx * cx + cy * cy + cz * cz;
 }
 
@@ -61,7 +46,7 @@ export function analyzeManifold(
   vertices: Float64Array,
   faces: Int32Array,
 ): ManifoldAnalysis {
-  const vertexCount = vertices.length / 3;
+  const vertexTotal = vertexCount(vertices);
   const edgeUses = new Map<number, number>();
   // Signed accumulator per undirected edge key: +1 for each half-edge
   // traversed a < b, -1 for each traversed a > b. A consistently wound
@@ -96,7 +81,7 @@ export function analyzeManifold(
       [i1, i2],
       [i2, i0],
     ]) {
-      const key = a < b ? a * vertexCount + b : b * vertexCount + a;
+      const key = a < b ? a * vertexTotal + b : b * vertexTotal + a;
       edgeUses.set(key, (edgeUses.get(key) ?? 0) + 1);
       edgeDirections.set(key, (edgeDirections.get(key) ?? 0) + (a < b ? 1 : -1));
     }
@@ -106,8 +91,8 @@ export function analyzeManifold(
   let nonManifoldEdgeCount = 0;
   let inconsistentWindingEdgeCount = 0;
   for (const [key, uses] of edgeUses) {
-    const a = Math.floor(key / vertexCount);
-    const b = key % vertexCount;
+    const a = Math.floor(key / vertexTotal);
+    const b = key % vertexTotal;
     if (uses === 1) {
       boundaryEdgeCount++;
       firstProblem ??= `boundary (open) edge between vertices ${a} and ${b}`;

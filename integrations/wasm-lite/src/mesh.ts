@@ -1,4 +1,5 @@
 import { ChitinError } from "./errors.js";
+import { triangleCrossProduct, vertexCount } from "./geometry.js";
 
 export interface TriangleMesh {
   vertices: Float64Array;
@@ -23,18 +24,7 @@ function vertexKey(vertices: Float64Array, offset: number): string {
 }
 
 function hasZeroArea(vertices: Float64Array, a: number, b: number, c: number): boolean {
-  const ax = vertices[a * 3];
-  const ay = vertices[a * 3 + 1];
-  const az = vertices[a * 3 + 2];
-  const abx = vertices[b * 3] - ax;
-  const aby = vertices[b * 3 + 1] - ay;
-  const abz = vertices[b * 3 + 2] - az;
-  const acx = vertices[c * 3] - ax;
-  const acy = vertices[c * 3 + 1] - ay;
-  const acz = vertices[c * 3 + 2] - az;
-  const cx = aby * acz - abz * acy;
-  const cy = abz * acx - abx * acz;
-  const cz = abx * acy - aby * acx;
+  const [cx, cy, cz] = triangleCrossProduct(vertices, a, b, c);
   return cx === 0 && cy === 0 && cz === 0;
 }
 
@@ -52,7 +42,7 @@ export function canonicalizeMesh(vertices: Float64Array, faces: Int32Array): Can
     throw new ChitinError("INVALID_MESH", "mesh arrays must contain xyz vertices and triangle faces");
   }
 
-  const sourceVertexCount = vertices.length / 3;
+  const sourceVertexCount = vertexCount(vertices);
   const representativeByKey = new Map<string, number>();
   const canonicalVertices: number[] = [];
   const sourceToCanonical = new Int32Array(sourceVertexCount);
@@ -126,7 +116,7 @@ export function canonicalizeMesh(vertices: Float64Array, faces: Int32Array): Can
     vertices: new Float64Array(compactVertices),
     faces: compactFaces,
     source_vertex_count: sourceVertexCount,
-    welded_vertex_count: compactVertices.length / 3,
+    welded_vertex_count: vertexCount(compactVertices),
     removed_degenerate_triangles: removedDegenerate,
     removed_duplicate_triangles: removedDuplicate,
   };
@@ -134,8 +124,8 @@ export function canonicalizeMesh(vertices: Float64Array, faces: Int32Array): Can
 
 /** Split a mesh into vertex-connected triangle components for CoACD. */
 export function splitMeshComponents(vertices: Float64Array, faces: Int32Array): TriangleMesh[] {
-  const vertexCount = vertices.length / 3;
-  const parents = Int32Array.from({ length: vertexCount }, (_, index) => index);
+  const totalVertices = vertexCount(vertices);
+  const parents = Int32Array.from({ length: totalVertices }, (_, index) => index);
   const find = (start: number): number => {
     let root = start;
     while (parents[root] !== root) root = parents[root];

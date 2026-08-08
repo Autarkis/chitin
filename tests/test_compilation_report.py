@@ -5,6 +5,8 @@ import jsonschema
 import numpy as np
 import pytest
 
+import chitin.report as report_module
+from chitin._metric_names import SOURCE_SURFACE_COVERAGE
 from chitin.acceptance import Check, Verdict, evaluate, get_profile, report_metrics
 from chitin.plan import BuildPlan
 from chitin.report import (
@@ -38,9 +40,9 @@ def _result(*, fallback_hulls=0):
         processed_vertices=4,
         detected={
             "coverage": {
-                "covered_fraction": 0.99,
-                "worst_cell_fraction": None,
-                "worst_decile_fraction": None,
+                SOURCE_SURFACE_COVERAGE: 0.99,
+                "worst_component_surface_coverage": None,
+                "worst_decile_surface_coverage": None,
             },
             "fallback_hulls": fallback_hulls,
             "coacd_timeouts": fallback_hulls,
@@ -79,7 +81,7 @@ def test_python_report_matches_v1_contract():
         "lod_tier_count": 0,
         "byte_length": 128,
     }
-    assert report["metrics"]["covered_fraction"] == {
+    assert report["metrics"][SOURCE_SURFACE_COVERAGE] == {
         "value": 0.99,
         "unit": "ratio",
         "status": "measured",
@@ -122,11 +124,22 @@ def test_schema_and_python_require_the_same_top_level_fields():
 
 def test_validator_rejects_unknown_version_and_missing_shape():
     problems = validate_compilation_report({"report_version": 99})
-    assert any("missing fields" in problem for problem in problems)
+    assert any("is a required property" in problem for problem in problems)
 
 
 def test_schema_file_is_a_valid_json_schema():
     jsonschema.Draft202012Validator.check_schema(_schema())
+
+
+def test_schema_loader_falls_back_to_source_checkout(monkeypatch):
+    class MissingPackageResource:
+        def read_text(self, *, encoding):
+            raise FileNotFoundError
+
+    report_module._load_schema.cache_clear()
+    monkeypatch.setattr(report_module, "_PACKAGED_SCHEMA", MissingPackageResource())
+    assert report_module._load_schema()["$schema"].endswith("2020-12/schema")
+    report_module._load_schema.cache_clear()
 
 
 def test_complete_report_validates_against_schema_file():
@@ -202,7 +215,7 @@ def test_validator_rejects_boolean_timing():
     report["timings_ms"] = {"total": True}
 
     assert validate_compilation_report(report) == [
-        "timing 'total' must be a finite non-negative number"
+        "timings_ms.total: True is not of type 'number'"
     ]
 
 
@@ -210,4 +223,34 @@ def test_validator_reports_invalid_reproducibility_container():
     report = build_compilation_report(_result()).to_dict()
     report["reproducibility"] = []
 
-    assert validate_compilation_report(report) == ["reproducibility must be an object"]
+    assert validate_compilation_report(report) == [
+        "reproducibility: [] is not of type 'object'"
+    ]
+
+
+def test_validator_falls_back_to_hand_rolled_checks_without_jsonschema(monkeypatch):
+    # Simulates a minimal runtime install where jsonschema isn't installed:
+    # validate_compilation_report() must still catch structural problems,
+    # just via the hand-rolled fallback (with its own message shape).
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "jsonschema":
+            raise ImportError("simulated missing optional dependency")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    missing_problems = validate_compilation_report({"report_version": 99})
+    assert missing_problems == [
+        "missing fields: status, profile, verdict, input, output, timings_ms, "
+        "warnings, metrics, processing, runtime, reproducibility, config, artifacts"
+    ]
+
+    report = build_compilation_report(_result()).to_dict()
+    report["timings_ms"] = {"total": True}
+    assert validate_compilation_report(report) == [
+        "timing 'total' must be a finite non-negative number"
+    ]

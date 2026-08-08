@@ -8,7 +8,7 @@ import {
 import { parsePhys } from "@autarkis/chitin-web";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
 
-import { packGlb } from "../../../scripts/glb-pack.mjs";
+import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 
 interface CandidateManifest {
   packages: Record<string, string>;
@@ -71,28 +71,10 @@ function lPrismGlb(): ArrayBuffer {
   const mesh = lPrism();
   const positions = Float32Array.from(mesh.vertices);
   const indices = Uint16Array.from(mesh.faces);
-  const positionBytes = positions.byteLength;
-  const indexOffset = (positionBytes + 3) & ~3;
-  const binaryLength = (indexOffset + indices.byteLength + 3) & ~3;
-  const binary = new Uint8Array(binaryLength);
-  binary.set(new Uint8Array(positions.buffer), 0);
-  binary.set(new Uint8Array(indices.buffer), indexOffset);
-  const document = {
-    asset: { version: "2.0", generator: "chitin release-candidate gate" },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
-    accessors: [
-      { bufferView: 0, componentType: 5126, count: positions.length / 3, type: "VEC3" },
-      { bufferView: 1, componentType: 5123, count: indices.length, type: "SCALAR" },
-    ],
-    bufferViews: [
-      { buffer: 0, byteOffset: 0, byteLength: positionBytes },
-      { buffer: 0, byteOffset: indexOffset, byteLength: indices.byteLength },
-    ],
-    buffers: [{ byteLength: indexOffset + indices.byteLength }],
-  };
+  const { document, binary } = buildMinimalGltf(positions, indices, {
+    generator: "chitin release-candidate gate",
+    bounds: false,
+  });
   return packGlb(document, binary);
 }
 

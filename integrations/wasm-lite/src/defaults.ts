@@ -1,9 +1,13 @@
 import type { DecomposeConfig } from "./types.js";
+import {
+  COACD_CONCAVITY_THRESHOLD,
+  COACD_PREPROCESS_RESOLUTION,
+} from "./shared-constants.js";
 
 export const DECOMPOSE_DEFAULTS = Object.freeze({
-  threshold: 0.05,
+  threshold: COACD_CONCAVITY_THRESHOLD,
   maxConvexHull: -1,
-  prepResolution: 50,
+  prepResolution: COACD_PREPROCESS_RESOLUTION,
   sampleResolution: 2000,
   mctsNodes: 20,
   mctsIteration: 150,

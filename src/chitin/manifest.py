@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from chitin import provenance
+from chitin import provenance, report
 from chitin.phys import WRITE_VERSION as PHYS_WRITE_VERSION
 
 MANIFEST_VERSION = 1
@@ -33,29 +33,11 @@ def quality_warnings(result) -> list[str]:
     """Non-fatal quality flags derived from the build plan.
 
     A basic set for the exporter path; the service composes its own richer
-    warnings for ``report.json`` and passes them straight through.
+    warnings for ``report.json`` and passes them straight through. Both
+    derive from the same :func:`chitin.report.detected_issues` so a new
+    ``detected`` key only needs to be taught in one place.
     """
-    plan = result.build_plan
-    if plan is None:
-        return []
-    detected = plan.detected
-    warnings: list[str] = []
-    if detected.get("fallback_hulls"):
-        warnings.append(
-            f"{detected['fallback_hulls']} AABB fallback hull(s) from CoACD timeout"
-        )
-    if plan.decimated:
-        warnings.append("mesh was decimated before decomposition")
-    if detected.get("decimation_skipped"):
-        warnings.append(
-            "mesh exceeded max_decompose_vertices but decimation was skipped "
-            "(Open3D not installed)"
-        )
-    if detected.get("bones_skipped"):
-        warnings.append(
-            f"{detected['bones_skipped']} bones had too little geometry for hulls"
-        )
-    return warnings
+    return [issue.message for issue in report.detected_issues(result)]
 
 
 def build_manifest(

@@ -85,14 +85,7 @@ describe("checkManifold", () => {
   });
 
   it("rejects a closed mesh with inconsistent face winding", () => {
-    // A consistently-wound tetrahedron, with one face's winding reversed.
-    // Every undirected edge is still shared by exactly two triangles -- the
-    // mesh looks closed and manifold under an undirected edge count -- but
-    // the flipped face traverses its three edges in the same direction as
-    // their partner triangle instead of the opposite one. That is exactly
-    // the pattern a mirrored modifier or boolean export leaves behind, and
-    // it makes signed-volume computations (e.g. enclosedVolume) cancel
-    // toward zero even though the mesh is topologically closed.
+    // Flipping one face preserves edge counts but breaks winding.
     const verts = new Float64Array([
       0, 0, 0, // A
       1, 0, 0, // B

@@ -1,16 +1,16 @@
 import { defineConfig, devices } from "@playwright/test";
+import { playwrightDefaults } from "../../scripts/playwright-base.mjs";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 120_000,
+  timeout: playwrightDefaults.timeout,
   use: {
-    headless: true,
+    headless: playwrightDefaults.headless,
   },
-  projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
-  ],
+  projects: playwrightDefaults.browsers.map((device) => ({
+    name: device.split(" ").pop()!.toLowerCase(),
+    use: { ...devices[device] },
+  })),
   webServer: {
     command: "npx serve harness -l 3219 --no-clipboard",
     port: 3219,

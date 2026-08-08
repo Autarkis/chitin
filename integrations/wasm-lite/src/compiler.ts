@@ -32,6 +32,7 @@ import {
   type CompilationStage,
 } from "./report.js";
 import type { ColliderQualityOptions } from "./quality.js";
+import type { ProfileName } from "./shared-constants.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
 import {
   DecomposeWorker,
@@ -66,8 +67,8 @@ export interface ChitinCompilerOptions {
 }
 
 export interface CompileGlbOptions {
-  /** Only interactive is accepted until artifact-level profile checks ship. */
-  profile?: "interactive";
+  /** Only the interactive profile is implemented by the browser compiler. */
+  profile?: ProfileName;
   decompose?: DecomposeConfig;
   signal?: AbortSignal;
   /** Check every connected part before CoACD. Default true; opt out only for known-good meshes. */

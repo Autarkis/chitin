@@ -37,3 +37,71 @@ export function packGlb(document, binary, declaredBinaryLength) {
   );
   return output;
 }
+
+function computePositionBounds(positions) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let axis = 0; axis < 3; axis++) {
+      min[axis] = Math.min(min[axis], positions[i + axis]);
+      max[axis] = Math.max(max[axis], positions[i + axis]);
+    }
+  }
+  return { min, max };
+}
+
+// Builds the smallest glTF document + interleaved binary buffer that can
+// carry a flat position/index mesh (no normals, materials, or skinning).
+// Callers pass the returned { document, binary } straight into packGlb.
+export function buildMinimalGltf(positions, indices, options = {}) {
+  const { generator = "chitin minimal glTF envelope", mode, bounds = true, min, max } = options;
+
+  let indexComponentType;
+  if (indices instanceof Uint16Array) {
+    indexComponentType = 5123;
+  } else if (indices instanceof Uint32Array) {
+    indexComponentType = 5125;
+  } else {
+    throw new TypeError("indices must be a Uint16Array or Uint32Array");
+  }
+
+  const positionBytes = positions.byteLength;
+  const indexOffset = (positionBytes + 3) & ~3;
+  const binary = new Uint8Array(indexOffset + indices.byteLength);
+  binary.set(new Uint8Array(positions.buffer, positions.byteOffset, positions.byteLength), 0);
+  binary.set(new Uint8Array(indices.buffer, indices.byteOffset, indices.byteLength), indexOffset);
+
+  const positionAccessor = {
+    bufferView: 0,
+    componentType: 5126,
+    count: positions.length / 3,
+    type: "VEC3",
+  };
+  if (bounds) {
+    const computed = min && max ? { min, max } : computePositionBounds(positions);
+    positionAccessor.min = computed.min;
+    positionAccessor.max = computed.max;
+  }
+
+  const primitive = { attributes: { POSITION: 0 }, indices: 1 };
+  if (mode !== undefined) primitive.mode = mode;
+
+  const document = {
+    asset: { version: "2.0", generator },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [primitive] }],
+    accessors: [
+      positionAccessor,
+      { bufferView: 1, componentType: indexComponentType, count: indices.length, type: "SCALAR" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: positionBytes, target: 34962 },
+      { buffer: 0, byteOffset: indexOffset, byteLength: indices.byteLength, target: 34963 },
+    ],
+    buffers: [{ byteLength: indexOffset + indices.byteLength }],
+  };
+
+  return { document, binary };
+}

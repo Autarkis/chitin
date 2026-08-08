@@ -63,11 +63,6 @@ describe("CompilationReport", () => {
       triangle_count: 4,
       byte_length: 128,
     });
-    expect(report.metrics.coacd_deterministic).toEqual({
-      value: true,
-      unit: "boolean",
-      status: "measured",
-    });
     expect(report.metrics.source_surface_coverage).toEqual({
       value: 0.98,
       unit: "ratio",
@@ -95,5 +90,65 @@ describe("CompilationReport", () => {
     const validate = new Ajv2020({ strict: false }).compile(schema);
     const report = reportFixture();
     expect(validate(report), JSON.stringify(validate.errors, null, 2)).toBe(true);
+  });
+});
+
+// Keep the dependency-free validator aligned with schema-required fields.
+describe("validateCompilationReport covers the schema's required fields", () => {
+  const schema = JSON.parse(
+    readFileSync(new URL("../../../docs/compilation-report.schema.json", import.meta.url), "utf8"),
+  );
+
+  function collectRequiredPaths(node: any, prefix: string[] = []): string[][] {
+    const paths: string[][] = [];
+    if (Array.isArray(node?.required)) {
+      for (const key of node.required) paths.push([...prefix, key]);
+    }
+    if (node?.properties) {
+      for (const [key, sub] of Object.entries<any>(node.properties)) {
+        paths.push(...collectRequiredPaths(sub, [...prefix, key]));
+      }
+    }
+    return paths;
+  }
+
+  function deleteAtPath(target: any, path: string[]): void {
+    const parent = path.slice(0, -1).reduce((acc, key) => acc?.[key], target);
+    if (parent && typeof parent === "object") delete parent[path[path.length - 1]];
+  }
+
+  it("catches a missing field for every required property in the schema's object tree", () => {
+    const paths = collectRequiredPaths(schema);
+    // Include nested objects, not only the 14 top-level keys.
+    expect(paths.length).toBe(48);
+
+    for (const path of paths) {
+      const report = reportFixture() as any;
+      deleteAtPath(report, path);
+      const problems = validateCompilationReport(report);
+      expect(problems.length, `expected a problem when ${path.join(".")} is missing`).toBeGreaterThan(0);
+    }
+  });
+
+  it("catches a missing field inside warnings[], metrics{}, and verdict.checks[] items", () => {
+    // Array items and map values are outside the `properties` walk.
+    for (const key of schema.$defs.warning.required as string[]) {
+      const report = reportFixture() as any;
+      report.warnings = [{ code: "W", severity: "info", message: "m", context: {} }];
+      delete report.warnings[0][key];
+      expect(validateCompilationReport(report).length, `warnings[].${key}`).toBeGreaterThan(0);
+    }
+    for (const key of schema.$defs.metric.required as string[]) {
+      const report = reportFixture() as any;
+      const [name] = Object.keys(report.metrics);
+      delete report.metrics[name][key];
+      expect(validateCompilationReport(report).length, `metrics{}.${key}`).toBeGreaterThan(0);
+    }
+    for (const key of schema.properties.verdict.properties.checks.items.required as string[]) {
+      const report = reportFixture() as any;
+      report.verdict.checks = [{ code: "c", status: "pass", message: "m" }];
+      delete report.verdict.checks[0][key];
+      expect(validateCompilationReport(report).length, `verdict.checks[].${key}`).toBeGreaterThan(0);
+    }
   });
 });

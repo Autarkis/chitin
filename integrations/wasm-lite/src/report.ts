@@ -138,7 +138,7 @@ export interface CreateCompilationReportOptions {
   artifacts?: Record<string, string>;
 }
 
-function metric(
+export function metric(
   value: string | number | boolean | null,
   unit: string,
   absent: CompilationMetric["status"] = "not_measured",
@@ -191,16 +191,6 @@ export function createCompilationReport(
     warnings: [...(options.warnings ?? [])],
     metrics: {
       hull_count: metric(options.hulls.length, "count"),
-      covered_fraction: metric(null, "ratio"),
-      worst_cell_fraction: metric(null, "ratio"),
-      worst_decile_fraction: metric(null, "ratio"),
-      fallback_hulls: metric(0, "count"),
-      coacd_timeouts: metric(0, "count"),
-      coacd_deterministic: metric(
-        deterministic,
-        "boolean",
-        "not_applicable",
-      ),
       ...(options.metrics ?? {}),
     },
     processing: {
@@ -237,56 +227,223 @@ export function createCompilationReport(
   return report;
 }
 
+// Tests keep these required fields aligned with the JSON Schema.
+
+const TOP_LEVEL_REQUIRED = [
+  "report_version",
+  "status",
+  "profile",
+  "verdict",
+  "input",
+  "output",
+  "timings_ms",
+  "warnings",
+  "metrics",
+  "processing",
+  "runtime",
+  "reproducibility",
+  "config",
+  "artifacts",
+] as const;
+
+const VERDICT_REQUIRED = ["profile", "status", "reasons", "checks"] as const;
+const CHECK_REQUIRED = ["code", "status", "message"] as const;
+const INPUT_REQUIRED = [
+  "kind",
+  "source_vertices",
+  "processed_vertices",
+  "mesh_vertices",
+] as const;
+const OUTPUT_REQUIRED = [
+  "collider_kind",
+  "hull_count",
+  "vertex_count",
+  "triangle_count",
+  "lod_tier_count",
+  "byte_length",
+] as const;
+const WARNING_REQUIRED = ["code", "severity", "message", "context"] as const;
+const METRIC_REQUIRED = ["value", "unit", "status"] as const;
+const PROCESSING_REQUIRED = ["pipeline", "fallbacks", "refinements"] as const;
+const FALLBACKS_REQUIRED = [
+  "decomposition_failure_hulls",
+  "planar_substitute_hulls",
+] as const;
+const REFINEMENTS_REQUIRED = ["snug_fit"] as const;
+const SNUG_FIT_REQUIRED = [
+  "status",
+  "refined_hulls",
+  "rejected_hulls",
+  "skipped_hulls",
+] as const;
+const RUNTIME_REQUIRED = [
+  "kind",
+  "implementation",
+  "version",
+  "compiler_version",
+  "dependencies",
+] as const;
+const REPRODUCIBILITY_REQUIRED = ["scope", "deterministic", "artifact_sha256"] as const;
+const CONFIG_REQUIRED = ["requested", "effective"] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Pushes `missing field: <label>.<key>` for every required key absent from `value`. */
+function requireFields(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+  problems: string[],
+): value is Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    problems.push(`${label} must be an object`);
+    return false;
+  }
+  for (const key of keys) {
+    if (!(key in value)) problems.push(`missing field: ${label}.${key}`);
+  }
+  return true;
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 /** Lightweight structural validation for reports received across a boundary. */
 export function validateCompilationReport(report: unknown): string[] {
-  if (!report || typeof report !== "object") return ["report must be an object"];
-  const value = report as Partial<CompilationReport>;
+  if (!isPlainObject(report)) return ["report must be an object"];
   const problems: string[] = [];
-  const required = [
-    "report_version",
-    "status",
-    "profile",
-    "verdict",
-    "input",
-    "output",
-    "timings_ms",
-    "warnings",
-    "metrics",
-    "processing",
-    "runtime",
-    "reproducibility",
-    "config",
-    "artifacts",
-  ] as const;
-  for (const field of required) {
-    if (!(field in value)) problems.push(`missing field: ${field}`);
+  for (const field of TOP_LEVEL_REQUIRED) {
+    if (!(field in report)) problems.push(`missing field: ${field}`);
   }
-  if (value.report_version !== COMPILATION_REPORT_VERSION) {
+
+  if (report.report_version !== COMPILATION_REPORT_VERSION) {
     problems.push(
-      `unsupported report_version ${String(value.report_version)}; expected ${COMPILATION_REPORT_VERSION}`,
+      `unsupported report_version ${String(report.report_version)}; expected ${COMPILATION_REPORT_VERSION}`,
     );
   }
-  if (
-    !value.verdict ||
-    !["pass", "fail", "not_evaluated"].includes(value.verdict.status)
-  ) {
-    problems.push("verdict.status must be pass, fail, or not_evaluated");
+  if (report.status !== undefined && !["complete", "rejected"].includes(report.status as string)) {
+    problems.push("status must be complete or rejected");
   }
-  if (!Array.isArray(value.warnings)) problems.push("warnings must be an array");
-  if (!value.metrics || typeof value.metrics !== "object") {
+
+  if (requireFields(report.verdict, VERDICT_REQUIRED, "verdict", problems)) {
+    const verdict = report.verdict as Record<string, unknown>;
+    if (
+      "status" in verdict &&
+      !["pass", "fail", "not_evaluated"].includes(verdict.status as string)
+    ) {
+      problems.push("verdict.status must be pass, fail, or not_evaluated");
+    }
+    if ("reasons" in verdict && !Array.isArray(verdict.reasons)) {
+      problems.push("verdict.reasons must be an array");
+    }
+    if ("checks" in verdict) {
+      if (!Array.isArray(verdict.checks)) {
+        problems.push("verdict.checks must be an array");
+      } else {
+        verdict.checks.forEach((check, index) => {
+          if (
+            requireFields(check, CHECK_REQUIRED, `verdict.checks[${index}]`, problems) &&
+            !["pass", "fail", "not_evaluated"].includes(
+              (check as Record<string, unknown>).status as string,
+            )
+          ) {
+            problems.push(`verdict.checks[${index}].status must be pass, fail, or not_evaluated`);
+          }
+        });
+      }
+    }
+  }
+
+  requireFields(report.input, INPUT_REQUIRED, "input", problems);
+  requireFields(report.output, OUTPUT_REQUIRED, "output", problems);
+
+  if (!Array.isArray(report.warnings)) {
+    problems.push("warnings must be an array");
+  } else {
+    report.warnings.forEach((warning, index) => {
+      const label = `warnings[${index}]`;
+      if (
+        requireFields(warning, WARNING_REQUIRED, label, problems) &&
+        !["info", "warning", "error"].includes(
+          (warning as Record<string, unknown>).severity as string,
+        )
+      ) {
+        problems.push(`${label}.severity must be info, warning, or error`);
+      }
+    });
+  }
+
+  if (!isPlainObject(report.metrics)) {
     problems.push("metrics must be an object");
+  } else {
+    for (const [name, metric] of Object.entries(report.metrics)) {
+      const label = `metrics.${name}`;
+      if (
+        requireFields(metric, METRIC_REQUIRED, label, problems) &&
+        !["measured", "not_measured", "not_applicable"].includes(
+          (metric as Record<string, unknown>).status as string,
+        )
+      ) {
+        problems.push(`${label}.status must be measured, not_measured, or not_applicable`);
+      }
+    }
   }
-  if (!value.timings_ms || typeof value.timings_ms !== "object") {
+
+  if (!isPlainObject(report.timings_ms)) {
     problems.push("timings_ms must be an object");
   } else {
-    for (const [name, timing] of Object.entries(value.timings_ms)) {
-      if (!Number.isFinite(timing) || timing < 0) {
+    for (const [name, timing] of Object.entries(report.timings_ms)) {
+      if (!isNonNegativeNumber(timing)) {
         problems.push(`timing ${name} must be a finite non-negative number`);
       }
     }
   }
-  if (value.reproducibility?.scope !== "same_runtime_toolchain") {
-    problems.push("reproducibility.scope must be same_runtime_toolchain");
+
+  if (requireFields(report.processing, PROCESSING_REQUIRED, "processing", problems)) {
+    const processing = report.processing as Record<string, unknown>;
+    if ("pipeline" in processing && !Array.isArray(processing.pipeline)) {
+      problems.push("processing.pipeline must be an array");
+    }
+    requireFields(processing.fallbacks, FALLBACKS_REQUIRED, "processing.fallbacks", problems);
+    if (requireFields(processing.refinements, REFINEMENTS_REQUIRED, "processing.refinements", problems)) {
+      const refinements = processing.refinements as Record<string, unknown>;
+      if (
+        requireFields(refinements.snug_fit, SNUG_FIT_REQUIRED, "processing.refinements.snug_fit", problems)
+      ) {
+        const snugFit = refinements.snug_fit as Record<string, unknown>;
+        if (
+          "status" in snugFit &&
+          !["applied", "skipped", "not_requested", "unknown"].includes(snugFit.status as string)
+        ) {
+          problems.push(
+            "processing.refinements.snug_fit.status must be applied, skipped, not_requested, or unknown",
+          );
+        }
+      }
+    }
   }
+
+  requireFields(report.runtime, RUNTIME_REQUIRED, "runtime", problems);
+
+  if (requireFields(report.reproducibility, REPRODUCIBILITY_REQUIRED, "reproducibility", problems)) {
+    const reproducibility = report.reproducibility as Record<string, unknown>;
+    if (reproducibility.scope !== "same_runtime_toolchain") {
+      problems.push("reproducibility.scope must be same_runtime_toolchain");
+    }
+    const sha = reproducibility.artifact_sha256;
+    if (sha !== null && sha !== undefined && !/^[0-9a-f]{64}$/.test(sha as string)) {
+      problems.push("reproducibility.artifact_sha256 must be a 64-char lowercase hex string or null");
+    }
+  }
+
+  requireFields(report.config, CONFIG_REQUIRED, "config", problems);
+
+  if (!isPlainObject(report.artifacts)) {
+    problems.push("artifacts must be an object");
+  }
+
   return problems;
 }

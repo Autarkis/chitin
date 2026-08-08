@@ -1,5 +1,6 @@
 import { DECOMPOSE_DEFAULTS, resolveDecomposeConfig } from "./defaults.js";
 import { ChitinError } from "./errors.js";
+import { INTERACTIVE_MIN_HULL_VERTICES } from "./shared-constants.js";
 import { boundsDiagonal, boundsVolume, componentArea, meshBounds } from "./geometry.js";
 import type { CanonicalizedMesh, TriangleMesh } from "./mesh.js";
 import type { DecomposeConfig } from "./types.js";
@@ -108,7 +109,7 @@ const DEFAULT_IMPORTANT_COMPONENT_MAX_OCCUPANCY_RATIO = 0.5;
 const DEFAULT_HOLLOW_SHELL_MAX_OCCUPANCY_RATIO = 0.05;
 const DEFAULT_HOLLOW_SHELL_MAX_THRESHOLD = 0.05;
 const DEFAULT_HOLLOW_SHELL_MIN_HULLS = 8;
-const DEFAULT_MIN_HULL_VERTICES = 8;
+const DEFAULT_MIN_HULL_VERTICES = INTERACTIVE_MIN_HULL_VERTICES;
 const DEFAULT_MAX_HULL_VERTICES = 96;
 
 function finiteRatio(value: number | undefined, fallback: number, label: string): number {

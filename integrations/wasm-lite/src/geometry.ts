@@ -41,7 +41,13 @@ export function containsBounds(bounds: Bounds, point: Point, tolerance: number):
     point[2] >= bounds.min[2] - tolerance && point[2] <= bounds.max[2] + tolerance;
 }
 
-export function triangleArea(vertices: ArrayLike<number>, a: number, b: number, c: number): number {
+/** Cross product of two triangle edges in a flat xyz array. */
+export function triangleCrossProduct(
+  vertices: ArrayLike<number>,
+  a: number,
+  b: number,
+  c: number,
+): [number, number, number] {
   const ai = a * 3;
   const bi = b * 3;
   const ci = c * 3;
@@ -51,11 +57,24 @@ export function triangleArea(vertices: ArrayLike<number>, a: number, b: number, 
   const acx = vertices[ci] - vertices[ai];
   const acy = vertices[ci + 1] - vertices[ai + 1];
   const acz = vertices[ci + 2] - vertices[ai + 2];
-  return 0.5 * Math.hypot(
+  return [
     aby * acz - abz * acy,
     abz * acx - abx * acz,
     abx * acy - aby * acx,
-  );
+  ];
+}
+
+export function triangleArea(vertices: ArrayLike<number>, a: number, b: number, c: number): number {
+  const [cx, cy, cz] = triangleCrossProduct(vertices, a, b, c);
+  return 0.5 * Math.hypot(cx, cy, cz);
+}
+
+export function vertexCount(positions: ArrayLike<number>): number {
+  return positions.length / 3;
+}
+
+export function triangleCount(indices: ArrayLike<number>): number {
+  return indices.length / 3;
 }
 
 export function componentArea(mesh: TriangleMesh): number {
