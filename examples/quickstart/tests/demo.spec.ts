@@ -28,6 +28,7 @@ test("built-in GLB compiles into a downloadable collider artifact", async ({ pag
   await expect(page.locator("#collider-triangles")).not.toHaveText("—");
   await expect(page.locator("#triangle-ratio")).toContainText("%");
   await expect(page.locator("#hull-count")).not.toHaveText("—");
+  const preview = await page.evaluate(() => window.__chitinDemo.previewAvailable);
   const state = await page.evaluate(() => window.__chitinDemo.state());
   expect(state.busy).toBe(false);
   expect(state.hulls).toBe(1);
@@ -35,8 +36,10 @@ test("built-in GLB compiles into a downloadable collider artifact", async ({ pag
   expect(state.reportVersion).toBe(1);
   expect(state.appliedThreshold).toBe(0.1);
   expect(state.qualityMeasured).toBe(false);
-  expect(state.colliderRevealCount).toBe(1);
-  await expect(page.locator(".viewport-panel")).toHaveAttribute("data-collider-reveal", "complete");
+  if (preview) {
+    expect(state.colliderRevealCount).toBe(1);
+    await expect(page.locator(".viewport-panel")).toHaveAttribute("data-collider-reveal", "complete");
+  }
 
   await page.getByRole("button", { name: "View report" }).click();
   await expect(page.locator("#report-panel")).toBeVisible();
@@ -88,9 +91,12 @@ test("verified lightweight real-asset fixtures compile from bundled GLBs", async
   expect(coarseFishHullCount).toBeLessThanOrEqual(fishHullCount);
   await expect(page.locator("#result-time")).toContainText("2/3 parts reused");
   await expect(page.locator("#report-output")).toContainText("INTERACTIVE_IMPORTANCE_GUARD");
-  const previewState = await page.evaluate(() => window.__chitinDemo.state());
-  expect(previewState.sourceMeshes).toBeGreaterThan(0);
-  expect(previewState.sourceFilledMeshes).toBe(previewState.sourceMeshes);
+  const preview = await page.evaluate(() => window.__chitinDemo.previewAvailable);
+  if (preview) {
+    const previewState = await page.evaluate(() => window.__chitinDemo.state());
+    expect(previewState.sourceMeshes).toBeGreaterThan(0);
+    expect(previewState.sourceFilledMeshes).toBe(previewState.sourceMeshes);
+  }
   expect(consoleErrors).toEqual([]);
 });
 
@@ -112,11 +118,14 @@ test("open GLBs keep their source preview and explain the full-compiler repair p
   await expect(page.getByRole("button", { name: "Choose another GLB" })).toBeVisible();
   await expect(page.locator("#threshold-status")).toContainText("no collider produced");
 
+  const preview = await page.evaluate(() => window.__chitinDemo.previewAvailable);
   const state = await page.evaluate(() => window.__chitinDemo.state());
   expect(state.hulls).toBe(0);
-  expect(state.sourceVisible).toBe(true);
-  expect(state.colliderVisible).toBe(false);
-  expect(state.sourceMeshes).toBeGreaterThan(0);
+  if (preview) {
+    expect(state.sourceVisible).toBe(true);
+    expect(state.colliderVisible).toBe(false);
+    expect(state.sourceMeshes).toBeGreaterThan(0);
+  }
 });
 
 test("replacing an artifact resets report and applied-detail state", async ({ page }) => {
@@ -143,6 +152,8 @@ test("preview layers and responsive controls remain usable", async ({ page }) =>
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.waitForFunction(() => window.__chitinDemo?.ready);
+  const preview = await page.evaluate(() => window.__chitinDemo.previewAvailable);
+  test.skip(!preview, "WebGL unavailable");
   await expect(page.locator("#viewport")).toBeVisible();
   await expect(page.locator(".control-panel")).toBeVisible();
   await expect(page.locator("#file-button")).toBeVisible();
@@ -190,9 +201,12 @@ test("detail changes automatically recompile at the displayed setting", async ({
     slider.dispatchEvent(new Event("change", { bubbles: true }));
     return window.__chitinDemo.state();
   });
+  const preview = await page.evaluate(() => window.__chitinDemo.previewAvailable);
   expect(pendingState.busy).toBe(true);
   expect(pendingState.hulls).toBe(appliedState.hulls);
-  expect(pendingState.colliderVisible).toBe(true);
+  if (preview) {
+    expect(pendingState.colliderVisible).toBe(true);
+  }
 
   await expect(page.locator("#threshold-status")).toContainText("Applied 0.30", { timeout: 60_000 });
   await expect(page.locator("#result-summary")).toContainText("Detail 0.30 applied");

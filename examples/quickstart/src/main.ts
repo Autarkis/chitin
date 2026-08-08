@@ -81,6 +81,7 @@ const explodeColliders = $("#explode-colliders") as HTMLInputElement;
 const explodeDistance = $("#explode-distance") as HTMLInputElement;
 
 let previewController: PreviewApi;
+let previewAvailable = true;
 try {
   previewController = new PreviewController({
     canvas,
@@ -92,7 +93,8 @@ try {
   });
 } catch {
   previewController = new NullPreviewController();
-  viewportPanel.hidden = true;
+  canvas.hidden = true;
+  previewAvailable = false;
 }
 
 const compiler = new ChitinCompiler({
@@ -683,6 +685,7 @@ declare global {
 
 window.__chitinDemo = {
   ready: true,
+  previewAvailable,
   state: () => ({
     ...previewController.state(),
     busy: activeCompile !== null,

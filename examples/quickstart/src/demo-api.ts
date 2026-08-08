@@ -12,5 +12,6 @@ export interface ChitinDemoState extends PreviewState {
 
 export interface ChitinDemoApi {
   ready: boolean;
+  previewAvailable: boolean;
   state(): ChitinDemoState;
 }
