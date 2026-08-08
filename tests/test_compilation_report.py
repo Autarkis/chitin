@@ -195,3 +195,19 @@ def test_bad_status_rejection_is_also_a_schema_violation():
     assert validate_compilation_report(report) != []
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(instance=report, schema=_schema())
+
+
+def test_validator_rejects_boolean_timing():
+    report = build_compilation_report(_result()).to_dict()
+    report["timings_ms"] = {"total": True}
+
+    assert validate_compilation_report(report) == [
+        "timing 'total' must be a finite non-negative number"
+    ]
+
+
+def test_validator_reports_invalid_reproducibility_container():
+    report = build_compilation_report(_result()).to_dict()
+    report["reproducibility"] = []
+
+    assert validate_compilation_report(report) == ["reproducibility must be an object"]

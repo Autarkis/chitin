@@ -395,11 +395,15 @@ def validate_compilation_report(report: dict) -> list[str]:
     else:
         for name, value in report["timings_ms"].items():
             if (
-                not isinstance(value, (int, float))
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
                 or not math.isfinite(value)
                 or value < 0
             ):
                 problems.append(f"timing {name!r} must be a finite non-negative number")
-    if report.get("reproducibility", {}).get("scope") != "same_runtime_toolchain":
+    reproducibility = report.get("reproducibility")
+    if not isinstance(reproducibility, dict):
+        problems.append("reproducibility must be an object")
+    elif reproducibility.get("scope") != "same_runtime_toolchain":
         problems.append("reproducibility.scope must be same_runtime_toolchain")
     return problems
