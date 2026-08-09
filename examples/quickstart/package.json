@@ -1,0 +1,27 @@
+{
+  "name": "@autarkis/chitin-browser-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 127.0.0.1 --port 4179 --strictPort --open",
+    "dev": "vite --host 127.0.0.1 --port 4179",
+    "prepare:samples": "node scripts/prepare-samples.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4179 --strictPort",
+    "test": "playwright test",
+    "benchmark:samples": "playwright test tests/sample-quality.benchmark.spec.ts --project=chromium --reporter=line"
+  },
+  "dependencies": {
+    "@autarkis/chitin-coacd-wasm": "file:../../integrations/coacd-wasm",
+    "@autarkis/chitin-lite": "file:../../integrations/wasm-lite",
+    "@autarkis/chitin-web": "file:../../integrations/web",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.0"
+  }
+}
