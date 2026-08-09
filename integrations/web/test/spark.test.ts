@@ -112,6 +112,7 @@ describe("Spark adapter", () => {
     expect(receiver.strength).toBe(0.65);
     expect(receiver.bias).toBeNull();
     expect(receiver.dynamic).toBe(false);
+    expect(visual.enableWorldToView).toBe(true);
 
     receiver.strength = 0.8;
     receiver.bias = -0.0002;
@@ -138,10 +139,12 @@ describe("Spark adapter", () => {
 
     receiver.dispose();
     expect(visual.worldModifiers).toHaveLength(2);
+    expect(visual.enableWorldToView).toBe(true);
     expect(visual.onFrame).not.toBe(onFrame);
     secondReceiver.dispose();
     expect(visual.worldModifiers).toEqual([existing]);
     expect(visual.onFrame).toBe(onFrame);
+    expect(visual.enableWorldToView).toBe(false);
     receiver.dispose();
     visual.dispose();
   });

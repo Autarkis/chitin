@@ -17,6 +17,7 @@ import {
   PCFShadowMap,
   Texture,
   UnsignedIntType,
+  Vector3,
   WebGLRenderer,
   type Object3D,
 } from "three";
@@ -86,6 +87,13 @@ interface SparkFrameHookState {
 }
 
 const sparkFrameHooks = new WeakMap<SplatMesh, SparkFrameHookState>();
+
+interface SparkWorldToViewState {
+  original: boolean;
+  users: number;
+}
+
+const sparkWorldToViewUsers = new WeakMap<SplatMesh, SparkWorldToViewState>();
 
 /**
  * Pair a Spark visual with its engine-neutral `.phys` sidecar. Physics remains
@@ -184,7 +192,9 @@ export async function loadSparkAsset(
  *
  * The light's Chitin hull proxies remain ordinary Three.js shadow casters. This
  * bridge samples Three's comparison depth texture at each world-space splat
- * center and composes with any Spark world modifiers already on the visual.
+ * center. Shadowing is gated by the view-facing Gaussian surface normal so an
+ * occluder cannot project through a closed capture onto its far side. The
+ * modifier composes with any Spark world modifiers already on the visual.
  */
 export function attachSparkDirectionalShadow(
   options: AttachSparkDirectionalShadowOptions,
@@ -230,11 +240,17 @@ export function attachSparkDirectionalShadow(
   const matrixUniform = new dyno.DynoMat4({ value: new Matrix4() });
   const strengthUniform = new dyno.DynoFloat({ value: strength });
   const biasUniform = new dyno.DynoFloat({ value: 0 });
+  const lightDirectionUniform = new dyno.DynoVec3({ value: new Vector3() });
+  const lightPosition = new Vector3();
+  const lightTargetPosition = new Vector3();
+  const releaseWorldToView = acquireSparkWorldToView(visual);
   const modifier = directionalShadowModifier({
     map: mapUniform,
     matrix: matrixUniform,
     strength: strengthUniform,
     bias: biasUniform,
+    lightDirection: lightDirectionUniform,
+    worldToView: visual.context.worldToView,
   });
 
   visual.worldModifiers = [...(visual.worldModifiers ?? []), modifier];
@@ -249,6 +265,10 @@ export function attachSparkDirectionalShadow(
     matrixUniform.value.copy(light.shadow.matrix);
     strengthUniform.value = strength;
     biasUniform.value = bias ?? light.shadow.bias;
+    lightDirectionUniform.value
+      .copy(light.getWorldPosition(lightPosition))
+      .sub(light.target.getWorldPosition(lightTargetPosition))
+      .normalize();
     visual.updateVersion();
   };
   const removeFrameHook = addSparkFrameHook(visual, () => {
@@ -292,6 +312,7 @@ export function attachSparkDirectionalShadow(
           ? undefined
           : modifiers;
       removeFrameHook();
+      releaseWorldToView();
       visual.updateGenerator();
       placeholder.dispose();
     },
@@ -324,22 +345,50 @@ function addSparkFrameHook(visual: SplatMesh, hook: SparkOnFrame): () => void {
   };
 }
 
+function acquireSparkWorldToView(visual: SplatMesh): () => void {
+  let state = sparkWorldToViewUsers.get(visual);
+  if (state === undefined) {
+    state = { original: visual.enableWorldToView, users: 0 };
+    sparkWorldToViewUsers.set(visual, state);
+  }
+  state.users++;
+  visual.enableWorldToView = true;
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    state.users--;
+    if (state.users !== 0) return;
+    visual.enableWorldToView = state.original;
+    sparkWorldToViewUsers.delete(visual);
+  };
+}
+
 function directionalShadowModifier({
   map,
   matrix,
   strength,
   bias,
+  lightDirection,
+  worldToView,
 }: {
   map: dyno.DynoUniform<"sampler2DShadow", string, Texture>;
   matrix: dyno.DynoMat4<string, Matrix4>;
   strength: dyno.DynoFloat;
   bias: dyno.DynoFloat;
+  lightDirection: dyno.DynoVec3<Vector3>;
+  worldToView: SplatMesh["context"]["worldToView"];
 }): GsplatModifier {
   return dyno.dynoBlock(
     { gsplat: dyno.Gsplat },
     { gsplat: dyno.Gsplat },
     ({ gsplat }) => {
       if (gsplat === undefined) return undefined;
+      const worldNormal = dyno.gsplatNormal(gsplat);
+      const viewGsplat = worldToView.applyGsplat(gsplat);
+      const viewCenter = dyno.splitGsplat(viewGsplat).outputs.center;
+      const viewNormal = dyno.gsplatNormal(viewGsplat);
       const shaded = new dyno.Dyno({
         inTypes: {
           gsplat: dyno.Gsplat,
@@ -347,6 +396,10 @@ function directionalShadowModifier({
           shadowMatrix: "mat4",
           shadowStrength: "float",
           shadowBias: "float",
+          lightDirection: "vec3",
+          worldNormal: "vec3",
+          viewCenter: "vec3",
+          viewNormal: "vec3",
         },
         outTypes: { gsplat: dyno.Gsplat },
         inputs: {
@@ -355,6 +408,10 @@ function directionalShadowModifier({
           shadowMatrix: matrix,
           shadowStrength: strength,
           shadowBias: bias,
+          lightDirection,
+          worldNormal,
+          viewCenter,
+          viewNormal,
         },
         globals: () => [dyno.defineGsplat],
         statements: ({ inputs, outputs }) => {
@@ -366,7 +423,11 @@ function directionalShadowModifier({
             inputs.shadowMap === undefined ||
             inputs.shadowMatrix === undefined ||
             inputs.shadowStrength === undefined ||
-            inputs.shadowBias === undefined
+            inputs.shadowBias === undefined ||
+            inputs.lightDirection === undefined ||
+            inputs.worldNormal === undefined ||
+            inputs.viewCenter === undefined ||
+            inputs.viewNormal === undefined
           ) {
             return [];
           }
@@ -387,6 +448,16 @@ function directionalShadowModifier({
             }
             float chitinShadowAmount =
               clamp(${inputs.shadowStrength}, 0.0, 1.0) * (1.0 - chitinVisibility);
+            vec3 chitinReceiverNormal = normalize(${inputs.worldNormal});
+            if (dot(${inputs.viewCenter}, ${inputs.viewNormal}) >= 0.0) {
+              chitinReceiverNormal = -chitinReceiverNormal;
+            }
+            float chitinReceiverFacing = smoothstep(
+              -0.05,
+              0.15,
+              dot(chitinReceiverNormal, normalize(${inputs.lightDirection}))
+            );
+            chitinShadowAmount *= chitinReceiverFacing;
             ${target}.rgba.rgb *= 1.0 - chitinShadowAmount;
           `);
         },
