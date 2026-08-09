@@ -20,6 +20,14 @@ import {
   type PhysTransform,
 } from "./geometry.js";
 
+export { createDeferredHullLightingPass } from "./deferred.js";
+export type {
+  DeferredHullLight,
+  DeferredHullLightingOptions,
+  DeferredHullLightingPass,
+  DeferredHullLightOptions,
+} from "./deferred.js";
+
 export interface DebugOptions {
   color?: number;
   opacity?: number;

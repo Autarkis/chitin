@@ -123,6 +123,41 @@ The proxy casts through Three.js's shadow pass onto ordinary Three receivers.
 Whether a gaussian-splat renderer can receive that shadow is a capability of
 that renderer's shader pipeline, not part of the `.phys` contract.
 
+### Deferred hull lighting
+
+`createDeferredHullLightingPass()` keeps the hull proxy invisible, renders it
+into camera depth/normal buffers, and composites its shadow visibility over the
+finished appearance image. This is renderer-agnostic at the appearance layer:
+Spark, transparent captures, and conventional Three content can share the same
+final pass without modifying individual visual primitives.
+
+```typescript
+import {
+  createDeferredHullLightingPass,
+  createShadowProxy,
+} from "@autarkis/chitin-web/three";
+
+const hullProxy = createShadowProxy(phys, { mode: "merged-hulls" });
+hullProxy.traverse((object) => object.layers.set(1));
+scene.add(hullProxy);
+
+light.castShadow = true;
+const deferred = createDeferredHullLightingPass({
+  renderer,
+  scene,
+  camera,
+  hullLayer: 1,
+  lights: [{ light, strength: 0.65, normalBias: 0.02 }],
+});
+
+renderer.setAnimationLoop(() => deferred.render());
+```
+
+The camera normally renders layer 0. The deferred pass renders `hullLayer`
+only into its hidden G-buffer and uses the source scene depth to avoid shading
+ordinary meshes in front of the hull receiver. Call `dispose()` when the pass
+is no longer needed.
+
 ### Spark gaussian splats
 
 The Spark adapter pairs one `SplatMesh` with its `.phys` sidecar and optional
