@@ -63,7 +63,7 @@
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
     "@types/three": "^0.184.1",
-    "three": "^0.184.0",
+    "three": "^0.185.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.6"
   },
