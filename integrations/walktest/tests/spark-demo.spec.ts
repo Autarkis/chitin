@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
 test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
-  test.setTimeout(240_000);
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -11,18 +10,17 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   await page.goto("http://localhost:3219/spark-demo.html");
 
   await expect(page.locator("#status")).toContainText("Live", {
-    timeout: 210_000,
+    timeout: 60_000,
   });
   await expect(page.locator("#splat-count")).toHaveText(/^\d[\d,]+$/);
-  await expect(page.locator("#receiver-name")).toHaveText(
-    /Spark robot head|local fallback/,
-  );
+  await expect(page.locator("#receiver-name")).toHaveText("Spark robot head");
   await expect(page.locator("#hull-count")).toHaveText("2");
   await expect(page.locator("#receiver-hull-count")).toHaveText(/^\d+$/);
   expect(
     Number(await page.locator("#receiver-hull-count").textContent()),
   ).toBeGreaterThan(0);
   await expect(page.locator("canvas")).toBeVisible();
+  await expect(page.locator("#generated-robot-phys")).toHaveCount(0);
 
   const receiverHulls = page.locator("#receiver-hulls");
   const receiverSplats = page.locator("#receiver-splats");

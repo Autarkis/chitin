@@ -1,7 +1,3 @@
-import {
-  ChitinCompiler,
-  type GaussianFieldInput,
-} from "@autarkis/chitin-lite";
 import { parsePhys } from "@autarkis/chitin-web";
 import {
   attachSparkDirectionalShadow,
@@ -11,13 +7,11 @@ import {
   createHullGeometries,
   createShadowProxy,
 } from "@autarkis/chitin-web/three";
-import { SparkRenderer, SplatMesh, SpzWriter } from "@sparkjsdev/spark";
+import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
-
-import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 
 const viewport = document.getElementById("viewport")!;
 const status = document.getElementById("status")!;
@@ -177,6 +171,8 @@ let ambientOcclusionStrength = Number(aoStrengthInput.value);
 const casterBaseX = -0.55;
 
 const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
+const ROBOT_PHYS_URL = "./assets/robot-head.phys";
+const CASTER_PHYS_URL = "./assets/l-prism.phys";
 
 async function applyEnvironment(name: string): Promise<void> {
   const url = ENVIRONMENTS[name];
@@ -227,24 +223,6 @@ async function applyEnvironment(name: string): Promise<void> {
   }
 }
 
-function extractGaussianField(visual: SplatMesh): GaussianFieldInput {
-  const count =
-    visual.splats?.getNumSplats() ??
-    visual.packedSplats?.getNumSplats() ??
-    visual.numSplats;
-  const centers = new Float32Array(count * 3);
-  const scales = new Float32Array(count * 3);
-  const quaternions = new Float32Array(count * 4);
-  const opacities = new Float32Array(count);
-  visual.forEachSplat((index, center, scale, quaternion, opacity) => {
-    center.toArray(centers, index * 3);
-    scale.toArray(scales, index * 3);
-    quaternion.toArray(quaternions, index * 4);
-    opacities[index] = opacity;
-  });
-  return { centers, scales, quaternions, opacities };
-}
-
 function copyVisualTransform(target: THREE.Object3D, visual: SplatMesh): void {
   target.position.copy(visual.position);
   target.quaternion.copy(visual.quaternion);
@@ -284,104 +262,38 @@ function buildRobotPhysGeometry(
 
 async function buildReceiverSplats(): Promise<SplatMesh> {
   status.textContent = "Loading Spark’s robot-head example capture…";
-  try {
-    const visual = new SplatMesh({
-      url: ROBOT_HEAD_URL,
-      enableLod: false,
-    });
-    await visual.initialized;
-    visual.rotation.x = Math.PI;
-    visual.scale.setScalar(1.05);
-    visual.position.set(0.15, 0.62, -0.15);
-    scene.add(visual);
-    const count =
-      visual.splats?.getNumSplats() ??
-      visual.packedSplats?.getNumSplats() ??
-      0;
-    document.getElementById("splat-count")!.textContent =
-      count.toLocaleString();
-    document.getElementById("receiver-name")!.textContent =
-      "Spark robot head";
-    return visual;
-  } catch (error) {
-    console.warn(
-      "Spark example unavailable; using the local procedural fallback",
-      error,
-    );
-    status.textContent =
-      "Spark example unavailable — building the local splat fallback…";
-    return buildProceduralReceiverSplats();
-  }
-}
-
-async function buildProceduralReceiverSplats(): Promise<SplatMesh> {
-  const width = 49;
-  const spacing = 0.105;
-  const count = width * width;
-  const writer = new SpzWriter({ numSplats: count, shDegree: 0 });
-  let index = 0;
-  for (let z = 0; z < width; z++) {
-    for (let x = 0; x < width; x++) {
-      const grain = ((x * 37 + z * 61 + x * z * 3) % 101) / 100;
-      const crossGrain = ((x * 71 + z * 29 + x * z * 7) % 97) / 96;
-      const px =
-        (x - (width - 1) / 2) * spacing +
-        (grain - 0.5) * spacing * 0.24;
-      const pz =
-        (z - (width - 1) / 2) * spacing +
-        (crossGrain - 0.5) * spacing * 0.24;
-      const py =
-        Math.sin(px * 1.65) * Math.cos(pz * 1.35) * 0.025 +
-        (grain - 0.5) * 0.008;
-      const radial = Math.hypot(px, pz) / 4;
-      const footprint = spacing * (0.27 + grain * 0.09);
-      writer.setCenter(index, px, py, pz);
-      writer.setAlpha(index, Math.max(0.78, 0.96 - radial * 0.1));
-      writer.setRgb(
-        index,
-        0.38 + grain * 0.18 + (x / width) * 0.06,
-        0.55 + crossGrain * 0.16,
-        0.8 + grain * 0.12,
-      );
-      writer.setScale(index, footprint, 0.012, footprint * 0.9);
-      writer.setQuat(index, 0, 0, 0, 1);
-      index++;
-    }
-  }
   const visual = new SplatMesh({
-    fileBytes: await writer.finalize(),
-    fileName: "chitin-shadow-receiver.spz",
+    url: ROBOT_HEAD_URL,
     enableLod: false,
   });
   await visual.initialized;
+  visual.rotation.x = Math.PI;
+  visual.scale.setScalar(1.05);
+  visual.position.set(0.15, 0.62, -0.15);
   scene.add(visual);
+  const count =
+    visual.splats?.getNumSplats() ??
+    visual.packedSplats?.getNumSplats() ??
+    0;
   document.getElementById("splat-count")!.textContent = count.toLocaleString();
-  document.getElementById("receiver-name")!.textContent = "local fallback";
+  document.getElementById("receiver-name")!.textContent = "Spark robot head";
   return visual;
 }
 
-function lPrismGlb(): ArrayBuffer {
-  const positions = new Float32Array([
-    -0.7, -0.42, -0.3, 0.75, -0.42, -0.3, 0.75, 0.18, -0.3, 0.12, 0.18, -0.3,
-    0.12, 0.92, -0.3, -0.7, 0.92, -0.3, -0.7, -0.42, 0.3, 0.75, -0.42, 0.3,
-    0.75, 0.18, 0.3, 0.12, 0.18, 0.3, 0.12, 0.92, 0.3, -0.7, 0.92, 0.3,
-  ]);
-  const indices = new Uint16Array([
-    2, 1, 0, 5, 4, 3, 3, 2, 0, 0, 5, 3, 6, 7, 8, 9, 10, 11, 6, 8, 9, 9, 11, 6,
-    7, 6, 1, 1, 6, 0, 8, 7, 2, 2, 7, 1, 9, 8, 3, 3, 8, 2, 10, 9, 4, 4, 9, 3, 6,
-    11, 0, 0, 11, 5, 11, 10, 5, 5, 10, 4,
-  ]);
-  const { document, binary } = buildMinimalGltf(positions, indices, {
-    generator: "chitin Spark shadow demo",
-    bounds: false,
-  });
-  return packGlb(document, binary);
+async function loadPhys(
+  url: string,
+  label: string,
+): Promise<ReturnType<typeof parsePhys>> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Unable to load ${label} (${response.status} ${response.statusText})`,
+    );
+  }
+  return parsePhys(await response.arrayBuffer());
 }
 
-async function buildCaster(compiler: ChitinCompiler) {
-  status.textContent = "Compiling the caster into a Chitin .phys sidecar…";
-  const result = await compiler.compileGlb(lPrismGlb());
-  const phys = parsePhys(result.phys);
+function buildCaster(phys: ReturnType<typeof parsePhys>) {
   document.getElementById("hull-count")!.textContent = String(
     phys.hulls.length,
   );
@@ -414,43 +326,17 @@ async function buildCaster(compiler: ChitinCompiler) {
 }
 
 async function init() {
-  const receiverVisual = await buildReceiverSplats();
-  const compiler = new ChitinCompiler({
-    wasm: {
-      js: new URL("./dist/packages/coacd/coacd.mjs", location.href).href,
-      wasm: new URL("./dist/packages/coacd/coacd.wasm", location.href).href,
-      version: "0.2.0",
-    },
-    workerUrl: new URL("./dist/packages/chitin-lite/worker.js", location.href),
-  });
-  let robotPhys!: ReturnType<typeof parsePhys>;
-  try {
-    status.textContent =
-      "Reconstructing the robot support and compiling it through Chitin…";
-    const robotResult = await compiler.compileGaussianField(
-      extractGaussianField(receiverVisual),
-      {
-        reconstruction: {
-          resolution: 72,
-          supportMultiplier: 1.75,
-          minOpacity: 0.2,
-          shellThickness: 1.15,
-        },
-        decompose: {
-          threshold: 0.025,
-          maxConvexHull: 96,
-          maxChVertex: 64,
-        },
-      },
-    );
-    robotPhys = parsePhys(robotResult.phys);
-    document.getElementById("receiver-hull-count")!.textContent =
-      robotPhys.hulls.length.toLocaleString();
-    buildRobotPhysGeometry(robotPhys, receiverVisual);
-    await buildCaster(compiler);
-  } finally {
-    compiler.terminate();
-  }
+  status.textContent = "Loading paired Spark and Chitin assets…";
+  const [receiverVisual, robotPhys, casterPhys] = await Promise.all([
+    buildReceiverSplats(),
+    loadPhys(ROBOT_PHYS_URL, "robot-head.phys"),
+    loadPhys(CASTER_PHYS_URL, "l-prism.phys"),
+  ]);
+  document.getElementById("receiver-hull-count")!.textContent =
+    robotPhys.hulls.length.toLocaleString();
+  buildRobotPhysGeometry(robotPhys, receiverVisual);
+
+  buildCaster(casterPhys);
 
   status.textContent = "Binding Spark appearance to the robot .phys surface…";
   const surface = bindSparkToPhysSurface(receiverVisual, robotPhys);
