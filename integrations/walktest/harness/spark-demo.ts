@@ -31,9 +31,12 @@ const receiverSplatsInput = document.getElementById(
 const environmentInput = document.getElementById(
   "environment",
 ) as HTMLSelectElement;
+const lightingInput = document.getElementById("lighting") as HTMLInputElement;
 
 const LIVE_STATUS =
   "Live — amber hulls are derived from the SPZ; mint hulls are the Chitin .phys caster.";
+const LIGHTING_OFF_STATUS =
+  "Live — real-time lighting is off; Spark capture colors remain baked.";
 const ENVIRONMENTS: Record<string, string | null> = {
   studio: null,
   venice:
@@ -76,6 +79,7 @@ scene.environmentIntensity = 0.55;
 scene.backgroundIntensity = 0.42;
 scene.backgroundBlurriness = 0.16;
 viewport.dataset.environment = "studio";
+viewport.dataset.lighting = String(lightingInput.checked);
 let activeHdri: THREE.DataTexture | null = null;
 let environmentRequest = 0;
 
@@ -102,7 +106,12 @@ light.shadow.camera.near = 0.1;
 light.shadow.camera.far = 18;
 light.shadow.bias = -0.00015;
 scene.add(light, light.target);
-scene.add(new THREE.HemisphereLight(0x9ab9ff, 0x111827, 1.4));
+const hemisphereLight = new THREE.HemisphereLight(
+  0x9ab9ff,
+  0x111827,
+  1.4,
+);
+scene.add(hemisphereLight);
 
 const grid = new THREE.GridHelper(12, 24, 0x284057, 0x172535);
 grid.position.y = -0.055;
@@ -136,7 +145,7 @@ async function applyEnvironment(name: string): Promise<void> {
       activeHdri = null;
       scene.environment = studioEnvironment;
       scene.background = new THREE.Color(0x080b12);
-      scene.environmentIntensity = 0.55;
+      scene.environmentIntensity = lightingInput.checked ? 0.55 : 0;
       scene.backgroundIntensity = 0.42;
       viewport.dataset.environment = name;
       return;
@@ -153,7 +162,7 @@ async function applyEnvironment(name: string): Promise<void> {
     activeHdri = texture;
     scene.environment = texture;
     scene.background = texture;
-    scene.environmentIntensity = 0.7;
+    scene.environmentIntensity = lightingInput.checked ? 0.7 : 0;
     scene.backgroundIntensity = 0.36;
     viewport.dataset.environment = name;
   } catch (error) {
@@ -163,6 +172,7 @@ async function applyEnvironment(name: string): Promise<void> {
     activeHdri = null;
     scene.environment = studioEnvironment;
     scene.background = new THREE.Color(0x080b12);
+    scene.environmentIntensity = lightingInput.checked ? 0.55 : 0;
     viewport.dataset.environment = "studio";
   } finally {
     if (request === environmentRequest) {
@@ -487,6 +497,20 @@ async function init() {
   });
   viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
   viewport.dataset.receiverSplatsVisible = String(receiverSplatsInput.checked);
+  lightingInput.addEventListener("change", () => {
+    const enabled = lightingInput.checked;
+    light.visible = enabled;
+    hemisphereLight.visible = enabled;
+    scene.environmentIntensity = enabled
+      ? environmentInput.value === "studio"
+        ? 0.55
+        : 0.7
+      : 0;
+    receiver.strength = enabled ? receiverStrength : 0;
+    strengthInput.disabled = !enabled;
+    viewport.dataset.lighting = String(enabled);
+    status.textContent = enabled ? LIVE_STATUS : LIGHTING_OFF_STATUS;
+  });
   environmentInput.addEventListener("change", () => {
     void applyEnvironment(environmentInput.value);
   });
