@@ -8,7 +8,9 @@ import {
 import { SparkRenderer, SplatMesh, SpzWriter } from "@sparkjsdev/spark";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 
 import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 
@@ -26,6 +28,19 @@ const receiverHullsInput = document.getElementById(
 const receiverSplatsInput = document.getElementById(
   "receiver-splats",
 ) as HTMLInputElement;
+const environmentInput = document.getElementById(
+  "environment",
+) as HTMLSelectElement;
+
+const LIVE_STATUS =
+  "Live — amber hulls are derived from the SPZ; mint hulls are the Chitin .phys caster.";
+const ENVIRONMENTS: Record<string, string | null> = {
+  studio: null,
+  venice:
+    "https://threejs.org/examples/textures/equirectangular/venice_sunset_1k.hdr",
+  overpass:
+    "https://threejs.org/examples/textures/equirectangular/pedestrian_overpass_1k.hdr",
+};
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080b12);
@@ -47,6 +62,22 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 viewport.appendChild(renderer.domElement);
+
+const roomEnvironment = new RoomEnvironment();
+const environmentGenerator = new THREE.PMREMGenerator(renderer);
+const studioEnvironment = environmentGenerator.fromScene(
+  roomEnvironment,
+  0.04,
+).texture;
+roomEnvironment.dispose();
+environmentGenerator.dispose();
+scene.environment = studioEnvironment;
+scene.environmentIntensity = 0.55;
+scene.backgroundIntensity = 0.42;
+scene.backgroundBlurriness = 0.16;
+viewport.dataset.environment = "studio";
+let activeHdri: THREE.DataTexture | null = null;
+let environmentRequest = 0;
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.45, 0);
@@ -92,6 +123,54 @@ let receiverStrength = Number(strengthInput.value);
 const casterBaseX = -0.55;
 
 const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
+
+async function applyEnvironment(name: string): Promise<void> {
+  const url = ENVIRONMENTS[name];
+  if (url === undefined) return;
+  const request = ++environmentRequest;
+  environmentInput.disabled = true;
+
+  try {
+    if (url === null) {
+      activeHdri?.dispose();
+      activeHdri = null;
+      scene.environment = studioEnvironment;
+      scene.background = new THREE.Color(0x080b12);
+      scene.environmentIntensity = 0.55;
+      scene.backgroundIntensity = 0.42;
+      viewport.dataset.environment = name;
+      return;
+    }
+
+    status.textContent = `Loading ${environmentInput.selectedOptions[0]?.textContent ?? "HDRI"}…`;
+    const texture = await new RGBELoader().loadAsync(url);
+    if (request !== environmentRequest) {
+      texture.dispose();
+      return;
+    }
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    activeHdri?.dispose();
+    activeHdri = texture;
+    scene.environment = texture;
+    scene.background = texture;
+    scene.environmentIntensity = 0.7;
+    scene.backgroundIntensity = 0.36;
+    viewport.dataset.environment = name;
+  } catch (error) {
+    console.warn("Unable to load the selected HDR environment", error);
+    environmentInput.value = "studio";
+    activeHdri?.dispose();
+    activeHdri = null;
+    scene.environment = studioEnvironment;
+    scene.background = new THREE.Color(0x080b12);
+    viewport.dataset.environment = "studio";
+  } finally {
+    if (request === environmentRequest) {
+      environmentInput.disabled = false;
+      status.textContent = LIVE_STATUS;
+    }
+  }
+}
 
 type GaussianSample = {
   center: THREE.Vector3;
@@ -384,8 +463,7 @@ async function init() {
   receiver.update();
   await sparkRenderer.update({ scene, camera });
   renderer.render(scene, camera);
-  status.textContent =
-    "Live — amber hulls are derived from the SPZ; mint hulls are the Chitin .phys caster.";
+  status.textContent = LIVE_STATUS;
 
   strengthInput.addEventListener("input", () => {
     receiverStrength = Number(strengthInput.value);
@@ -409,6 +487,9 @@ async function init() {
   });
   viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
   viewport.dataset.receiverSplatsVisible = String(receiverSplatsInput.checked);
+  environmentInput.addEventListener("change", () => {
+    void applyEnvironment(environmentInput.value);
+  });
 
   const startedAt = performance.now();
   renderer.setAnimationLoop(() => {

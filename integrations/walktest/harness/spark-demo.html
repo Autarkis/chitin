@@ -114,6 +114,16 @@
         accent-color: #70e2be;
       }
 
+      .control select {
+        grid-column: 1 / -1;
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid rgba(163, 190, 255, 0.18);
+        border-radius: 8px;
+        background: rgba(117, 144, 198, 0.1);
+        color: #dce7fa;
+      }
+
       .value {
         min-width: 38px;
         color: #7ee7c4;
@@ -283,6 +293,14 @@
           step="0.01"
           value="2.25"
         />
+      </label>
+      <label class="control">
+        <span>HDR environment</span>
+        <select id="environment">
+          <option value="studio">Dark studio</option>
+          <option value="venice">Venice sunset</option>
+          <option value="overpass">Pedestrian overpass</option>
+        </select>
       </label>
       <div class="switches">
         <label

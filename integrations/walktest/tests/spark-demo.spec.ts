@@ -27,6 +27,12 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   const receiverSplats = page.locator("#receiver-splats");
   await expect(receiverHulls).toBeChecked();
   await expect(receiverSplats).toBeChecked();
+  await expect(page.locator("#environment")).toHaveValue("studio");
+  await expect(page.locator("#environment option")).toHaveCount(3);
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-environment",
+    "studio",
+  );
   await receiverSplats.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(
     "data-receiver-splats-visible",
