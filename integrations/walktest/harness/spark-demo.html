@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chitin × Spark — Hull Shadows on Splats</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #080b12;
+        color: #edf3ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 30% 10%, #18253d 0, transparent 38%),
+          #080b12;
+      }
+
+      #viewport,
+      #viewport canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+
+      .panel {
+        position: fixed;
+        z-index: 2;
+        top: 24px;
+        left: 24px;
+        width: min(330px, calc(100vw - 48px));
+        padding: 20px;
+        border: 1px solid rgba(163, 190, 255, 0.18);
+        border-radius: 18px;
+        background: rgba(9, 13, 22, 0.82);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+        backdrop-filter: blur(18px);
+      }
+
+      .eyebrow {
+        margin: 0 0 7px;
+        color: #7ee7c4;
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 25px;
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+      }
+
+      .lede {
+        margin: 10px 0 18px;
+        color: #aab6ca;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 7px;
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        padding: 9px 8px;
+        border-radius: 10px;
+        background: rgba(117, 144, 198, 0.09);
+        color: #dce7fa;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      .metric strong {
+        display: block;
+        margin-bottom: 2px;
+        color: white;
+        font-size: 15px;
+      }
+
+      .control {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        color: #c8d3e6;
+        font-size: 13px;
+      }
+
+      .control input[type="range"] {
+        grid-column: 1 / -1;
+        width: 100%;
+        accent-color: #70e2be;
+      }
+
+      .value {
+        min-width: 38px;
+        color: #7ee7c4;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+
+      .switches {
+        display: flex;
+        gap: 16px;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(163, 190, 255, 0.12);
+      }
+
+      .switches label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: #bac6da;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      input[type="checkbox"] {
+        accent-color: #70e2be;
+      }
+
+      #status {
+        margin-top: 15px;
+        color: #7f8da4;
+        font:
+          11px/1.4 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+
+      .legend {
+        position: fixed;
+        right: 24px;
+        bottom: 22px;
+        z-index: 2;
+        display: flex;
+        gap: 14px;
+        padding: 10px 13px;
+        border: 1px solid rgba(163, 190, 255, 0.14);
+        border-radius: 999px;
+        background: rgba(9, 13, 22, 0.76);
+        color: #9eabc0;
+        font-size: 11px;
+        backdrop-filter: blur(14px);
+      }
+
+      .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 5px;
+        border-radius: 50%;
+      }
+
+      @media (max-width: 650px) {
+        .panel {
+          top: 12px;
+          left: 12px;
+          width: 250px;
+          padding: 13px;
+          border-radius: 14px;
+        }
+
+        .eyebrow {
+          margin-bottom: 5px;
+          font-size: 9px;
+        }
+
+        h1 {
+          font-size: 18px;
+        }
+
+        .lede {
+          display: none;
+        }
+
+        .metrics {
+          gap: 5px;
+          margin: 11px 0;
+        }
+
+        .metric {
+          padding: 6px 4px;
+          font-size: 9px;
+        }
+
+        .metric strong {
+          font-size: 12px;
+        }
+
+        .control {
+          gap: 6px;
+          margin-top: 8px;
+          font-size: 11px;
+        }
+
+        .switches {
+          flex-wrap: wrap;
+          gap: 8px 12px;
+          margin-top: 10px;
+          padding-top: 9px;
+        }
+
+        #status {
+          margin-top: 9px;
+          font-size: 9px;
+        }
+
+        .legend {
+          right: 12px;
+          bottom: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="viewport"></div>
+    <section class="panel">
+      <p class="eyebrow">Chitin × Spark 2.1</p>
+      <h1>Hull shadows, received by splats</h1>
+      <p class="lede">
+        The coral object is backed by Chitin’s full-detail LOD 0 hulls. Its
+        shadow is sampled directly by the Gaussian-splat surface below.
+      </p>
+      <div class="metrics">
+        <div class="metric"><strong id="splat-count">—</strong>splats</div>
+        <div class="metric"><strong id="hull-count">—</strong>hulls</div>
+        <div class="metric"><strong>LOD 0</strong>shadow</div>
+      </div>
+      <label class="control">
+        <span>Shadow strength</span>
+        <span class="value" id="strength-value">72%</span>
+        <input
+          id="strength"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.72"
+        />
+      </label>
+      <label class="control">
+        <span>Caster height</span>
+        <span class="value" id="height-value">1.15</span>
+        <input
+          id="height"
+          type="range"
+          min="0.65"
+          max="2.2"
+          step="0.01"
+          value="1.15"
+        />
+      </label>
+      <div class="switches">
+        <label
+          ><input id="animate" type="checkbox" checked /> animate caster</label
+        >
+        <label
+          ><input id="hulls" type="checkbox" checked /> show hull edges</label
+        >
+      </div>
+      <div id="status">Preparing packed Chitin runtime…</div>
+    </section>
+    <div class="legend">
+      <span><i class="dot" style="background: #ff785f"></i>caster</span>
+      <span
+        ><i class="dot" style="background: #72d9c0"></i>Chitin hull edges</span
+      >
+      <span><i class="dot" style="background: #b8ccff"></i>Spark receiver</span>
+    </div>
+    <script type="module" src="dist/spark-demo.js"></script>
+  </body>
+</html>

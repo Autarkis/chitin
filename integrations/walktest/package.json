@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "esbuild harness/scene.ts --bundle --outfile=harness/dist/scene.js --format=esm --platform=browser",
+    "build:spark-demo": "esbuild harness/spark-demo.ts --bundle --outfile=harness/dist/spark-demo.js --format=esm --platform=browser",
     "build:release-candidate": "esbuild harness/release-candidate.ts --bundle --outfile=harness/dist/release-candidate.js --format=esm --platform=browser",
+    "demo:spark": "npm run prepare:release-candidate && npm run build:spark-demo && serve harness -l 3219",
     "prepare:release-candidate": "node scripts/prepare-release-candidate.mjs",
     "pretest": "npm run build",
     "test": "npx playwright test tests/walktest.spec.ts",
