@@ -8,6 +8,7 @@ import {
 import { SparkRenderer, SplatMesh, SpzWriter } from "@sparkjsdev/spark";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 
 import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 
@@ -19,6 +20,12 @@ const heightInput = document.getElementById("height") as HTMLInputElement;
 const heightValue = document.getElementById("height-value")!;
 const animateInput = document.getElementById("animate") as HTMLInputElement;
 const hullsInput = document.getElementById("hulls") as HTMLInputElement;
+const receiverHullsInput = document.getElementById(
+  "receiver-hulls",
+) as HTMLInputElement;
+const receiverSplatsInput = document.getElementById(
+  "receiver-splats",
+) as HTMLInputElement;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x080b12);
@@ -77,10 +84,138 @@ const hullEdges = new THREE.Group();
 casterRoot.add(hullEdges);
 scene.add(casterRoot);
 
+const receiverHullPreview = new THREE.Group();
+receiverHullPreview.name = "Gaussian-derived receiver hull preview";
+scene.add(receiverHullPreview);
+
 let receiverStrength = Number(strengthInput.value);
 const casterBaseX = -0.55;
 
 const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
+
+type GaussianSample = {
+  center: THREE.Vector3;
+  scales: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+};
+
+type GaussianCluster = {
+  seen: number;
+  samples: GaussianSample[];
+};
+
+function buildReceiverHullPreview(visual: SplatMesh): number {
+  const bounds = new THREE.Box3();
+  visual.forEachSplat((_index, center, _scales, _quaternion, opacity) => {
+    if (opacity >= 0.2) bounds.expandByPoint(center);
+  });
+  if (bounds.isEmpty()) return 0;
+
+  const divisions = new THREE.Vector3(6, 8, 6);
+  const size = bounds.getSize(new THREE.Vector3());
+  const diagonal = size.length();
+  const clusters = new Map<number, GaussianCluster>();
+  const maxSamplesPerCluster = 36;
+
+  visual.forEachSplat((index, center, scales, quaternion, opacity) => {
+    if (opacity < 0.2) return;
+    const x = Math.min(
+      divisions.x - 1,
+      Math.floor(
+        ((center.x - bounds.min.x) / Math.max(size.x, 1e-6)) * divisions.x,
+      ),
+    );
+    const y = Math.min(
+      divisions.y - 1,
+      Math.floor(
+        ((center.y - bounds.min.y) / Math.max(size.y, 1e-6)) * divisions.y,
+      ),
+    );
+    const z = Math.min(
+      divisions.z - 1,
+      Math.floor(
+        ((center.z - bounds.min.z) / Math.max(size.z, 1e-6)) * divisions.z,
+      ),
+    );
+    const key = x + y * divisions.x + z * divisions.x * divisions.y;
+    const cluster = clusters.get(key) ?? { seen: 0, samples: [] };
+    cluster.seen++;
+
+    const sample = {
+      center: center.clone(),
+      scales: scales.clone(),
+      quaternion: quaternion.clone(),
+    };
+    if (cluster.samples.length < maxSamplesPerCluster) {
+      cluster.samples.push(sample);
+    } else {
+      const replacement = ((index * 2654435761) >>> 0) % cluster.seen;
+      if (replacement < maxSamplesPerCluster) {
+        cluster.samples[replacement] = sample;
+      }
+    }
+    clusters.set(key, cluster);
+  });
+
+  const fillMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffd166,
+    depthWrite: false,
+    opacity: 0.055,
+    side: THREE.DoubleSide,
+    transparent: true,
+  });
+  const edgeMaterial = new THREE.LineBasicMaterial({
+    color: 0xffd166,
+    opacity: 0.72,
+    transparent: true,
+  });
+  const minSupport = diagonal * 0.0015;
+  const maxSupport = diagonal * 0.045;
+  const axis = new THREE.Vector3();
+  let hullCount = 0;
+
+  for (const cluster of clusters.values()) {
+    if (cluster.samples.length < 4) continue;
+    const points: THREE.Vector3[] = [];
+    for (const sample of cluster.samples) {
+      for (let component = 0; component < 3; component++) {
+        axis.set(
+          component === 0 ? 1 : 0,
+          component === 1 ? 1 : 0,
+          component === 2 ? 1 : 0,
+        );
+        axis.applyQuaternion(sample.quaternion);
+        const radius = THREE.MathUtils.clamp(
+          sample.scales.getComponent(component) * 1.75,
+          minSupport,
+          maxSupport,
+        );
+        axis.multiplyScalar(radius);
+        points.push(sample.center.clone().add(axis));
+        points.push(sample.center.clone().sub(axis));
+      }
+    }
+    try {
+      const geometry = new ConvexGeometry(points);
+      receiverHullPreview.add(new THREE.Mesh(geometry, fillMaterial));
+      receiverHullPreview.add(
+        new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry, 20),
+          edgeMaterial,
+        ),
+      );
+      hullCount++;
+    } catch {
+      // Nearly planar edge clusters do not define a stable 3D convex hull.
+    }
+  }
+
+  receiverHullPreview.position.copy(visual.position);
+  receiverHullPreview.quaternion.copy(visual.quaternion);
+  receiverHullPreview.scale.copy(visual.scale);
+  receiverHullPreview.visible = receiverHullsInput.checked;
+  return hullCount;
+}
 
 async function buildReceiverSplats(): Promise<SplatMesh> {
   status.textContent = "Loading Spark’s robot-head example capture…";
@@ -228,6 +363,11 @@ async function buildCaster() {
 
 async function init() {
   const receiverVisual = await buildReceiverSplats();
+  status.textContent =
+    "Deriving a decomposed hull preview from the Gaussian support…";
+  const receiverHullCount = buildReceiverHullPreview(receiverVisual);
+  document.getElementById("receiver-hull-count")!.textContent =
+    receiverHullCount.toLocaleString();
   const receiver = attachSparkDirectionalShadow({
     visual: receiverVisual,
     renderer,
@@ -245,7 +385,7 @@ async function init() {
   await sparkRenderer.update({ scene, camera });
   renderer.render(scene, camera);
   status.textContent =
-    "Live — drag to orbit. The visible mesh does not cast; its Chitin hull proxy does.";
+    "Live — amber hulls are derived from the SPZ; mint hulls are the Chitin .phys caster.";
 
   strengthInput.addEventListener("input", () => {
     receiverStrength = Number(strengthInput.value);
@@ -259,6 +399,16 @@ async function init() {
   hullsInput.addEventListener("change", () => {
     hullEdges.visible = hullsInput.checked;
   });
+  receiverHullsInput.addEventListener("change", () => {
+    receiverHullPreview.visible = receiverHullsInput.checked;
+    viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
+  });
+  receiverSplatsInput.addEventListener("change", () => {
+    receiverVisual.visible = receiverSplatsInput.checked;
+    viewport.dataset.receiverSplatsVisible = String(receiverSplatsInput.checked);
+  });
+  viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
+  viewport.dataset.receiverSplatsVisible = String(receiverSplatsInput.checked);
 
   const startedAt = performance.now();
   renderer.setAnimationLoop(() => {

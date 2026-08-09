@@ -17,6 +17,25 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
     /Spark robot head|local fallback/,
   );
   await expect(page.locator("#hull-count")).toHaveText("2");
+  await expect(page.locator("#receiver-hull-count")).toHaveText(/^\d+$/);
+  expect(
+    Number(await page.locator("#receiver-hull-count").textContent()),
+  ).toBeGreaterThan(0);
   await expect(page.locator("canvas")).toBeVisible();
+
+  const receiverHulls = page.locator("#receiver-hulls");
+  const receiverSplats = page.locator("#receiver-splats");
+  await expect(receiverHulls).toBeChecked();
+  await expect(receiverSplats).toBeChecked();
+  await receiverSplats.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-receiver-splats-visible",
+    "false",
+  );
+  await receiverHulls.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-receiver-hulls-visible",
+    "false",
+  );
   expect(browserErrors).toEqual([]);
 });

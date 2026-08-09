@@ -122,8 +122,9 @@
       }
 
       .switches {
-        display: flex;
-        gap: 16px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 14px;
         margin-top: 16px;
         padding-top: 14px;
         border-top: 1px solid rgba(163, 190, 255, 0.12);
@@ -136,6 +137,10 @@
         color: #bac6da;
         font-size: 12px;
         cursor: pointer;
+      }
+
+      .switches label:nth-child(3) input {
+        accent-color: #ffd166;
       }
 
       input[type="checkbox"] {
@@ -245,12 +250,15 @@
       <p class="lede">
         The coral object is backed by Chitin’s full-detail LOD 0 hulls. Its
         shadow is sampled directly by <span id="receiver-name">Spark’s example
-        capture</span>—there is no receiver mesh.
+        capture</span>—there is no receiver mesh. Amber hulls are a decomposed
+        preview derived from the Gaussian support itself.
       </p>
       <div class="metrics">
         <div class="metric"><strong id="splat-count">—</strong>splats</div>
         <div class="metric"><strong id="hull-count">—</strong>hulls</div>
-        <div class="metric"><strong>LOD 0</strong>shadow</div>
+        <div class="metric">
+          <strong id="receiver-hull-count">—</strong>SPZ hulls
+        </div>
       </div>
       <label class="control">
         <span>Shadow strength</span>
@@ -281,7 +289,15 @@
           ><input id="animate" type="checkbox" checked /> animate caster</label
         >
         <label
-          ><input id="hulls" type="checkbox" checked /> show hull edges</label
+          ><input id="hulls" type="checkbox" checked /> caster hull edges</label
+        >
+        <label
+          ><input id="receiver-hulls" type="checkbox" checked /> derived robot
+          hulls</label
+        >
+        <label
+          ><input id="receiver-splats" type="checkbox" checked /> robot
+          splats</label
         >
       </div>
       <div id="status">Preparing packed Chitin runtime…</div>
@@ -291,7 +307,13 @@
       <span
         ><i class="dot" style="background: #72d9c0"></i>Chitin hull edges</span
       >
-      <span><i class="dot" style="background: #b8ccff"></i>Spark example capture</span>
+      <span
+        ><i class="dot" style="background: #ffd166"></i>SPZ-derived hulls</span
+      >
+      <span
+        ><i class="dot" style="background: #b8ccff"></i>Spark example
+        capture</span
+      >
     </div>
     <script type="module" src="dist/spark-demo.js"></script>
   </body>
