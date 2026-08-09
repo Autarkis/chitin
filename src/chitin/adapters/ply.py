@@ -8,9 +8,9 @@ from chitin.adapters import AdapterResult
 
 
 def load_ply(path: Path) -> AdapterResult:
-    from chitin.adapters.ply_reader import read_ply_vertex
+    from chitin.adapters.ply_reader import read_ply_mesh
 
-    vertex = read_ply_vertex(path)
+    vertex, faces = read_ply_mesh(path)
     positions = np.column_stack([vertex["x"], vertex["y"], vertex["z"]]).astype(
         np.float64
     )
@@ -44,6 +44,7 @@ def load_ply(path: Path) -> AdapterResult:
     return AdapterResult(
         positions=positions,
         format="ply",
+        faces=faces,
         normals=normals,
         scales=scales,
         rots=rots,

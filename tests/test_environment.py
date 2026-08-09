@@ -134,4 +134,41 @@ def test_no_auto_environment_still_disables_detection():
     resolved = resolve_config(Config(auto_environment=False), analysis)
 
     assert not resolved.thin_shell
+    assert resolved.surface_proximity_filter == 5.0
+    assert "is_environment" not in resolved.decisions
+
+
+def test_point_cloud_gets_proximity_default_without_environment():
+    analysis = analyze_arrays(_solid_block())
+    resolved = resolve_config(Config(), analysis)
+
+    assert not resolved.thin_shell
+    assert resolved.surface_proximity_filter == 5.0
+    assert resolved.decisions["surface_proximity_filter"] == (
+        "auto: splat reconstruction default"
+    )
+
+
+def test_point_cloud_proximity_default_can_be_disabled():
+    analysis = analyze_arrays(_solid_block())
+    resolved = resolve_config(Config(surface_proximity_filter=0.0), analysis)
+
     assert resolved.surface_proximity_filter == 0.0
+    assert "surface_proximity_filter" not in resolved.decisions
+
+
+def test_environment_detected_proximity_default_can_be_disabled():
+    rng = np.random.default_rng(4)
+    analysis = analyze_arrays(np.vstack([_room(rng=rng), _pillar(rng)]))
+    resolved = resolve_config(Config(surface_proximity_filter=0.0), analysis)
+
+    assert resolved.thin_shell
+    assert resolved.surface_proximity_filter == 0.0
+
+
+def test_mesh_input_gets_no_proximity_default():
+    analysis = analyze_arrays(_solid_block(), face_count=100)
+    resolved = resolve_config(Config(), analysis)
+
+    assert resolved.surface_proximity_filter == 0.0
+    assert "surface_proximity_filter" not in resolved.decisions
