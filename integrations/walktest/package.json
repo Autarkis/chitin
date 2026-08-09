@@ -14,7 +14,7 @@
     "test:headed": "npx playwright test tests/walktest.spec.ts --headed"
   },
   "devDependencies": {
-    "@dimforge/rapier3d-compat": "^0.14.0",
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@playwright/test": "^1.52.0",
     "esbuild": "^0.28.1",
     "serve": "^14.2.6",
