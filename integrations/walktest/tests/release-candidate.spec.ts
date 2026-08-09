@@ -15,6 +15,7 @@ interface ReleaseCandidateResult {
   fallingBodyY: number;
   sparkSplatCount: number;
   sparkRenderedPixels: number;
+  sparkReceivedShadowChangedPixels: number;
   sparkShadowMeshCount: number;
   sparkShadowChangedPixels: number;
   sparkBoundsCenterError: number;
@@ -67,6 +68,7 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
   expect(result.fallingBodyY).toBeLessThan(1.5);
   expect(result.sparkSplatCount).toBe(12);
   expect(result.sparkRenderedPixels).toBeGreaterThan(20);
+  expect(result.sparkReceivedShadowChangedPixels).toBeGreaterThan(20);
   expect(result.sparkShadowMeshCount).toBe(1);
   expect(result.sparkShadowChangedPixels).toBeGreaterThan(20);
   expect(result.sparkBoundsCenterError).toBeLessThan(0.1);

@@ -9,8 +9,14 @@ import {
 } from "@autarkis/chitin-lite";
 import { parsePhys } from "@autarkis/chitin-web";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
-import { loadSparkAsset } from "@autarkis/chitin-web/spark";
-import { physTransformFromObject3D } from "@autarkis/chitin-web/three";
+import {
+  attachSparkDirectionalShadow,
+  loadSparkAsset,
+} from "@autarkis/chitin-web/spark";
+import {
+  createShadowProxy,
+  physTransformFromObject3D,
+} from "@autarkis/chitin-web/three";
 
 import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
 
@@ -33,6 +39,7 @@ interface ReleaseCandidateResult {
   fallingBodyY: number;
   sparkSplatCount: number;
   sparkRenderedPixels: number;
+  sparkReceivedShadowChangedPixels: number;
   sparkShadowMeshCount: number;
   sparkShadowChangedPixels: number;
   sparkBoundsCenterError: number;
@@ -117,6 +124,7 @@ async function lPrismSpz(): Promise<Uint8Array> {
 interface SparkProbeResult {
   splatCount: number;
   renderedPixels: number;
+  receivedShadowChangedPixels: number;
   shadowMeshCount: number;
   shadowChangedPixels: number;
   boundsCenterError: number;
@@ -200,7 +208,59 @@ async function probeSparkSidecar(
     if (difference > 12) renderedPixels++;
   }
 
+  // Prove a separate full-detail Chitin hull changes pixels on visible splats.
+  // LOD 0 is selected by default; merged-hulls only batches its triangles.
+  const receiver = attachSparkDirectionalShadow({
+    visual: asset.visual,
+    renderer,
+    light,
+    strength: 0.85,
+    bias: -0.0002,
+    dynamic: false,
+  });
+  const receiverCaster = createShadowProxy(phys, { mode: "merged-hulls" });
+  receiverCaster.scale.setScalar(0.7);
+  receiverCaster.position.set(-0.9, 1.45, 1.15);
+  scene.add(receiverCaster);
+  const setReceiverCasterEnabled = (enabled: boolean) => {
+    receiverCaster.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.castShadow = enabled;
+    });
+    light.shadow.needsUpdate = true;
+  };
+  const readSettledReceiverPixels = async () => {
+    // First populate Three's lazily-created shadow depth texture, then make
+    // Spark re-accumulate the splats using that exact texture and matrix.
+    readPixels();
+    receiver.update();
+    await sparkRenderer.update({ scene, camera });
+    return readPixels();
+  };
+  setReceiverCasterEnabled(false);
+  const receiverUnshadowed = await readSettledReceiverPixels();
+  setReceiverCasterEnabled(true);
+  const receiverShadowed = await readSettledReceiverPixels();
+  let receivedShadowChangedPixels = 0;
+  for (let i = 0; i < receiverShadowed.length; i += 4) {
+    const receiverCoverage =
+      Math.abs(receiverUnshadowed[i] - emptyPixels[i]) +
+        Math.abs(receiverUnshadowed[i + 1] - emptyPixels[i + 1]) +
+        Math.abs(receiverUnshadowed[i + 2] - emptyPixels[i + 2]) >
+        12 ||
+      Math.abs(receiverShadowed[i] - emptyPixels[i]) +
+        Math.abs(receiverShadowed[i + 1] - emptyPixels[i + 1]) +
+        Math.abs(receiverShadowed[i + 2] - emptyPixels[i + 2]) >
+        12;
+    const difference =
+      Math.abs(receiverShadowed[i] - receiverUnshadowed[i]) +
+      Math.abs(receiverShadowed[i + 1] - receiverUnshadowed[i + 1]) +
+      Math.abs(receiverShadowed[i + 2] - receiverUnshadowed[i + 2]);
+    if (receiverCoverage && difference > 12) receivedShadowChangedPixels++;
+  }
+
   // Compare otherwise identical frames with the hull caster disabled/enabled.
+  receiver.dispose();
+  scene.remove(receiverCaster);
   floor.visible = true;
   if (asset.shadowProxy) asset.shadowProxy.visible = true;
   asset.visual.visible = false;
@@ -239,6 +299,7 @@ async function probeSparkSidecar(
       asset.visual.packedSplats?.getNumSplats() ??
       0,
     renderedPixels,
+    receivedShadowChangedPixels,
     shadowMeshCount:
       asset.shadowProxy?.children.filter((child) => child instanceof THREE.Mesh)
         .length ?? 0,
@@ -248,6 +309,7 @@ async function probeSparkSidecar(
   };
 
   world.removeRigidBody(body);
+  disposeThreeObject(receiverCaster);
   asset.dispose();
   sparkRenderer.dispose();
   floor.geometry.dispose();
@@ -339,6 +401,7 @@ async function run(): Promise<ReleaseCandidateResult> {
       fallingBodyY,
       sparkSplatCount: spark.splatCount,
       sparkRenderedPixels: spark.renderedPixels,
+      sparkReceivedShadowChangedPixels: spark.receivedShadowChangedPixels,
       sparkShadowMeshCount: spark.shadowMeshCount,
       sparkShadowChangedPixels: spark.shadowChangedPixels,
       sparkBoundsCenterError: spark.boundsCenterError,
@@ -359,3 +422,14 @@ async function run(): Promise<ReleaseCandidateResult> {
 
 window.__chitinReleaseCandidate = { ready: true, run };
 status.textContent = "release candidate ready";
+
+function disposeThreeObject(root: THREE.Object3D): void {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.geometry.dispose();
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    materials.forEach((material) => material.dispose());
+  });
+}

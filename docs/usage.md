@@ -494,10 +494,16 @@ Spark 2.1 visuals can share one transform and lifecycle with Chitin physics:
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
 import { SparkRenderer } from "@sparkjsdev/spark";
+import * as THREE from "three";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
-import { loadSparkAsset } from "@autarkis/chitin-web/spark";
+import {
+  attachSparkDirectionalShadow,
+  loadSparkAsset,
+} from "@autarkis/chitin-web/spark";
 import { physTransformFromObject3D } from "@autarkis/chitin-web/three";
 
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 scene.add(new SparkRenderer({ renderer })); // one per scene
 
 const asset = await loadSparkAsset({
@@ -507,17 +513,31 @@ const asset = await loadSparkAsset({
 });
 scene.add(asset.root);
 
+light.castShadow = true;
+const receiver = attachSparkDirectionalShadow({
+  visual: asset.visual,
+  renderer,
+  light,
+  strength: 0.65,
+});
+
 addToWorld(RAPIER, world, asset.phys, undefined, {
   lodConcavity: 0.3,
   transform: physTransformFromObject3D(asset.root),
 });
 ```
 
-The hull meshes cast through Three.js's shadow pass. Spark 2.1 does not expose
-a public Three-style `receiveShadow` contract, so native per-splat shadow-map
-receiving remains a renderer capability rather than something Chitin claims.
-The sidecar still supplies collision, picking geometry, conventional shadow
-casters, and bounds for visual/physics alignment diagnostics.
+The hull meshes cast through Three.js's shadow pass. Spark 2.1 has no
+Three-style `receiveShadow` flag, so the adapter bridges Three's directional
+comparison-depth texture into Spark's world-modifier pipeline. Shadow visibility
+is evaluated at each world-space splat center without modifying the source SPZ.
+This requires `THREE.PCFShadowMap`; dynamic receiving re-accumulates the visual
+each frame. Set `dynamic: false` and call `receiver.update()` after static scene
+changes to control that work explicitly.
+
+Shadow proxies select the highest-detail `.phys` tier by default. A lower
+`lodConcavity` is only used when explicitly requested, and `merged-hulls`
+batches the same triangles without simplifying the silhouette.
 
 ### Web quickstart: PLY to walkable browser scene
 

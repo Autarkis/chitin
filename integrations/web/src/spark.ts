@@ -1,10 +1,23 @@
-import { SplatMesh, type SplatMeshOptions } from "@sparkjsdev/spark";
+import {
+  SplatMesh,
+  dyno,
+  type GsplatModifier,
+  type SplatMeshOptions,
+} from "@sparkjsdev/spark";
 import {
   Box3,
   BufferGeometry,
+  DepthTexture,
+  DirectionalLight,
   Group,
+  LessEqualCompare,
   Material,
+  Matrix4,
   Mesh,
+  PCFShadowMap,
+  Texture,
+  UnsignedIntType,
+  WebGLRenderer,
   type Object3D,
 } from "three";
 
@@ -14,11 +27,7 @@ import { createShadowProxy, type ShadowProxyOptions } from "./three.js";
 
 export type SparkVisualSource = string | URL | SplatMesh | SplatMeshOptions;
 export type PhysSource =
-  | string
-  | URL
-  | ArrayBuffer
-  | ArrayBufferView
-  | PhysFile;
+  string | URL | ArrayBuffer | ArrayBufferView | PhysFile;
 
 export interface LoadSparkAssetOptions {
   visual: SparkVisualSource;
@@ -44,6 +53,39 @@ export interface ChitinSparkAsset {
   bounds: SparkAssetBounds;
   dispose(): void;
 }
+
+export interface AttachSparkDirectionalShadowOptions {
+  visual: SplatMesh;
+  renderer: WebGLRenderer;
+  light: DirectionalLight;
+  /** Fraction of source RGB removed at full occlusion. Defaults to 0.65. */
+  strength?: number;
+  /** Shadow-depth bias. Null follows `light.shadow.bias`. Defaults to null. */
+  bias?: number | null;
+  /** Re-evaluate the receiver every frame for moving lights/casters. */
+  dynamic?: boolean;
+}
+
+export interface SparkDirectionalShadowReceiver {
+  readonly visual: SplatMesh;
+  readonly light: DirectionalLight;
+  strength: number;
+  bias: number | null;
+  dynamic: boolean;
+  /** Refresh uniforms and re-evaluate splat visibility on the next Spark pass. */
+  update(): void;
+  dispose(): void;
+}
+
+type SparkOnFrame = NonNullable<SplatMesh["onFrame"]>;
+
+interface SparkFrameHookState {
+  original: SplatMesh["onFrame"];
+  hooks: Set<SparkOnFrame>;
+  wrapper: SparkOnFrame;
+}
+
+const sparkFrameHooks = new WeakMap<SplatMesh, SparkFrameHookState>();
 
 /**
  * Pair a Spark visual with its engine-neutral `.phys` sidecar. Physics remains
@@ -135,6 +177,235 @@ export async function loadSparkAsset(
     if (ownsVisual) visual.dispose();
     throw error;
   }
+}
+
+/**
+ * Make a Spark visual receive a Three.js directional-light shadow map.
+ *
+ * The light's Chitin hull proxies remain ordinary Three.js shadow casters. This
+ * bridge samples Three's comparison depth texture at each world-space splat
+ * center and composes with any Spark world modifiers already on the visual.
+ */
+export function attachSparkDirectionalShadow(
+  options: AttachSparkDirectionalShadowOptions,
+): SparkDirectionalShadowReceiver {
+  const { visual, renderer, light } = options;
+  if (!renderer.shadowMap.enabled) {
+    throw new Error(
+      "attachSparkDirectionalShadow: renderer.shadowMap.enabled must be true",
+    );
+  }
+  if (renderer.shadowMap.type !== PCFShadowMap) {
+    throw new Error(
+      "attachSparkDirectionalShadow: renderer.shadowMap.type must be THREE.PCFShadowMap",
+    );
+  }
+  if (!light.castShadow) {
+    throw new Error(
+      "attachSparkDirectionalShadow: the directional light must cast shadows",
+    );
+  }
+  if (visual.covSplats) {
+    throw new Error(
+      "attachSparkDirectionalShadow: covariance splat pipelines are not supported yet",
+    );
+  }
+
+  let strength = shadowStrength(options.strength ?? 0.65);
+  let bias = shadowBias(options.bias ?? null);
+  let dynamic = options.dynamic ?? true;
+  let disposed = false;
+
+  // Three allocates the real depth texture lazily in its first shadow pass.
+  // Keep a valid comparison sampler bound until that pass has completed.
+  const placeholder = new DepthTexture(1, 1, UnsignedIntType);
+  placeholder.compareFunction = LessEqualCompare;
+  const mapUniform = new dyno.DynoSampler2DShadow({ value: placeholder });
+  const matrixUniform = new dyno.DynoMat4({ value: new Matrix4() });
+  const strengthUniform = new dyno.DynoFloat({ value: strength });
+  const biasUniform = new dyno.DynoFloat({ value: 0 });
+  const modifier = directionalShadowModifier({
+    map: mapUniform,
+    matrix: matrixUniform,
+    strength: strengthUniform,
+    bias: biasUniform,
+  });
+
+  visual.worldModifiers = [...(visual.worldModifiers ?? []), modifier];
+  visual.updateGenerator();
+
+  const refresh = () => {
+    if (disposed) return;
+    const depthTexture = light.shadow.map?.depthTexture;
+    if (depthTexture !== null && depthTexture !== undefined) {
+      mapUniform.value = depthTexture;
+    }
+    matrixUniform.value.copy(light.shadow.matrix);
+    strengthUniform.value = strength;
+    biasUniform.value = bias ?? light.shadow.bias;
+    visual.updateVersion();
+  };
+  const removeFrameHook = addSparkFrameHook(visual, () => {
+    if (dynamic) refresh();
+  });
+  refresh();
+
+  return {
+    visual,
+    light,
+    get strength() {
+      return strength;
+    },
+    set strength(value: number) {
+      strength = shadowStrength(value);
+      refresh();
+    },
+    get bias() {
+      return bias;
+    },
+    set bias(value: number | null) {
+      bias = shadowBias(value);
+      refresh();
+    },
+    get dynamic() {
+      return dynamic;
+    },
+    set dynamic(value: boolean) {
+      dynamic = value;
+      refresh();
+    },
+    update: refresh,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      const modifiers = visual.worldModifiers?.filter(
+        (candidate) => candidate !== modifier,
+      );
+      visual.worldModifiers =
+        modifiers === undefined || modifiers.length === 0
+          ? undefined
+          : modifiers;
+      removeFrameHook();
+      visual.updateGenerator();
+      placeholder.dispose();
+    },
+  };
+}
+
+function addSparkFrameHook(visual: SplatMesh, hook: SparkOnFrame): () => void {
+  let state = sparkFrameHooks.get(visual);
+  if (state === undefined) {
+    const original = visual.onFrame;
+    const hooks = new Set<SparkOnFrame>();
+    const wrapper: SparkOnFrame = (context) => {
+      original?.(context);
+      for (const candidate of hooks) candidate(context);
+    };
+    state = { original, hooks, wrapper };
+    sparkFrameHooks.set(visual, state);
+    visual.onFrame = wrapper;
+  }
+  state.hooks.add(hook);
+
+  let removed = false;
+  return () => {
+    if (removed) return;
+    removed = true;
+    state.hooks.delete(hook);
+    if (state.hooks.size !== 0) return;
+    if (visual.onFrame === state.wrapper) visual.onFrame = state.original;
+    sparkFrameHooks.delete(visual);
+  };
+}
+
+function directionalShadowModifier({
+  map,
+  matrix,
+  strength,
+  bias,
+}: {
+  map: dyno.DynoSampler2DShadow<string, Texture>;
+  matrix: dyno.DynoMat4<string, Matrix4>;
+  strength: dyno.DynoFloat;
+  bias: dyno.DynoFloat;
+}): GsplatModifier {
+  return dyno.dynoBlock(
+    { gsplat: dyno.Gsplat },
+    { gsplat: dyno.Gsplat },
+    ({ gsplat }) => {
+      if (gsplat === undefined) return undefined;
+      const shaded = new dyno.Dyno({
+        inTypes: {
+          gsplat: dyno.Gsplat,
+          shadowMap: "sampler2DShadow",
+          shadowMatrix: "mat4",
+          shadowStrength: "float",
+          shadowBias: "float",
+        },
+        outTypes: { gsplat: dyno.Gsplat },
+        inputs: {
+          gsplat,
+          shadowMap: map,
+          shadowMatrix: matrix,
+          shadowStrength: strength,
+          shadowBias: bias,
+        },
+        globals: () => [dyno.defineGsplat],
+        statements: ({ inputs, outputs }) => {
+          const source = inputs.gsplat;
+          const target = outputs.gsplat;
+          if (
+            source === undefined ||
+            target === undefined ||
+            inputs.shadowMap === undefined ||
+            inputs.shadowMatrix === undefined ||
+            inputs.shadowStrength === undefined ||
+            inputs.shadowBias === undefined
+          ) {
+            return [];
+          }
+          return dyno.unindentLines(`
+            ${target} = ${source};
+            vec4 chitinShadowCoord4 = ${inputs.shadowMatrix} * vec4(${source}.center, 1.0);
+            vec3 chitinShadowCoord = chitinShadowCoord4.xyz / chitinShadowCoord4.w;
+            float chitinVisibility = 1.0;
+            if (
+              chitinShadowCoord.x >= 0.0 && chitinShadowCoord.x <= 1.0 &&
+              chitinShadowCoord.y >= 0.0 && chitinShadowCoord.y <= 1.0 &&
+              chitinShadowCoord.z >= 0.0 && chitinShadowCoord.z <= 1.0
+            ) {
+              chitinVisibility = texture(
+                ${inputs.shadowMap},
+                vec3(chitinShadowCoord.xy, chitinShadowCoord.z + ${inputs.shadowBias})
+              );
+            }
+            float chitinShadowAmount =
+              clamp(${inputs.shadowStrength}, 0.0, 1.0) * (1.0 - chitinVisibility);
+            ${target}.rgba.rgb *= 1.0 - chitinShadowAmount;
+          `);
+        },
+      }).outputs.gsplat;
+      return { gsplat: shaded };
+    },
+  );
+}
+
+function shadowStrength(value: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new RangeError(
+      "attachSparkDirectionalShadow: strength must be between 0 and 1",
+    );
+  }
+  return value;
+}
+
+function shadowBias(value: number | null): number | null {
+  if (value !== null && !Number.isFinite(value)) {
+    throw new RangeError(
+      "attachSparkDirectionalShadow: bias must be finite or null",
+    );
+  }
+  return value;
 }
 
 function normalizeVisualOptions(

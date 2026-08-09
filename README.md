@@ -282,8 +282,9 @@ The package root (`@autarkis/chitin-web`) is dependency-free: it parses `.phys`,
 selects LOD, bakes bind poses, transforms vertices, computes bounds, and merges
 hull buffers using plain typed arrays. Rapier bindings live at `/rapier`, Three
 geometry and shadow proxies at `/three`, and Spark visual pairing at `/spark`.
-All runtime peers are optional, and `/spark` composes the shared data and Three
-layers without reimplementing Rapier collider generation.
+The Spark adapter can also make visible splats sample directional shadows cast
+by the Chitin hulls. All runtime peers are optional, and `/spark` composes the
+shared data and Three layers without reimplementing Rapier collider generation.
 
 A full working example with capsule walk controller and Playwright tests lives in [`integrations/walktest/`](integrations/walktest/). See [docs/usage.md](docs/usage.md#web-quickstart-ply-to-walkable-browser-scene) for the end-to-end walkthrough.
 

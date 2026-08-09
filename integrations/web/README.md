@@ -114,8 +114,8 @@ scene.add(createDebugMeshes(phys)); // wireframe hull visualization
 import { createShadowProxy } from "@autarkis/chitin-web/three";
 
 scene.add(createShadowProxy(phys, {
-  lodConcavity: 0.3,
-  mode: "merged-hulls", // one draw object; no boolean union
+    lodConcavity: 0.3,
+    mode: "merged-hulls", // one draw object; no boolean union
 }));
 ```
 
@@ -132,10 +132,16 @@ scene-level `SparkRenderer`, and Rapier remains an independent opt-in:
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
 import { SparkRenderer } from "@sparkjsdev/spark";
+import * as THREE from "three";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
-import { loadSparkAsset } from "@autarkis/chitin-web/spark";
+import {
+  attachSparkDirectionalShadow,
+  loadSparkAsset,
+} from "@autarkis/chitin-web/spark";
 import { physTransformFromObject3D } from "@autarkis/chitin-web/three";
 
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 scene.add(new SparkRenderer({ renderer }));
 
 const asset = await loadSparkAsset({
@@ -145,18 +151,37 @@ const asset = await loadSparkAsset({
 });
 scene.add(asset.root);
 
+light.castShadow = true;
+const receiver = attachSparkDirectionalShadow({
+  visual: asset.visual,
+  renderer,
+  light,
+  strength: 0.65,
+});
+
 const body = addToWorld(RAPIER, world, asset.phys, undefined, {
   transform: physTransformFromObject3D(asset.root),
   lodConcavity: 0.3,
 });
 ```
 
+The receiver samples Three's live directional-light comparison depth texture at
+each world-space splat center. It composes with existing Spark world modifiers
+and supports moving lights and casters by default. Dynamic receiving requires
+Spark to re-accumulate the receiver splats each frame; use `dynamic: false` and
+call `receiver.update()` after known static changes when that is preferable.
+Three's `PCFShadowMap` is required in Spark 2.1.
+
+Shadow proxies use the highest-detail `.phys` tier by default. Setting
+`lodConcavity` is an explicit performance/fidelity choice; `merged-hulls` only
+batches the selected triangles and does not simplify their silhouette.
+
 `asset.bounds` exposes the Spark and bind-posed physics bounds for alignment
 diagnostics. `asset.dispose()` releases adapter-owned visual and shadow
 resources; the application removes any Rapier body it created separately. For
 a supplied `SplatMesh`, its local TRS is adopted by `asset.root` so every layer
 stays aligned, then restored if the caller-owned visual is later disposed from
-the adapter.
+the adapter. Dispose `receiver` separately before disposing its visual.
 
 ## Other engines
 

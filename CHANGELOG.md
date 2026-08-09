@@ -30,6 +30,10 @@ format is versioned independently and noted where it changes.
   sidecar under one lifecycle and transform root. `/three` adds collision-LOD
   and merged-hull shadow casters; `/spark` deliberately does not import or
   duplicate `/rapier` collider generation.
+- **Native Spark shadow receiving:** directional-light Chitin hull shadows can
+  be sampled directly by visible Spark splats through a composable world-space
+  modifier. The receiver uses Three's live `PCFShadowMap` depth texture,
+  preserves source splat data, and supports dynamic or explicit re-evaluation.
 - **Fixed:** PLY meshes were silently routed through the point-cloud/Poisson
   path instead of the mesh path. `adapters.ply.load_ply` never populated
   `AdapterResult.faces`, and `analyze._analyze_ply` hardcoded
