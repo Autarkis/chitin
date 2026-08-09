@@ -13,6 +13,12 @@ interface ReleaseCandidateResult {
   hullCount: number;
   rapierColliderCount: number;
   fallingBodyY: number;
+  sparkSplatCount: number;
+  sparkRenderedPixels: number;
+  sparkShadowMeshCount: number;
+  sparkShadowChangedPixels: number;
+  sparkBoundsCenterError: number;
+  sparkBodyX: number;
   reportVersion: number;
   verdictStatus: string;
   reportHash: string | null;
@@ -31,9 +37,9 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
   await page.goto("http://localhost:3219/release-candidate.html");
   await page.waitForFunction(() => window.__chitinReleaseCandidate?.ready);
 
-  const result = await page.evaluate(
-    () => window.__chitinReleaseCandidate.run(),
-  ) as ReleaseCandidateResult;
+  const result = (await page.evaluate(() =>
+    window.__chitinReleaseCandidate.run(),
+  )) as ReleaseCandidateResult;
 
   expect(browserErrors).toEqual([]);
   expect(Object.keys(result.packages).sort()).toEqual([
@@ -59,6 +65,12 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
   expect(result.rapierColliderCount).toBe(result.hullCount);
   expect(result.fallingBodyY).toBeGreaterThan(0.5);
   expect(result.fallingBodyY).toBeLessThan(1.5);
+  expect(result.sparkSplatCount).toBe(12);
+  expect(result.sparkRenderedPixels).toBeGreaterThan(20);
+  expect(result.sparkShadowMeshCount).toBe(1);
+  expect(result.sparkShadowChangedPixels).toBeGreaterThan(20);
+  expect(result.sparkBoundsCenterError).toBeLessThan(0.1);
+  expect(result.sparkBodyX).toBeCloseTo(0.25, 5);
   expect(result.reportVersion).toBe(1);
   expect(result.verdictStatus).toBe("not_evaluated");
   expect(result.reportHash).toBe(result.hashes[0]);
@@ -78,9 +90,7 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
   expect(result.deterministic).toBe(true);
   expect(result.hashes[0]).toBe(result.hashes[1]);
 
-  console.log(
-    JSON.stringify({ runtime: browserName, ...result }, null, 2),
-  );
+  console.log(JSON.stringify({ runtime: browserName, ...result }, null, 2));
 });
 
 declare global {

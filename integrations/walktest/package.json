@@ -16,6 +16,7 @@
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
     "@playwright/test": "^1.62.1",
+    "@sparkjsdev/spark": "2.1.0",
     "esbuild": "^0.28.2",
     "serve": "^14.2.6",
     "three": "^0.186.1"
