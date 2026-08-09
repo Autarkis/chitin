@@ -230,7 +230,10 @@ jobs:
             integrations/wasm-lite/src/shared-constants.ts
 
       - name: PR title is scoped
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'github-advanced-security[bot]'
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
