@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from chitin._shared_constants import (
+    COACD_CONCAVITY_THRESHOLD,
+    COACD_PREPROCESS_RESOLUTION,
+    NATIVE_MIN_HULL_VERTICES,
+)
+
 # Hard-kill budget for a single CoACD call. It is a backstop against a native
 # stall that never finishes (the manifold-remesh explosion on non-watertight
 # input), not a quality knob: a budget low enough to cut off legitimate work
@@ -13,14 +19,14 @@ DEFAULT_COACD_TIMEOUT_SECONDS = 300.0
 
 @dataclass(frozen=True)
 class Config:
-    concavity: float = 0.05
+    concavity: float = COACD_CONCAVITY_THRESHOLD
     opacity_threshold: float = 0.5
     poisson_depth: int | None = None
-    min_hull_vertices: int = 4
+    min_hull_vertices: int = NATIVE_MIN_HULL_VERTICES
     max_hulls: int = 2048  # per decomposition unit (per octree cell / per bone)
     opacity_is_logit: bool = False
     coacd_preprocess_mode: str = "auto"
-    coacd_preprocess_resolution: int = 50
+    coacd_preprocess_resolution: int = COACD_PREPROCESS_RESOLUTION
     coacd_adaptive_preprocess: bool = True
     # CoACD's search is multithreaded, and its thread scheduling changes which
     # decomposition it settles on: the same mesh yields different hull counts

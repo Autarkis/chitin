@@ -1,0 +1,56 @@
+{
+  "$comment": "Canonical metric vocabulary for compilation reports. Run scripts/gen-metric-names.mjs to regenerate typed constants.",
+  "metrics": {
+    "coverage": {
+      "source_surface_coverage": {
+        "unit": "ratio",
+        "description": "Fraction of source surface covered by collider hulls",
+        "aliases": ["covered_fraction"]
+      },
+      "worst_component_surface_coverage": {
+        "unit": "ratio",
+        "description": "Lowest per-component surface coverage",
+        "aliases": ["worst_cell_fraction"]
+      },
+      "worst_decile_surface_coverage": {
+        "unit": "ratio",
+        "description": "Coverage of the worst-performing 10% of surface area",
+        "aliases": ["worst_decile_fraction"]
+      }
+    },
+    "volume": {
+      "collider_volume_precision": {
+        "unit": "ratio",
+        "description": "Fraction of collider volume that overlaps real source volume"
+      },
+      "false_fill_fraction": {
+        "unit": "ratio",
+        "description": "Fraction of collider volume that is empty (false positive)"
+      },
+      "deep_false_fill_fraction": {
+        "unit": "ratio",
+        "description": "Fraction of collider volume at significant depth that is empty"
+      }
+    },
+    "decomposition": {
+      "hull_count": {
+        "unit": "count",
+        "description": "Number of convex hulls in the collider"
+      }
+    },
+    "quality_meta": {
+      "quality_method": {
+        "unit": "method",
+        "description": "Algorithm used for quality evaluation"
+      },
+      "quality_surface_samples": {
+        "unit": "count",
+        "description": "Number of surface sample points used"
+      },
+      "quality_volume_samples": {
+        "unit": "count",
+        "description": "Number of volume sample points used"
+      }
+    }
+  }
+}

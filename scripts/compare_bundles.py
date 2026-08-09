@@ -24,9 +24,9 @@ ROWS = [
 ]
 
 COVERAGE_ROWS = [
-    "covered_fraction",
-    "worst_cell_fraction",
-    "worst_decile_fraction",
+    "source_surface_coverage",
+    "worst_component_surface_coverage",
+    "worst_decile_surface_coverage",
     "uncovered_count",
     "slack_p50",
     "slack_p95",
@@ -63,7 +63,7 @@ def main() -> None:
     for name, d in zip(names, detected):
         cells = d.get("coverage", {}).get("worst_cells", [])[:5]
         desc = ", ".join(
-            f"{c['cell']}:{c['covered_fraction']}:{c['samples']}" for c in cells
+            f"{c['cell']}:{c['source_surface_coverage']}:{c['samples']}" for c in cells
         )
         print(f"  {name}: {desc}")
 

@@ -49,6 +49,12 @@ def test_bundle_carries_manifest(tmp_path, box_input, box_result):
     assert manifest["input"]["sha256"]
     assert manifest["config"]["hash"]
     assert manifest["quality"]["verdict"]["profile"] == "robotics"
+    assert manifest["quality"]["report"]["report_version"] == 1
+    assert manifest["quality"]["report"]["profile"] == "robotics"
+    assert (
+        manifest["quality"]["report"]["reproducibility"]["scope"]
+        == "same_runtime_toolchain"
+    )
 
     # Every emitted file (scene.phys + the json sidecars) is hashed.
     names = {o["file"] for o in manifest["outputs"]}

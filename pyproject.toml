@@ -43,6 +43,9 @@ dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.3",
     "httpx>=0.27",
+    # Enables full schema validation in development; runtime installs fall
+    # back to dependency-free structural checks.
+    "jsonschema>=4.18",
     # Pinned exactly, and kept in lockstep with the `rev` in
     # .pre-commit-config.yaml. The formatter's output is not stable across ruff
     # minor releases, so an unpinned range lets CI drift away from the version
@@ -57,6 +60,9 @@ chitin-server = "chitin_service.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/chitin", "src/chitin_service"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/compilation-report.schema.json" = "chitin/compilation-report.schema.json"
 
 [tool.ruff]
 line-length = 88

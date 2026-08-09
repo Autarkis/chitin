@@ -1,6 +1,7 @@
 import numpy as np
 
 from chitin import Config, extract_from_rigged_mesh
+from chitin._metric_names import SOURCE_SURFACE_COVERAGE
 from chitin.acceptance import evaluate, get_profile, report_metrics
 
 
@@ -83,16 +84,16 @@ def test_rigged_lod_tiers_are_populated(two_bone_rig):
 
 
 def test_rigged_build_reports_coverage(two_bone_rig):
-    # The rigged path recorded no coverage at all, so `covered_fraction` came
-    # back None and every strict profile rejected rigged assets outright. The
-    # measurement is taken bind-posed, against the model-space input.
+    # The rigged path recorded no coverage at all, so `source_surface_coverage`
+    # came back None and every strict profile rejected rigged assets outright.
+    # The measurement is taken bind-posed, against the model-space input.
     r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
     coverage = r.build_plan.detected.get("coverage")
     assert coverage is not None
-    assert coverage["covered_fraction"] > 0.9
+    assert coverage[SOURCE_SURFACE_COVERAGE] > 0.9
 
     metrics = report_metrics(r)
-    assert metrics["covered_fraction"] is not None
+    assert metrics[SOURCE_SURFACE_COVERAGE] is not None
     verdict = evaluate(get_profile("robotics").policy, metrics)
     assert verdict.passed, verdict.checks
 

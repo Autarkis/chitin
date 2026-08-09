@@ -3,8 +3,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import traceback
+from pathlib import Path
 
 import chitin
+from chitin import provenance
 from chitin.acceptance import (
     Verdict,
     apply_profile,
@@ -13,6 +15,7 @@ from chitin.acceptance import (
     report_metrics,
 )
 from chitin.manifest import MANIFEST_FILENAME, write_manifest
+from chitin.report import build_compilation_report, select_primary_artifact
 
 from .models import Job, JobStatus
 from .store import Store
@@ -52,7 +55,7 @@ def run_job(store: Store, job: Job) -> Job:
                 result.to_usd(artifact_dir / "colliders.usda")
 
         verdict = evaluate(profile.policy, report_metrics(result))
-        report = _build_report(result, config, job, verdict)
+        report = _build_report(result, config, job, verdict, artifact_dir)
         (artifact_dir / "report.json").write_text(json.dumps(report, indent=2))
 
         # Provenance manifest over every artifact written above (report.json
@@ -76,6 +79,7 @@ def run_job(store: Store, job: Job) -> Job:
             metrics=report_metrics(result),
             warnings=report["warnings"],
             verdict=verdict.to_dict(),
+            compilation_report=report["compilation_report"],
         )
 
         if verdict.passed:
@@ -108,6 +112,7 @@ def _build_report(
     config: chitin.Config,
     job: Job,
     verdict: Verdict,
+    artifact_dir: Path,
 ) -> dict:
     plan = result.build_plan
     warnings = []
@@ -166,4 +171,29 @@ def _build_report(
             fmt: ARTIFACT_NAMES[fmt] for fmt in job.outputs if fmt in ARTIFACT_NAMES
         },
     }
+    artifacts = report["artifacts"]
+    primary_path = select_primary_artifact(
+        artifact_dir / name for name in artifacts.values()
+    )
+    artifact_bytes = (
+        primary_path.stat().st_size
+        if primary_path is not None and primary_path.is_file()
+        else None
+    )
+    artifact_sha256 = (
+        provenance.hash_file(primary_path)
+        if primary_path is not None and primary_path.is_file()
+        else None
+    )
+    report["compilation_report"] = build_compilation_report(
+        result,
+        profile=job.profile,
+        verdict=verdict,
+        warnings=warnings,
+        requested_config=job.config.to_dict(),
+        effective_config=dataclasses.asdict(config),
+        artifacts=artifacts,
+        artifact_bytes=artifact_bytes,
+        artifact_sha256=artifact_sha256,
+    ).to_dict()
     return report

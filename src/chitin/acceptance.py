@@ -17,6 +17,13 @@ from __future__ import annotations
 from collections.abc import Collection
 from dataclasses import dataclass, replace
 
+from chitin._metric_names import (
+    HULL_COUNT,
+    SOURCE_SURFACE_COVERAGE,
+    WORST_COMPONENT_SURFACE_COVERAGE,
+    WORST_DECILE_SURFACE_COVERAGE,
+)
+from chitin._shared_constants import PROFILE_NAMES
 from chitin.config import Config
 
 
@@ -125,6 +132,9 @@ PROFILES: dict[str, Profile] = {
     ),
 }
 
+if set(PROFILES) != set(PROFILE_NAMES):
+    raise RuntimeError("acceptance profiles do not match the shared profile contract")
+
 DEFAULT_PROFILE = "interactive"
 
 
@@ -173,10 +183,12 @@ def report_metrics(result) -> dict:
     detected = plan.detected if plan is not None else {}
     coverage = detected.get("coverage") or {}
     return {
-        "hull_count": len(result.hulls),
-        "covered_fraction": coverage.get("covered_fraction"),
-        "worst_cell_fraction": coverage.get("worst_cell_fraction"),
-        "worst_decile_fraction": coverage.get("worst_decile_fraction"),
+        HULL_COUNT: len(result.hulls),
+        SOURCE_SURFACE_COVERAGE: coverage.get(SOURCE_SURFACE_COVERAGE),
+        WORST_COMPONENT_SURFACE_COVERAGE: coverage.get(
+            WORST_COMPONENT_SURFACE_COVERAGE
+        ),
+        WORST_DECILE_SURFACE_COVERAGE: coverage.get(WORST_DECILE_SURFACE_COVERAGE),
         "fallback_hulls": int(detected.get("fallback_hulls", 0)),
         "coacd_timeouts": int(detected.get("coacd_timeouts", 0)),
         "coacd_deterministic": detected.get("coacd_deterministic"),
@@ -196,7 +208,7 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
     checks: list[Check] = []
 
     if policy.require_hulls:
-        n = int(metrics.get("hull_count") or 0)
+        n = int(metrics.get(HULL_COUNT) or 0)
         checks.append(
             Check(
                 "has_hulls",
@@ -234,26 +246,26 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
         )
 
     if policy.min_covered_fraction is not None:
-        covered = metrics.get("covered_fraction")
+        covered = metrics.get(SOURCE_SURFACE_COVERAGE)
         ok = covered is not None and covered >= policy.min_covered_fraction
         checks.append(
             Check(
                 "coverage",
                 ok,
-                f"covered_fraction {_fmt(covered)} "
+                f"{SOURCE_SURFACE_COVERAGE} {_fmt(covered)} "
                 f"{'>=' if ok else '<'} required {policy.min_covered_fraction}",
             )
         )
 
     if policy.min_worst_cell_fraction is not None:
-        worst = metrics.get("worst_cell_fraction")
+        worst = metrics.get(WORST_COMPONENT_SURFACE_COVERAGE)
         # Absent on a single-unit build (no per-cell split), which leaves
         # nothing to gate, so it passes.
         ok = worst is None or worst >= policy.min_worst_cell_fraction
         detail = (
             "no per-cell split to gate"
             if worst is None
-            else f"worst_cell_fraction {_fmt(worst)} "
+            else f"{WORST_COMPONENT_SURFACE_COVERAGE} {_fmt(worst)} "
             f"{'>=' if ok else '<'} required {policy.min_worst_cell_fraction}"
         )
         checks.append(Check("worst_cell_coverage", ok, detail))

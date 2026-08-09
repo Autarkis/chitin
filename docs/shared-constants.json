@@ -1,0 +1,26 @@
+{
+  "$comment": "Source for generated Python and TypeScript constants. Regenerate with node scripts/gen-shared-constants.mjs.",
+  "coacd": {
+    "concavity_threshold": 0.05,
+    "preprocess_resolution": 50
+  },
+  "hull": {
+    "native_min_vertices": 4,
+    "interactive_min_vertices": 8
+  },
+  "browser_profiles": ["interactive"],
+  "profiles": {
+    "interactive": {
+      "description": "Browser-based real-time compilation with constrained hull budget",
+      "target_runtime": "wasm"
+    },
+    "walkable": {
+      "description": "Standard compilation for walkable environments",
+      "target_runtime": "native"
+    },
+    "robotics": {
+      "description": "High-fidelity compilation for robotic simulation",
+      "target_runtime": "native"
+    }
+  }
+}
