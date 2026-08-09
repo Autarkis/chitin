@@ -168,8 +168,12 @@ reason:     manifold mesh, eligible for browser-side decomposition
 
 Plain point-cloud/PLY file ingestion and non-manifold repair require the Python
 pipeline today. Browser callers can compile already-decoded Gaussian fields via
-`compileGaussianField()`, but the browser build cannot repair open meshes because
-it intentionally omits that dependency.
+`ChitinCompiler.compileGaussianField()`, which reconstructs a sealed surface
+(Poisson when its WASM assets are configured, otherwise a dependency-free voxel
+shell) before the normal Chitin validation and decomposition stages. The browser
+build cannot repair open meshes because it intentionally omits that dependency;
+the GLB path reports the offending connected part, while the native CoACD build
+can voxel-remesh open geometry.
 
 ## CLI
 

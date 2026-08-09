@@ -43,9 +43,12 @@ export type { ChitinErrorCode, ChitinErrorOptions } from "./errors.js";
 export { parseGlb } from "./glb.js";
 export type { ParsedGlbMesh } from "./glb.js";
 export { ChitinCompiler, compileGlb, compileGaussianField, compileMesh } from "./compiler.js";
+export { gaussianFieldToGlb, reconstructGaussianFieldMesh } from "./gaussian-field.js";
+export type { VoxelReconstructionOptions } from "./gaussian-field.js";
 export type {
   ChitinCompilerOptions,
   CompileGaussianFieldOptions,
+  GaussianFieldMethod,
   CompileGlbOptions,
   CompileGlbResult,
   GlbInput,

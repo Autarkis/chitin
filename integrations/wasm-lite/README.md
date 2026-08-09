@@ -65,6 +65,31 @@ const result = await compiler.compileGlb(file, {
 compiler.terminate();
 ```
 
+### Compile oriented Gaussian support (voxel method)
+
+`compileGaussianField()` also has a dependency-free `voxel` method. Pass flat
+center, scale, and quaternion arrays (plus optional opacity), and Chitin
+reconstructs a sealed voxel surface before running its normal manifold
+validation, decomposition, and `.phys` writer. The result is an ordinary
+`.phys` artifact; renderers are not involved after ingestion. The method is
+selected with `method: "voxel"`, and `method: "auto"` (the default) falls back
+to it whenever `poissonJs` / `poissonWasm` are not configured.
+
+```typescript
+const result = await compiler.compileGaussianField(
+  { centers, scales, quaternions, opacities },
+  {
+    method: "voxel",
+    reconstruction: { resolution: 72, supportMultiplier: 1.75 },
+    decompose: { threshold: 0.025, maxConvexHull: 96 },
+  },
+);
+```
+
+The package deliberately accepts engine-neutral arrays rather than importing
+an SPZ or renderer SDK. A Spark, PLY, or other format adapter only needs to
+decode its Gaussians into `GaussianFieldInput`.
+
 This path compiles static triangle geometry from the active scene of a
 self-contained GLB 2.0 file. It applies the full node hierarchy, preserves mesh
 instancing, and merges indexed/unindexed primitives. Before decomposition it
@@ -360,9 +385,10 @@ compilation. They do not change the low-level `decompose(vertices, faces)` API.
 
 ## Constraints
 
-Gaussian field compilation requires the Poisson WASM URLs (`poissonJs` /
-`poissonWasm`) in the `wasm` config object. Calls to `compileGaussianField`
-without them reject with `WORKER_ERROR`.
+The Poisson method of Gaussian field compilation requires the Poisson WASM URLs
+(`poissonJs` / `poissonWasm`) in the `wasm` config object. With `method: "auto"`
+(the default), calls without them use the voxel method; with
+`method: "poisson"` they reject with `INVALID_CONFIG`.
 
 The WASM build requires each connected input part to be a closed manifold and
 excludes OpenVDB's manifold repair to keep the module small. The high-level GLB

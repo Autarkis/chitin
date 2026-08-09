@@ -17,6 +17,7 @@ import {
 } from "./interactive-policy.js";
 import { assembleCompilationResult, sourceSummary } from "./compiler-report.js";
 import { parseGlb } from "./glb.js";
+import { gaussianFieldToGlb, type VoxelReconstructionOptions } from "./gaussian-field.js";
 import { checkManifold as validateManifold } from "./manifold.js";
 import {
   canonicalizeMesh,
@@ -114,8 +115,18 @@ export interface CompileGlbResult {
   };
 }
 
+/**
+ * `poisson` reconstructs via the Poisson WASM module (requires `poissonJs` and
+ * `poissonWasm`); `voxel` rasterizes Gaussian support into a sealed voxel shell
+ * with no extra assets; `auto` picks `poisson` when its assets are configured.
+ */
+export type GaussianFieldMethod = "auto" | "poisson" | "voxel";
+
 export interface CompileGaussianFieldOptions extends CompileGlbOptions {
-  reconstruction?: GaussianFieldReconstructionOptions;
+  /** Reconstruction method. Defaults to `auto`. */
+  method?: GaussianFieldMethod;
+  /** `minOpacity` applies to both methods; the remaining fields apply to `voxel`. */
+  reconstruction?: GaussianFieldReconstructionOptions & VoxelReconstructionOptions;
   /** Poisson octree depth. Defaults to 7. */
   poissonDepth?: number;
   /** Low-density vertex trim threshold. Defaults to 0.1. */
@@ -259,14 +270,30 @@ export class ChitinCompiler {
     input: GaussianFieldInput,
     options: CompileGaussianFieldOptions = {},
   ): Promise<CompileGlbResult> {
-    if (!this.options.wasm.poissonJs || !this.options.wasm.poissonWasm) {
+    const hasPoisson = Boolean(this.options.wasm.poissonJs && this.options.wasm.poissonWasm);
+    const method = options.method ?? "auto";
+    if (method === "voxel" || (method === "auto" && !hasPoisson)) {
+      const {
+        reconstruction,
+        method: _method,
+        poissonDepth: _poissonDepth,
+        densityQuantile: _densityQuantile,
+        surfaceRatio: _surfaceRatio,
+        surfaceProximityFilter: _surfaceProximityFilter,
+        thinShellThickness: _thinShellThickness,
+        ...compileOptions
+      } = options;
+      return this.compileGlb(gaussianFieldToGlb(input, reconstruction), compileOptions);
+    }
+    if (!hasPoisson) {
       throw new ChitinError(
         "INVALID_CONFIG",
-        "compileGaussianField requires poissonJs and poissonWasm URLs in wasm options",
+        "compileGaussianField with method \"poisson\" requires poissonJs and poissonWasm URLs in wasm options",
       );
     }
 
     const {
+      method: _method,
       reconstruction,
       poissonDepth = 7,
       densityQuantile = 0.1,
