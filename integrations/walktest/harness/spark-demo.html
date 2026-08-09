@@ -256,12 +256,13 @@
     <div id="viewport"></div>
     <section class="panel">
       <p class="eyebrow">Chitin × Spark 2.1</p>
-      <h1>Hull shadows, received by splats</h1>
+      <h1>Deferred hull lighting on splats</h1>
       <p class="lede">
         <span id="receiver-name">Spark’s example capture</span> is paired with a
         precompiled <code>robot-head.phys</code> sidecar generated once by
-        Chitin. At runtime, Spark supplies appearance while the stored amber
-        hulls drive shadow reception, self-shadowing, and hull-depth AO.
+        Chitin. At runtime, Spark supplies appearance while hidden hull
+        depth/normal buffers drive shadow reception, self-shadowing, and AO in
+        the final deferred composite.
       </p>
       <div class="metrics">
         <div class="metric"><strong id="splat-count">—</strong>splats</div>

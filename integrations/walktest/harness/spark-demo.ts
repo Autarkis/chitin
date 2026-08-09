@@ -1,9 +1,6 @@
 import { parsePhys } from "@autarkis/chitin-web";
 import {
-  attachSparkDirectionalShadow,
-  bindSparkToPhysSurface,
-} from "@autarkis/chitin-web/spark";
-import {
+  createDeferredHullLightingPass,
   createHullGeometries,
   createShadowProxy,
 } from "@autarkis/chitin-web/three";
@@ -43,7 +40,7 @@ const ambientOcclusionInput = document.getElementById(
 ) as HTMLInputElement;
 
 const LIVE_STATUS =
-  "Live — amber and mint geometry are parsed Chitin .phys hulls; Spark supplies appearance only.";
+  "Live — Spark appearance is composited with deferred lighting from stored Chitin .phys hulls.";
 const LIGHTING_OFF_STATUS =
   "Live — real-time lighting is off; Spark capture colors remain baked.";
 const ENVIRONMENTS: Record<string, string | null> = {
@@ -103,7 +100,7 @@ const sparkRenderer = new SparkRenderer({ renderer });
 scene.add(sparkRenderer);
 
 const light = new THREE.DirectionalLight(0xfff4df, 4.5);
-light.position.set(-3.8, 7, 4.6);
+light.position.set(-3.8, 7, -4.6);
 light.target.position.set(0, 0, 0);
 light.castShadow = true;
 light.shadow.mapSize.set(1024, 1024);
@@ -322,7 +319,7 @@ function buildCaster(phys: ReturnType<typeof parsePhys>) {
     hullEdges.add(edge);
   }
   casterRoot.scale.setScalar(0.72);
-  casterRoot.position.set(casterBaseX, Number(heightInput.value), 0.7);
+  casterRoot.position.set(casterBaseX, Number(heightInput.value), -0.9);
 }
 
 async function init() {
@@ -338,40 +335,39 @@ async function init() {
 
   buildCaster(casterPhys);
 
-  status.textContent = "Binding Spark appearance to the robot .phys surface…";
-  const surface = bindSparkToPhysSurface(receiverVisual, robotPhys);
-  const receiver = attachSparkDirectionalShadow({
-    visual: receiverVisual,
+  status.textContent = "Creating the hull G-buffer and deferred composite…";
+  const deferredLighting = createDeferredHullLightingPass({
     renderer,
-    light,
-    strength: receiverStrength,
-    bias: -0.0002,
-    normalBias: 0.025,
-    surface,
+    scene,
+    camera,
+    hullLayer: 1,
+    lights: [
+      {
+        light,
+        strength: receiverStrength,
+        bias: -0.0002,
+        normalBias: 0.025,
+      },
+      {
+        light: selfShadowLight,
+        strength: selfShadowsInput.checked ? receiverStrength * 0.65 : 0,
+        bias: -0.0001,
+        normalBias: 0.018,
+      },
+      ...aoLights.map((aoLight) => ({
+        light: aoLight,
+        strength:
+          ambientOcclusionInput.checked
+            ? ambientOcclusionStrength / aoLights.length
+            : 0,
+        bias: -0.0001,
+        normalBias: 0.014,
+      })),
+    ],
   });
-  const selfShadowReceiver = attachSparkDirectionalShadow({
-    visual: receiverVisual,
-    renderer,
-    light: selfShadowLight,
-    strength: selfShadowsInput.checked ? receiverStrength * 0.65 : 0,
-    bias: -0.0001,
-    normalBias: 0.018,
-    surface,
-  });
-  const aoReceivers = aoLights.map((aoLight) =>
-    attachSparkDirectionalShadow({
-      visual: receiverVisual,
-      renderer,
-      light: aoLight,
-      strength:
-        ambientOcclusionInput.checked
-          ? ambientOcclusionStrength / aoLights.length
-          : 0,
-      bias: -0.0001,
-      normalBias: 0.014,
-      surface,
-    }),
-  );
+  viewport.dataset.lightingMode = "deferred-hulls";
+  const [receiver, selfShadowReceiver, ...aoReceivers] =
+    deferredLighting.lights;
 
   const applyLightingState = (): void => {
     const enabled = lightingInput.checked;
@@ -383,9 +379,6 @@ async function init() {
         ? ambientOcclusionStrength / aoReceivers.length
         : 0;
     for (const aoReceiver of aoReceivers) aoReceiver.strength = aoStrength;
-    receiverSelfShadowProxy.visible =
-      enabled &&
-      (selfShadowsInput.checked || ambientOcclusionInput.checked);
     selfShadowLight.visible = enabled && selfShadowsInput.checked;
     for (const aoLight of aoLights) {
       aoLight.visible = enabled && ambientOcclusionInput.checked;
@@ -394,14 +387,10 @@ async function init() {
   applyLightingState();
 
   // Three allocates directional shadow depth textures lazily. Render once to
-  // populate it, then regenerate Spark's splat buffer with the real texture so
-  // the first frame labelled Live is already settled.
-  renderer.render(scene, camera);
-  receiver.update();
-  selfShadowReceiver.update();
-  for (const aoReceiver of aoReceivers) aoReceiver.update();
+  // populate them, then settle Spark before presenting the deferred composite.
+  deferredLighting.render();
   await sparkRenderer.update({ scene, camera });
-  renderer.render(scene, camera);
+  deferredLighting.render();
   status.textContent = LIVE_STATUS;
 
   strengthInput.addEventListener("input", () => {
@@ -470,7 +459,7 @@ async function init() {
       casterRoot.rotation.y = Math.sin(time * 0.43) * 0.32;
     }
     controls.update();
-    renderer.render(scene, camera);
+    deferredLighting.render();
   });
 }
 

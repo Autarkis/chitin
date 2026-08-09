@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
+test("Spark demo lights stored sidecars through deferred hulls", async ({
+  page,
+}) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -38,6 +40,10 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   await expect(page.locator("#viewport")).toHaveAttribute(
     "data-environment",
     "studio",
+  );
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-lighting-mode",
+    "deferred-hulls",
   );
   await lighting.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(
