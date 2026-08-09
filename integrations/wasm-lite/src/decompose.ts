@@ -1,4 +1,5 @@
 import { ChitinError } from "./errors.js";
+import { resolveDecomposeConfig } from "./defaults.js";
 import type { ConvexHull, DecomposeConfig, DecomposeResult } from "./types.js";
 
 // Embind handles must be released with delete(); the wrapper types make that
@@ -146,12 +147,20 @@ export function validateConfig(config: DecomposeConfig): void {
       `prepResolution must be an integer in [5, 1000] (CoACD's supported range), got ${prepResolution}`,
     );
   }
+  if (
+    config.maxChVertex !== undefined &&
+    (!Number.isInteger(config.maxChVertex) || config.maxChVertex < 4)
+  ) {
+    throw new ChitinError(
+      "INVALID_CONFIG",
+      `maxChVertex must be an integer of at least 4, got ${config.maxChVertex}`,
+    );
+  }
   for (const key of [
     "sampleResolution",
     "mctsNodes",
     "mctsIteration",
     "mctsMaxDepth",
-    "maxChVertex",
   ] as const) {
     const v = config[key];
     if (v !== undefined && (!Number.isInteger(v) || v <= 0)) {
@@ -171,19 +180,20 @@ export async function decompose(
   validateMeshInput(vertices, faces);
   validateConfig(config);
   const mod = await getModule();
+  const resolved = resolveDecomposeConfig(config);
 
   const result = mod.decompose(
     vertices,
     faces,
-    config.threshold ?? 0.05,
-    config.maxConvexHull ?? -1,
-    config.prepResolution ?? 50,
-    config.sampleResolution ?? 2000,
-    config.mctsNodes ?? 20,
-    config.mctsIteration ?? 150,
-    config.mctsMaxDepth ?? 3,
-    config.maxChVertex ?? 256,
-    config.merge ?? true,
+    resolved.threshold,
+    resolved.maxConvexHull,
+    resolved.prepResolution,
+    resolved.sampleResolution,
+    resolved.mctsNodes,
+    resolved.mctsIteration,
+    resolved.mctsMaxDepth,
+    resolved.maxChVertex,
+    resolved.merge,
   );
 
   // Every Embind handle we obtain (the result, its hull vector, each hull, and

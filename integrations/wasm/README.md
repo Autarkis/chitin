@@ -4,6 +4,11 @@ Compiles [CoACD](https://github.com/SarahWeiii/CoACD) to WebAssembly via Emscrip
 
 Built with `-DWITH_3RD_PARTY_LIBS=OFF`, which strips OpenVDB, Boost, TBB, and spdlog. The core algorithm (MCTS search, concavity metric, plane clipping, convex hull) is unchanged. The only trade-off: no automatic manifold repair. Input meshes must already be manifold.
 
+The binding enables CoACD's final convex-hull decimation pass, so
+`maxChVertex` is an enforced output limit rather than inert configuration. The
+Node functional test exercises a dense sphere and fails if the emitted hull
+exceeds its requested vertex cap.
+
 ## Prerequisites
 
 - [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) (pinned to 5.0.7 in CI)
@@ -56,4 +61,4 @@ https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm
 | `coacd.wasm` | ~558 KB |
 | `coacd.mjs` | ~96 KB |
 
-For comparison, Open3D's Python wheel is ~400 MB.
+For comparison, the open3d 0.19.0 Python wheel (cp312) is ~427 MB on Linux (`manylinux_2_31_x86_64`), ~98 MB on macOS (`universal2`), and ~66 MB on Windows (`win_amd64`).
