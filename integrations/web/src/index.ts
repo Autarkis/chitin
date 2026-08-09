@@ -8,3 +8,23 @@ export type {
   PhysBone,
   PhysLodTier,
 } from "./phys-parser.js";
+export {
+  applyBindPose,
+  calculateVertexBounds,
+  combinePhysGeometry,
+  materializePhysHulls,
+  resolvePhysTransform,
+  transformHullVertices,
+} from "./geometry.js";
+export type {
+  CombinedHullRange,
+  CombinedPhysGeometry,
+  MaterializedPhysGeometry,
+  MaterializedPhysHull,
+  MaterializeOptions,
+  PhysBounds,
+  PhysTransform,
+  Quaternion,
+  ResolvedPhysTransform,
+  Vec3,
+} from "./geometry.js";

@@ -49,7 +49,10 @@ describe("rapier adapter", () => {
       ...load("static_hull.phys"),
       hasBindPoses: false,
       bones: [],
-      hulls: load("static_hull.phys").hulls.map((h) => ({ ...h, boneIndex: 0 })),
+      hulls: load("static_hull.phys").hulls.map((h) => ({
+        ...h,
+        boneIndex: 0,
+      })),
     } as PhysFile;
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
     expect(() => addToWorld(RAPIER, world, phys)).toThrow(/bind poses/);
@@ -100,5 +103,74 @@ describe("rapier adapter", () => {
     const { colliders, boneMap } = createColliders(RAPIER, phys);
     expect(colliders.length).toBe(phys.hulls.length);
     expect(boneMap.size).toBeGreaterThan(0);
+  });
+
+  it("places body translation and rotation while baking scale into colliders", () => {
+    const phys = load("static_hull.phys");
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    const body = addToWorld(RAPIER, world, phys, undefined, {
+      transform: {
+        translation: [3, 4, 5],
+        rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2],
+        scale: [2, 3, 4],
+      },
+    });
+
+    expect(body.translation()).toEqual({ x: 3, y: 4, z: 5 });
+    expect(body.rotation().z).toBeCloseTo(Math.SQRT1_2, 6);
+    expect(body.rotation().w).toBeCloseTo(Math.SQRT1_2, 6);
+
+    const original = phys.hulls[0].vertices;
+    const scaled = body.collider(0).vertices();
+    for (let i = 0; i < original.length; i += 3) {
+      expect(scaled[i]).toBeCloseTo(original[i] * 2, 5);
+      expect(scaled[i + 1]).toBeCloseTo(original[i + 1] * 3, 5);
+      expect(scaled[i + 2]).toBeCloseTo(original[i + 2] * 4, 5);
+    }
+  });
+
+  it("rejects ambiguous legacy and full-transform translation", () => {
+    const phys = load("static_hull.phys");
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    expect(() =>
+      addToWorld(
+        RAPIER,
+        world,
+        phys,
+        { x: 1, y: 2, z: 3 },
+        {
+          transform: { translation: [4, 5, 6] },
+        },
+      ),
+    ).toThrow(/either the legacy position/);
+    expect(world.bodies.len()).toBe(0);
+  });
+
+  it("supports reflected asset scale without invalid collider winding", () => {
+    const phys = load("static_hull.phys");
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    const body = addToWorld(RAPIER, world, phys, undefined, {
+      transform: { scale: [-1, 1, 1] },
+    });
+    const original = phys.hulls[0].vertices;
+    const reflected = body.collider(0).vertices();
+
+    expect(body.numColliders()).toBe(1);
+    for (let i = 0; i < original.length; i += 3) {
+      expect(reflected[i]).toBeCloseTo(-original[i], 5);
+      expect(reflected[i + 1]).toBeCloseTo(original[i + 1], 5);
+      expect(reflected[i + 2]).toBeCloseTo(original[i + 2], 5);
+    }
+  });
+
+  it("rejects zero scale before creating a body", () => {
+    const phys = load("static_hull.phys");
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    expect(() =>
+      addToWorld(RAPIER, world, phys, undefined, {
+        transform: { scale: [1, 0, 1] },
+      }),
+    ).toThrow(/non-zero/);
+    expect(world.bodies.len()).toBe(0);
   });
 });
