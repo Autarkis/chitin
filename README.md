@@ -51,8 +51,9 @@ layout. The registry references Chitin artifacts rather than producing physics
 itself.
 
 Visual-only viewers (mesh or gaussian-splat) render read-only geometry; Chitin
-colliders fill the collision/raycast gap via the Three.js + Rapier reader
-(`@autarkis/chitin-web`).
+colliders fill the collision/raycast gap through the engine-neutral typed-array
+layer in `@autarkis/chitin-web`, with optional Three.js, Rapier, and Spark
+subpath adapters.
 
 Integration is by artifact (`.phys`) and reference type, never by package
 import.
@@ -261,11 +262,11 @@ All integrations read the same `.phys` binary with identical dequantization.
 
 | Engine | Package | Path |
 |--------|---------|------|
-| Web (Three.js + Rapier) | [`@autarkis/chitin-web`](integrations/web/) | `integrations/web/` |
+| Web (typed arrays, Three.js, Rapier, Spark) | [`@autarkis/chitin-web`](integrations/web/) | `integrations/web/` |
 | Unity | `com.chitin.physics` | `integrations/unity/` |
 | Unreal Engine | ChitinImporter plugin | `integrations/unreal/` |
 
-### Web: Three.js + Rapier
+### Web: engine-neutral geometry + runtime adapters
 
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
@@ -277,11 +278,12 @@ const phys = parsePhys(buffer);
 addToWorld(RAPIER, world, phys);
 ```
 
-The package root (`@autarkis/chitin-web`) is dependency-free — just the `.phys`
-parser and validator. The Rapier collider bindings live at
-`@autarkis/chitin-web/rapier` and the Three.js debug meshes at
-`@autarkis/chitin-web/three`, so a format-only consumer never pulls in Three or
-Rapier.
+The package root (`@autarkis/chitin-web`) is dependency-free: it parses `.phys`,
+selects LOD, bakes bind poses, transforms vertices, computes bounds, and merges
+hull buffers using plain typed arrays. Rapier bindings live at `/rapier`, Three
+geometry and shadow proxies at `/three`, and Spark visual pairing at `/spark`.
+All runtime peers are optional, and `/spark` composes the shared data and Three
+layers without reimplementing Rapier collider generation.
 
 A full working example with capsule walk controller and Playwright tests lives in [`integrations/walktest/`](integrations/walktest/). See [docs/usage.md](docs/usage.md#web-quickstart-ply-to-walkable-browser-scene) for the end-to-end walkthrough.
 

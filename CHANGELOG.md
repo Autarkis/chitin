@@ -19,6 +19,17 @@ format is versioned independently and noted where it changes.
   records the split in the build plan. The `robotics` preset moves from the
   measured 0.01 runtime cliff to bounded concavity 0.05; callers can still
   request 0.01 explicitly after benchmarking their asset.
+- **Web runtime foundation:** `@autarkis/chitin-web` 0.2 centralizes LOD
+  selection, bind-pose materialization, typed-array transforms, bounds, and
+  buffer merging in its dependency-free root. The Three.js and Rapier adapters
+  now consume that shared geometry instead of applying bind transforms
+  independently. Rapier placement accepts full asset TRS, including reflected
+  scale with corrected triangle winding.
+- **Spark gaussian-splat adapter:** the optional
+  `@autarkis/chitin-web/spark` subpath pairs a Spark `SplatMesh` and `.phys`
+  sidecar under one lifecycle and transform root. `/three` adds collision-LOD
+  and merged-hull shadow casters; `/spark` deliberately does not import or
+  duplicate `/rapier` collider generation.
 - **Fixed:** PLY meshes were silently routed through the point-cloud/Poisson
   path instead of the mesh path. `adapters.ply.load_ply` never populated
   `AdapterResult.faces`, and `analyze._analyze_ply` hardcoded

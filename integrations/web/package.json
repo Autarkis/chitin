@@ -1,7 +1,7 @@
 {
   "name": "@autarkis/chitin-web",
-  "version": "0.1.2",
-  "description": "Load chitin .phys collision sidecars in the browser",
+  "version": "0.2.0",
+  "description": "Load chitin .phys sidecars and attach them to web runtimes",
   "keywords": [
     "physics",
     "collision",
@@ -14,6 +14,8 @@
     "glb",
     "robotics",
     "webgl",
+    "gaussian-splatting",
+    "spark",
     "phys"
   ],
   "homepage": "https://github.com/Autarkis/chitin#readme",
@@ -38,6 +40,10 @@
     "./three": {
       "types": "./dist/three.d.ts",
       "import": "./dist/three.js"
+    },
+    "./spark": {
+      "types": "./dist/spark.d.ts",
+      "import": "./dist/spark.js"
     }
   },
   "sideEffects": false,
@@ -50,7 +56,8 @@
   },
   "peerDependencies": {
     "@dimforge/rapier3d-compat": ">=0.13",
-    "three": ">=0.160"
+    "@sparkjsdev/spark": ">=2.1 <3",
+    "three": ">=0.180"
   },
   "peerDependenciesMeta": {
     "three": {
@@ -58,14 +65,18 @@
     },
     "@dimforge/rapier3d-compat": {
       "optional": true
+    },
+    "@sparkjsdev/spark": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
+    "@sparkjsdev/spark": "2.1.0",
     "@types/three": "^0.185.4",
     "three": "^0.185.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.10"
   },
   "license": "MIT"
 }

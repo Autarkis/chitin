@@ -360,7 +360,12 @@ for issue in issues:
 
 ### Browser runtime
 
-`@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine. The package uses subpath exports: the root is dependency-free (`parsePhys`, `selectLodHulls`), the Rapier bindings live at `@autarkis/chitin-web/rapier`, and the Three.js debug meshes at `@autarkis/chitin-web/three`.
+`@autarkis/chitin-web` reads `.phys` files and turns them into runtime geometry
+for browser scenes. Its root is dependency-free: `materializePhysHulls()` adds
+LOD selection and optional bind-pose baking to the parser's plain typed arrays.
+Rapier bindings live at `/rapier`, Three.js geometry and shadow proxies at
+`/three`, and Spark gaussian-splat pairing at `/spark`. Every adapter consumes
+the same root geometry; renderer integrations do not generate colliders.
 
 `@autarkis/chitin-lite` also compiles a self-contained GLB directly in the
 browser without blocking the main thread:
@@ -481,6 +486,38 @@ const phys = parsePhys(buffer);
 addToWorld(RAPIER, world, phys);
 scene.add(createDebugMeshes(phys));
 ```
+
+#### Spark visual + Chitin sidecar
+
+Spark 2.1 visuals can share one transform and lifecycle with Chitin physics:
+
+```typescript
+import RAPIER from "@dimforge/rapier3d-compat";
+import { SparkRenderer } from "@sparkjsdev/spark";
+import { addToWorld } from "@autarkis/chitin-web/rapier";
+import { loadSparkAsset } from "@autarkis/chitin-web/spark";
+import { physTransformFromObject3D } from "@autarkis/chitin-web/three";
+
+scene.add(new SparkRenderer({ renderer })); // one per scene
+
+const asset = await loadSparkAsset({
+  visual: "/assets/scene.spz",
+  phys: "/assets/scene.phys",
+  shadows: { mode: "collision-lod", lodConcavity: 0.3 },
+});
+scene.add(asset.root);
+
+addToWorld(RAPIER, world, asset.phys, undefined, {
+  lodConcavity: 0.3,
+  transform: physTransformFromObject3D(asset.root),
+});
+```
+
+The hull meshes cast through Three.js's shadow pass. Spark 2.1 does not expose
+a public Three-style `receiveShadow` contract, so native per-splat shadow-map
+receiving remains a renderer capability rather than something Chitin claims.
+The sidecar still supplies collision, picking geometry, conventional shadow
+casters, and bounds for visual/physics alignment diagnostics.
 
 ### Web quickstart: PLY to walkable browser scene
 

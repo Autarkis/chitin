@@ -28,7 +28,7 @@ Chitin is free MIT-licensed infrastructure, but the strategic distinction is not
 | Usually lives inside one viewer's collision path | Loads beside any visual asset as a sidecar |
 | Optimized for "can I walk around this splat now?" | Optimized for "can I ship this collision asset everywhere?" |
 
-The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines. In the browser, `@autarkis/chitin-web` exposes `parsePhys`, `createColliders`, `addToWorld`, and Three.js debug meshes so a viewer can attach Chitin collision with a few lines of runtime code.
+The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines. In the browser, the dependency-free `@autarkis/chitin-web` root materializes bind-posed or stored hull geometry as typed arrays. `/rapier`, `/three`, and `/spark` consume that shared layer; renderer adapters never implement collider generation themselves.
 
 ## Components
 
@@ -125,7 +125,7 @@ Consumers are thin. They read `.phys`, dequantize vertices, and hand geometry to
 
 | Consumer | Language | Physics API | Matrix convention |
 |----------|----------|-------------|-------------------|
-| `@autarkis/chitin-web` | TypeScript | Rapier WASM | Column-vector (implicit via `fromArray`) |
+| `@autarkis/chitin-web` | TypeScript | Engine-neutral typed arrays; optional Rapier/Three/Spark adapters | Explicit TRS; `.phys` bind matrices remain row-vector |
 | `@autarkis/chitin-lite` | TypeScript | CoACD WASM | N/A (produces `.phys`, does not consume) |
 | `com.chitin.physics` | C# | Unity MeshCollider | Column-vector (explicit transpose) |
 | ChitinImporter | C++ | Unreal asset import (`UChitinPhysAsset`; no `UBodySetup` yet) | Row-vector (native match) |
