@@ -23,7 +23,7 @@ Most inputs work with defaults. Use `chitin check <file>` to see what chitin det
 | Input type | Example command | Notes |
 |------------|----------------|-------|
 | Gaussian splat (PLY with covariance) | `chitin extract scene.ply -o scene.phys` | Defaults handle opacity filtering, covariance normals, and spatial partitioning. Add `--opacity-threshold 0.5` if you want stricter filtering. |
-| Room / environment scan | `chitin extract room.ply -o room.phys` | Auto-detected: chitin enables `--thin-shell` and `--proximity-filter` when it detects a hollow-shell distribution. Use `--no-auto-environment` to disable. |
+| Room / environment scan | `chitin extract room.ply -o room.phys` | Point-cloud/splat input gets `--proximity-filter 5.0` by default. Auto-detected environments also get `--thin-shell`. Use `--no-auto-environment` to disable environment detection, `--proximity-filter 0` to disable proximity filtering. |
 | Clean mesh (OBJ, GLB, STL) | `chitin extract model.obj -o model.phys` | Just works. Adjust `--concavity` to trade hull count for fit (lower = tighter). |
 | Large mesh (200K+ verts) | `chitin extract big.obj -o big.phys` | Decimates above the `Config.max_decompose_vertices` field (200K default) **when Open3D is available** (`chitin[splat]`). On a base install without Open3D, decimation is skipped with a logged warning and the full mesh is passed to CoACD. Set the threshold via the Python `Config`; there is no CLI flag. |
 | Multi-LOD | `chitin extract model.obj -o model.phys --lod-concavities 0.1,0.3,0.5` | LOD 0 uses `--concavity`; each additional threshold must be coarser (greater) than `--concavity`. Output is v3 `.phys`. |
@@ -45,7 +45,7 @@ Supported inputs: `.ply`, `.obj`, `.stl`, `.off`, `.glb`, `.gltf`, `.usd`, `.usd
 
 Supported outputs: `.phys` (binary sidecar), `.json` (debug companion), `.usda` (USD Physics)
 
-Use Chitin when the collision result needs to be a portable physics asset: checked into a build, validated in CI, loaded by multiple runtimes, or inspected independently from the visual source. If the only goal is immediate walk mode inside a splat viewer, a voxel collision pipeline may be enough. Chitin is for the next step: reusable convex hull artifacts with stable readers.
+For when to reach for Chitin versus a voxel/splat-viewer collision pipeline, see [Compared with viewer collision](../README.md#compared-with-viewer-collision) in the top-level README.
 
 Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-aware. A splat viewer, Three.js scene, generated-world renderer, or custom engine can load the visual asset however it wants, then load `scene.phys` in the same coordinate space and attach those hulls to its physics world.
 
@@ -60,7 +60,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--max-hulls` | 2048 | Max convex hulls per decomposition unit (per octree cell / per bone), not a global cap. |
 | `--lod-concavities` | none | Comma-separated concavity thresholds for LOD tiers. |
 | `--density-quantile` | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environments. |
-| `--proximity-filter` | 0 | Remove mesh vertices farther than N * median_nn_distance from input. |
+| `--proximity-filter` | auto (5.0 for point-cloud/splat input) | Remove mesh vertices farther than N * median_nn_distance from input. 0 disables. |
 | `--thin-shell` | off | Extrude surface into thin solid before decomposition (environment scans). |
 | `--thin-shell-thickness` | 0 | Shell thickness (0 = auto from mesh extent). |
 | `--scene-name` | scene | Root prim name (USD output only). |
@@ -173,6 +173,12 @@ from chitin import verify_bundle
 
 problems = verify_bundle("model_bundle")  # [] means every artifact matches
 ```
+
+The manifest also carries the versioned cross-runtime compilation report under
+`quality.report`. Its typed metrics, warnings, verdict state, runtime identity,
+and reproducibility scope are documented in
+[`compilation-report.md`](compilation-report.md). A consumer must distinguish
+`verdict.status: "not_evaluated"` from a profile pass.
 
 ### Inspect
 
@@ -354,6 +360,113 @@ for issue in issues:
 
 `@autarkis/chitin-web` reads `.phys` files and turns them into runtime objects for browser scenes. Use `addToWorld` for the common Rapier path, or `parsePhys` directly if your viewer uses another physics engine. The package uses subpath exports: the root is dependency-free (`parsePhys`, `selectLodHulls`), the Rapier bindings live at `@autarkis/chitin-web/rapier`, and the Three.js debug meshes at `@autarkis/chitin-web/three`.
 
+`@autarkis/chitin-lite` also compiles a self-contained GLB directly in the
+browser without blocking the main thread:
+
+```typescript
+import { ChitinCompiler } from "@autarkis/chitin-lite";
+
+const compiler = new ChitinCompiler({
+  wasm: { js: "/coacd/coacd.mjs", wasm: "/coacd/coacd.wasm", version: "0.2.0" },
+  maxWorkers: 2,
+});
+const { phys, hulls, source, report } = await compiler.compileGlb(file, {
+  profile: "interactive",
+  componentPolicy: { maxHulls: 128 },
+  onProgress: ({ stage, completed, total, eta_ms }) =>
+    console.log(stage, completed, total, eta_ms),
+});
+compiler.terminate();
+```
+
+Inputs may be `File`, `Blob`, `ArrayBuffer`, an array-buffer view, `URL`, or a
+URL string. The compiler reads the active scene, applies node transforms and
+instancing, and supports indexed, unindexed, interleaved, and sparse static
+triangle geometry. It welds exact render seams and decomposes disconnected
+triangle components independently before writing one sidecar. Unsupported
+shape-changing features fail explicitly. The
+browser API does not yet claim a profile pass: `report.verdict.status` is
+`not_evaluated` until the corresponding artifact checks exist.
+
+For benchmark and acceptance lanes, pass
+`quality: { surfaceSamples: 2048, volumeSamples: 8192 }`. The compiler then
+records deterministic sampled source-surface coverage, worst connected-part
+coverage, collider-volume precision, raw false-fill fraction, and
+clearance-aware deep false fill in
+`report.metrics`. Sampling is disabled by default so interactive recompilation
+does not pay the verification cost. Measurements alone do not change the
+verdict from `not_evaluated`.
+
+#### Interactive compiler budget
+
+The interactive compiler keeps disconnected parts isolated because assembled
+GLBs can contain overlapping solids that CoACD cannot safely process as one
+mesh. It nevertheless treats the hull count as a scene budget: large parts are
+processed first, while a part below both the default 20% scene-diagonal and
+0.5% scene-volume cutoffs receives one convex approximation. The default total
+budget has a 128-hull fine-detail ceiling. Between thresholds `0.10` and `0.60`,
+the effective budget scales down to 70% of the capacity remaining above
+deterministic per-component minimums. Explicit caller budgets are not rescaled.
+Its bounded search uses 8 MCTS nodes, 40 iterations, and depth 2;
+callers can override those through `decompose`. When 128 hulls cannot satisfy
+the per-component minimums, the default expands rather than dropping
+geometry. Any small-part simplification is recorded as
+`INTERACTIVE_SMALL_COMPONENTS_SIMPLIFIED`. These decisions depend only on
+geometry and configuration, not on wall-clock time, and are recorded in
+`report.config.effective` and `warnings`.
+
+The interactive planner also identifies closed components whose enclosed
+volume is at most 5% of their AABB volume. These low-occupancy shells commonly
+represent plates, bowls, covers, and other hollow forms where an aggressively
+coarse convex decomposition can bridge an opening or fill a cavity. By default
+they retain a threshold no coarser than `0.05` and reserve at least eight hull
+slots. The total hull budget can still decrease at coarser detail settings, so
+the control changes collider complexity without removing the cavity guard.
+`INTERACTIVE_HOLLOW_SHELL_GUARD` explains when a requested slider value was
+limited. This is a deterministic planning heuristic; because the browser
+profile does not yet measure free-space clearance, it does not claim that the
+result passed a cavity-preservation check.
+
+For other detailed components below 50% enclosed-volume/AABB occupancy, the
+planner also scales the coarsest permitted threshold by scene importance. A
+component that dominates the scene receives a default ceiling near `0.14`;
+progressively smaller non-trivial components may use up to twice that value.
+This prevents a high slider setting from collapsing a primary body with
+attached features into one convex envelope while leaving ordinary compact
+bodies unconstrained. `INTERACTIVE_IMPORTANCE_GUARD` records when this limit
+applies. `componentPolicy.importantComponentMaxThreshold` configures the
+scene-dominant baseline and `importantComponentMaxOccupancyRatio` configures
+eligibility.
+
+The planner separately controls vertices inside each hull. Scene-relative
+diagonal is the primary allocation, refined by the component's isoperimetric
+quotient as a bounded geometric roundness/curvature proxy. This keeps large
+curved geometry smooth while making small flat parts such as fins materially
+cheaper. Defaults range from 8 to 96 vertices per hull.
+`decompose.maxChVertex` acts as an additional global ceiling, while
+`componentPolicy.minHullVertices` and `maxHullVertices` tune the adaptive range.
+`INTERACTIVE_HULL_VERTICES_ADAPTED` records when this changes component caps.
+In the browser compiler, this vertex adaptation requires a CoACD WASM build
+with convex-hull decimation enabled.
+
+Reusing the same `ChitinCompiler` and immutable `File`/`Blob` also reuses parsed
+geometry and compatible completed components across detail changes. Set
+`componentPolicy.enabled` to `false` for uniform full-detail-per-part behavior,
+or tune `maxHulls`, `smallComponentMaxDiagonalRatio`,
+`smallComponentMaxVolumeRatio`, `smallComponentThreshold`, and
+`detailedComponentMinThreshold`, `importantComponentMaxThreshold`,
+`importantComponentMaxOccupancyRatio`, `hollowShellMaxOccupancyRatio`,
+`hollowShellMaxThreshold`, `hollowShellMinHulls`, `minHullVertices`, and
+`maxHullVertices` explicitly. Remaining hull capacity is assigned using both
+scene importance and normalized source complexity so a detailed articulated
+shell is not starved by a simpler sibling with a larger AABB. The default
+minimum is `0.10`; set
+it to `0` when an application deliberately accepts unbounded fine-detail waits.
+`decompose.maxConvexHull` remains a per-component low-level ceiling;
+`componentPolicy.maxHulls` is the only total scene budget.
+The Collider Lab keeps the last completed collider visible while a replacement
+detail setting compiles, then reveals the replacement only after it is ready.
+
 ```typescript
 import RAPIER from "@dimforge/rapier3d-compat";
 import { parsePhys } from "@autarkis/chitin-web"; // format only, no deps
@@ -489,7 +602,7 @@ for hull in phys.hulls:
 | `splat_surface_ratio` | float | 0.2 | Anisotropic inflation ratio for splat disk samples. Set to 0 to disable inflation. |
 | `spatial_split_threshold` | int | 50000 | Point count above which octree spatial decomposition is used. |
 | `poisson_density_quantile` | float | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environment scans to strip closure surfaces. |
-| `surface_proximity_filter` | float | 0.0 | Max distance (as multiple of median NN distance) from input points. Removes Poisson closure geometry far from real data. 0 = disabled. |
+| `surface_proximity_filter` | float \| None | None | Max distance (as multiple of median NN distance) from input points. Removes Poisson closure geometry far from real data. Unset auto-resolves to 5.0 for point-cloud/splat reconstructions (0.0 for mesh/GLB input); explicit 0.0 disables. |
 | `thin_shell` | bool | False | Extrude filtered surface into a thin watertight solid before CoACD. Prevents volume-fill on environment scans. |
 | `thin_shell_thickness` | float | 0.0 | Shell extrusion thickness. 0 = auto (2% of median mesh extent). |
 | `flatness_threshold` | float | 0.9 | PCA eigenvalue ratio to classify octree cells as flat. Flat cells get oriented boxes instead of CoACD. 0 = disabled. |
@@ -503,9 +616,9 @@ When a PLY file contains `scale_0/1/2` and `rot_0/1/2/3` attributes (standard 3D
 
 1. **Oriented normals**: The shortest axis of each gaussian's scale ellipsoid points along the surface normal. This produces better normals than KD-tree estimation, because the trainer already learned the surface orientation.
 
-2. **Anisotropic inflation**: Each gaussian center is expanded into disk samples along its two largest axes, scaled by `splat_surface_ratio`. This gives the Poisson reconstructor better surface coverage -- fewer holes, tighter hulls. The default ratio of 0.2 adds 4 samples per point (5x total), which is a good balance between coverage and computation.
+2. **Anisotropic inflation**: Each gaussian center is expanded into disk samples along its two largest axes, scaled by `splat_surface_ratio`. This gives the Poisson reconstructor better surface coverage -- fewer holes, tighter hulls. The default ratio of 0.2 adds 4 samples per point (5x total).
 
-For PLY files without covariance attributes (plain point clouds, photogrammetry), chitin falls back to the standard pipeline: KD-tree normal estimation and no inflation.
+For PLY files without covariance attributes and no `face` element (plain point clouds, photogrammetry), chitin falls back to the standard pipeline: KD-tree normal estimation and no inflation. A PLY with a `face` element is a mesh and skips reconstruction entirely, taking the same direct decompose path as OBJ/GLB input.
 
 Covariance travels with the geometry under `target_height` / `target_footprint`: the same uniform factor that rescales the positions is applied to the per-splat scales, so inflation offsets and octree ghost-zone radii stay in the units of the normalized cloud. `splat_scale_is_log` (default `true`, the 3DGS convention) decides how — an additive `log(factor)` on log scales, a plain multiply on linear ones. Rotations are untouched; a uniform scale does not reorient a gaussian. The build plan records the applied factor as `normalize_covariance_scale`.
 
@@ -525,7 +638,9 @@ Poisson reconstruction produces watertight meshes. For object scans (a mug, a st
 
 Chitin auto-detects environment scans on two signals, either of which is enough. The first is a hollow middle: fewer than 5% of points in the inner 50% of the scene AABB. The second is a shell signature -- a floor plane plus at least two wall planes found against the AABB faces, each one thin (the points hug a single depth rather than filling the slab, which is what separates a wall from a solid block) and covering at least 35% of its face. The second signal is what carries cluttered interiors: a central pillar, a heap of material, or a mid-floor row of shelving raises inner density past 5%, but the walls and floor are still there.
 
-When either fires, proximity filtering and thin-shell extrusion are enabled automatically. Use `--no-auto-environment` or `auto_environment=False` to disable, and `--environment` or `force_environment=True` to force the environment path when detection misses. Inputs that land between the two -- inner density in [0.05, 0.20) with no shell signature -- are treated as solid objects, and `chitin check` says so and points at `--environment`.
+When either fires, thin-shell extrusion is enabled automatically (and proximity filtering, if not already on by the point-cloud default below, is set to 5.0). Use `--no-auto-environment` or `auto_environment=False` to disable, and `--environment` or `force_environment=True` to force the environment path when detection misses. Inputs that land between the two -- inner density in [0.05, 0.20) with no shell signature -- are treated as solid objects, and `chitin check` says so and points at `--environment`.
+
+Proximity filtering is not gated on environment detection: any point-cloud or splat input that goes through Poisson reconstruction gets `surface_proximity_filter=5.0` by default, whether or not it looks like a room, since Poisson closure geometry is artificial regardless of scene shape. Mesh/GLB input never runs Poisson and is unaffected. Pass `--proximity-filter 0` (or `surface_proximity_filter=0.0`) to disable it explicitly on any input.
 
 Two mechanisms address the closure problem:
 
@@ -561,19 +676,27 @@ config = Config(
 )
 ```
 
-For object scans, the defaults (no proximity filter, no thin shell) remain correct. Auto-detection is conservative: it only triggers for clearly hollow distributions.
+For object scans reconstructed from a point cloud, the proximity filter default (5.0) still applies, but thin shell stays off. Environment auto-detection is conservative: it only triggers thin-shell for clearly hollow distributions.
 
 ## Concavity Tuning
 
-The `concavity` parameter controls how aggressively CoACD decomposes the mesh. Think of it as a fidelity budget:
+The `concavity` parameter controls how aggressively CoACD decomposes the mesh. Lower values chase surface detail more closely and produce more hulls; higher values approximate more coarsely with fewer hulls.
 
-| Concavity | Hulls (typical) | Use case |
-|-----------|----------------|----------|
-| 0.01      | 500+           | Precise simulation, close interaction |
-| 0.05      | 100-300        | General purpose, good balance |
-| 0.1       | 50-100         | Background objects, mobile |
-| 0.3       | 10-30          | Broadphase, simple collision |
-| 0.5       | 5-10           | Bounding approximation |
+Measured hull counts, three real glTF-Sample-Assets meshes (fetched by `examples/quickstart/scripts/prepare-samples.mjs`), one `chitin extract --concavity <value>` run per cell, hull count read from `chitin inspect`:
+
+| Concavity | barramundi-fish (2188 verts) | clearcoat-wicker (1728 verts) | iridescent-dish-with-olives (14863 verts) | Use case |
+|-----------|:---:|:---:|:---:|----------|
+| 0.01      | 32  | 1*  | 1*  | Precise simulation, close interaction |
+| 0.05      | 6   | 1   | 47  | General purpose, good balance |
+| 0.1       | 3   | 1   | 19  | Background objects, mobile |
+| 0.3       | 1   | 1   | 5   | Broadphase, simple collision |
+| 0.5       | 1   | 1   | 1   | Bounding approximation |
+
+\* clearcoat-wicker and iridescent-dish-with-olives at concavity 0.01 both hit the 300s CoACD-timeout backstop (`--coacd-timeout`, default 300) and fell back to a single bounding-box hull (8 verts, 12 tris) rather than completing a real decomposition; the "1" is a timeout artifact, not a converged result.
+
+Hull count depends on mesh complexity, not on concavity alone: at 0.05, the low-poly clearcoat-wicker mesh produces 1 hull while the higher-poly iridescent-dish-with-olives produces 47. These three small assets (57 KB-461 KB) are not a general benchmark — do not extrapolate these exact counts to arbitrary meshes; re-measure on your own asset if you need a hull budget.
+
+Environment: chitin 0.1.2, CoACD via the `coacd` package (1.0.11), Windows 11, Python 3.12.11.
 
 For multi-LOD, set `concavity` to your tightest tier and `lod_concavities` to progressively coarser values. The consumer picks the right tier at runtime based on distance, platform, or simulation budget.
 
