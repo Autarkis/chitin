@@ -1,6 +1,12 @@
-import { ChitinCompiler } from "@autarkis/chitin-lite";
+import {
+  ChitinCompiler,
+  type GaussianFieldInput,
+} from "@autarkis/chitin-lite";
 import { parsePhys } from "@autarkis/chitin-web";
-import { attachSparkDirectionalShadow } from "@autarkis/chitin-web/spark";
+import {
+  attachSparkDirectionalShadow,
+  bindSparkToPhysSurface,
+} from "@autarkis/chitin-web/spark";
 import {
   createHullGeometries,
   createShadowProxy,
@@ -9,7 +15,6 @@ import { SparkRenderer, SplatMesh, SpzWriter } from "@sparkjsdev/spark";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 
 import { buildMinimalGltf, packGlb } from "../../../scripts/glb-pack.mjs";
@@ -18,6 +23,10 @@ const viewport = document.getElementById("viewport")!;
 const status = document.getElementById("status")!;
 const strengthInput = document.getElementById("strength") as HTMLInputElement;
 const strengthValue = document.getElementById("strength-value")!;
+const aoStrengthInput = document.getElementById(
+  "ao-strength",
+) as HTMLInputElement;
+const aoStrengthValue = document.getElementById("ao-strength-value")!;
 const heightInput = document.getElementById("height") as HTMLInputElement;
 const heightValue = document.getElementById("height-value")!;
 const animateInput = document.getElementById("animate") as HTMLInputElement;
@@ -32,9 +41,15 @@ const environmentInput = document.getElementById(
   "environment",
 ) as HTMLSelectElement;
 const lightingInput = document.getElementById("lighting") as HTMLInputElement;
+const selfShadowsInput = document.getElementById(
+  "self-shadows",
+) as HTMLInputElement;
+const ambientOcclusionInput = document.getElementById(
+  "ambient-occlusion",
+) as HTMLInputElement;
 
 const LIVE_STATUS =
-  "Live — amber hulls are derived from the SPZ; mint hulls are the Chitin .phys caster.";
+  "Live — amber and mint geometry are parsed Chitin .phys hulls; Spark supplies appearance only.";
 const LIGHTING_OFF_STATUS =
   "Live — real-time lighting is off; Spark capture colors remain baked.";
 const ENVIRONMENTS: Record<string, string | null> = {
@@ -113,6 +128,31 @@ const hemisphereLight = new THREE.HemisphereLight(
 );
 scene.add(hemisphereLight);
 
+function createHullDepthLight(position: THREE.Vector3): THREE.DirectionalLight {
+  const depthLight = new THREE.DirectionalLight(0xffffff, 0.000001);
+  depthLight.position.copy(position);
+  depthLight.target.position.set(0.15, 0.62, -0.15);
+  depthLight.castShadow = true;
+  depthLight.shadow.mapSize.set(1024, 1024);
+  depthLight.shadow.camera.left = -3.2;
+  depthLight.shadow.camera.right = 3.2;
+  depthLight.shadow.camera.top = 3.2;
+  depthLight.shadow.camera.bottom = -3.2;
+  depthLight.shadow.camera.near = 0.1;
+  depthLight.shadow.camera.far = 18;
+  depthLight.shadow.bias = -0.00015;
+  depthLight.shadow.camera.layers.set(1);
+  scene.add(depthLight, depthLight.target);
+  return depthLight;
+}
+
+light.shadow.camera.layers.set(0);
+const selfShadowLight = createHullDepthLight(light.position.clone());
+const aoLights = [
+  new THREE.Vector3(4.5, 4.5, 3.5),
+  new THREE.Vector3(-4.5, 4.5, -3.5),
+].map(createHullDepthLight);
+
 const grid = new THREE.GridHelper(12, 24, 0x284057, 0x172535);
 grid.position.y = -0.055;
 grid.material.transparent = true;
@@ -125,10 +165,15 @@ casterRoot.add(hullEdges);
 scene.add(casterRoot);
 
 const receiverHullPreview = new THREE.Group();
-receiverHullPreview.name = "Gaussian-derived receiver hull preview";
+receiverHullPreview.name = "Robot Chitin .phys hull preview";
 scene.add(receiverHullPreview);
 
+const receiverSelfShadowProxy = new THREE.Group();
+receiverSelfShadowProxy.name = "Robot Chitin .phys lighting proxy";
+scene.add(receiverSelfShadowProxy);
+
 let receiverStrength = Number(strengthInput.value);
+let ambientOcclusionStrength = Number(aoStrengthInput.value);
 const casterBaseX = -0.55;
 
 const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
@@ -182,70 +227,34 @@ async function applyEnvironment(name: string): Promise<void> {
   }
 }
 
-type GaussianSample = {
-  center: THREE.Vector3;
-  scales: THREE.Vector3;
-  quaternion: THREE.Quaternion;
-};
-
-type GaussianCluster = {
-  seen: number;
-  samples: GaussianSample[];
-};
-
-function buildReceiverHullPreview(visual: SplatMesh): number {
-  const bounds = new THREE.Box3();
-  visual.forEachSplat((_index, center, _scales, _quaternion, opacity) => {
-    if (opacity >= 0.2) bounds.expandByPoint(center);
+function extractGaussianField(visual: SplatMesh): GaussianFieldInput {
+  const count =
+    visual.splats?.getNumSplats() ??
+    visual.packedSplats?.getNumSplats() ??
+    visual.numSplats;
+  const centers = new Float32Array(count * 3);
+  const scales = new Float32Array(count * 3);
+  const quaternions = new Float32Array(count * 4);
+  const opacities = new Float32Array(count);
+  visual.forEachSplat((index, center, scale, quaternion, opacity) => {
+    center.toArray(centers, index * 3);
+    scale.toArray(scales, index * 3);
+    quaternion.toArray(quaternions, index * 4);
+    opacities[index] = opacity;
   });
-  if (bounds.isEmpty()) return 0;
+  return { centers, scales, quaternions, opacities };
+}
 
-  const divisions = new THREE.Vector3(6, 8, 6);
-  const size = bounds.getSize(new THREE.Vector3());
-  const diagonal = size.length();
-  const clusters = new Map<number, GaussianCluster>();
-  const maxSamplesPerCluster = 36;
+function copyVisualTransform(target: THREE.Object3D, visual: SplatMesh): void {
+  target.position.copy(visual.position);
+  target.quaternion.copy(visual.quaternion);
+  target.scale.copy(visual.scale);
+}
 
-  visual.forEachSplat((index, center, scales, quaternion, opacity) => {
-    if (opacity < 0.2) return;
-    const x = Math.min(
-      divisions.x - 1,
-      Math.floor(
-        ((center.x - bounds.min.x) / Math.max(size.x, 1e-6)) * divisions.x,
-      ),
-    );
-    const y = Math.min(
-      divisions.y - 1,
-      Math.floor(
-        ((center.y - bounds.min.y) / Math.max(size.y, 1e-6)) * divisions.y,
-      ),
-    );
-    const z = Math.min(
-      divisions.z - 1,
-      Math.floor(
-        ((center.z - bounds.min.z) / Math.max(size.z, 1e-6)) * divisions.z,
-      ),
-    );
-    const key = x + y * divisions.x + z * divisions.x * divisions.y;
-    const cluster = clusters.get(key) ?? { seen: 0, samples: [] };
-    cluster.seen++;
-
-    const sample = {
-      center: center.clone(),
-      scales: scales.clone(),
-      quaternion: quaternion.clone(),
-    };
-    if (cluster.samples.length < maxSamplesPerCluster) {
-      cluster.samples.push(sample);
-    } else {
-      const replacement = ((index * 2654435761) >>> 0) % cluster.seen;
-      if (replacement < maxSamplesPerCluster) {
-        cluster.samples[replacement] = sample;
-      }
-    }
-    clusters.set(key, cluster);
-  });
-
+function buildRobotPhysGeometry(
+  phys: ReturnType<typeof parsePhys>,
+  visual: SplatMesh,
+): void {
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: 0xffd166,
     depthWrite: false,
@@ -258,52 +267,19 @@ function buildReceiverHullPreview(visual: SplatMesh): number {
     opacity: 0.72,
     transparent: true,
   });
-  const minSupport = diagonal * 0.0015;
-  const maxSupport = diagonal * 0.045;
-  const axis = new THREE.Vector3();
-  let hullCount = 0;
-
-  for (const cluster of clusters.values()) {
-    if (cluster.samples.length < 4) continue;
-    const points: THREE.Vector3[] = [];
-    for (const sample of cluster.samples) {
-      for (let component = 0; component < 3; component++) {
-        axis.set(
-          component === 0 ? 1 : 0,
-          component === 1 ? 1 : 0,
-          component === 2 ? 1 : 0,
-        );
-        axis.applyQuaternion(sample.quaternion);
-        const radius = THREE.MathUtils.clamp(
-          sample.scales.getComponent(component) * 1.75,
-          minSupport,
-          maxSupport,
-        );
-        axis.multiplyScalar(radius);
-        points.push(sample.center.clone().add(axis));
-        points.push(sample.center.clone().sub(axis));
-      }
-    }
-    try {
-      const geometry = new ConvexGeometry(points);
-      receiverHullPreview.add(new THREE.Mesh(geometry, fillMaterial));
-      receiverHullPreview.add(
-        new THREE.LineSegments(
-          new THREE.EdgesGeometry(geometry, 20),
-          edgeMaterial,
-        ),
-      );
-      hullCount++;
-    } catch {
-      // Nearly planar edge clusters do not define a stable 3D convex hull.
-    }
+  for (const geometry of createHullGeometries(phys)) {
+    receiverHullPreview.add(new THREE.Mesh(geometry, fillMaterial));
+    receiverHullPreview.add(
+      new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), edgeMaterial),
+    );
   }
-
-  receiverHullPreview.position.copy(visual.position);
-  receiverHullPreview.quaternion.copy(visual.quaternion);
-  receiverHullPreview.scale.copy(visual.scale);
+  copyVisualTransform(receiverHullPreview, visual);
   receiverHullPreview.visible = receiverHullsInput.checked;
-  return hullCount;
+  const shadowProxy = createShadowProxy(phys, { mode: "merged-hulls" });
+  shadowProxy.traverse((object) => object.layers.set(1));
+  receiverSelfShadowProxy.add(shadowProxy);
+  receiverSelfShadowProxy.traverse((object) => object.layers.set(1));
+  copyVisualTransform(receiverSelfShadowProxy, visual);
 }
 
 async function buildReceiverSplats(): Promise<SplatMesh> {
@@ -402,7 +378,43 @@ function lPrismGlb(): ArrayBuffer {
   return packGlb(document, binary);
 }
 
-async function buildCaster() {
+async function buildCaster(compiler: ChitinCompiler) {
+  status.textContent = "Compiling the caster into a Chitin .phys sidecar…";
+  const result = await compiler.compileGlb(lPrismGlb());
+  const phys = parsePhys(result.phys);
+  document.getElementById("hull-count")!.textContent = String(
+    phys.hulls.length,
+  );
+
+  const proxy = createShadowProxy(phys, { mode: "merged-hulls" });
+  casterRoot.add(proxy);
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xff6f58,
+    roughness: 0.55,
+    metalness: 0.05,
+    emissive: 0x24100c,
+  });
+  for (const geometry of createHullGeometries(phys)) {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = false;
+    casterRoot.add(mesh);
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 24),
+      new THREE.LineBasicMaterial({
+        color: 0x72e1bf,
+        transparent: true,
+        opacity: 0.8,
+      }),
+    );
+    hullEdges.add(edge);
+  }
+  casterRoot.scale.setScalar(0.72);
+  casterRoot.position.set(casterBaseX, Number(heightInput.value), 0.7);
+}
+
+async function init() {
+  const receiverVisual = await buildReceiverSplats();
   const compiler = new ChitinCompiler({
     wasm: {
       js: new URL("./dist/packages/coacd/coacd.mjs", location.href).href,
@@ -411,74 +423,110 @@ async function buildCaster() {
     },
     workerUrl: new URL("./dist/packages/chitin-lite/worker.js", location.href),
   });
+  let robotPhys!: ReturnType<typeof parsePhys>;
   try {
     status.textContent =
-      "Compiling the caster into a full-detail .phys sidecar…";
-    const result = await compiler.compileGlb(lPrismGlb());
-    const phys = parsePhys(result.phys);
-    document.getElementById("hull-count")!.textContent = String(
-      phys.hulls.length,
+      "Reconstructing the robot support and compiling it through Chitin…";
+    const robotResult = await compiler.compileGaussianField(
+      extractGaussianField(receiverVisual),
+      {
+        reconstruction: {
+          resolution: 72,
+          supportMultiplier: 1.75,
+          minOpacity: 0.2,
+          shellThickness: 1.15,
+        },
+        decompose: {
+          threshold: 0.025,
+          maxConvexHull: 96,
+          maxChVertex: 64,
+        },
+      },
     );
-
-    const proxy = createShadowProxy(phys, { mode: "merged-hulls" });
-    casterRoot.add(proxy);
-
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xff6f58,
-      roughness: 0.55,
-      metalness: 0.05,
-      emissive: 0x24100c,
-    });
-    for (const geometry of createHullGeometries(phys)) {
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = false;
-      casterRoot.add(mesh);
-      const edge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(geometry, 24),
-        new THREE.LineBasicMaterial({
-          color: 0x72e1bf,
-          transparent: true,
-          opacity: 0.8,
-        }),
-      );
-      hullEdges.add(edge);
-    }
-    casterRoot.scale.setScalar(0.72);
-    casterRoot.position.set(casterBaseX, Number(heightInput.value), 0.7);
+    robotPhys = parsePhys(robotResult.phys);
+    document.getElementById("receiver-hull-count")!.textContent =
+      robotPhys.hulls.length.toLocaleString();
+    buildRobotPhysGeometry(robotPhys, receiverVisual);
+    await buildCaster(compiler);
   } finally {
     compiler.terminate();
   }
-}
 
-async function init() {
-  const receiverVisual = await buildReceiverSplats();
-  status.textContent =
-    "Deriving a decomposed hull preview from the Gaussian support…";
-  const receiverHullCount = buildReceiverHullPreview(receiverVisual);
-  document.getElementById("receiver-hull-count")!.textContent =
-    receiverHullCount.toLocaleString();
+  status.textContent = "Binding Spark appearance to the robot .phys surface…";
+  const surface = bindSparkToPhysSurface(receiverVisual, robotPhys);
   const receiver = attachSparkDirectionalShadow({
     visual: receiverVisual,
     renderer,
     light,
     strength: receiverStrength,
     bias: -0.0002,
+    normalBias: 0.025,
+    surface,
   });
-  await buildCaster();
+  const selfShadowReceiver = attachSparkDirectionalShadow({
+    visual: receiverVisual,
+    renderer,
+    light: selfShadowLight,
+    strength: selfShadowsInput.checked ? receiverStrength * 0.65 : 0,
+    bias: -0.0001,
+    normalBias: 0.018,
+    surface,
+  });
+  const aoReceivers = aoLights.map((aoLight) =>
+    attachSparkDirectionalShadow({
+      visual: receiverVisual,
+      renderer,
+      light: aoLight,
+      strength:
+        ambientOcclusionInput.checked
+          ? ambientOcclusionStrength / aoLights.length
+          : 0,
+      bias: -0.0001,
+      normalBias: 0.014,
+      surface,
+    }),
+  );
+
+  const applyLightingState = (): void => {
+    const enabled = lightingInput.checked;
+    receiver.strength = enabled ? receiverStrength : 0;
+    selfShadowReceiver.strength =
+      enabled && selfShadowsInput.checked ? receiverStrength * 0.65 : 0;
+    const aoStrength =
+      enabled && ambientOcclusionInput.checked
+        ? ambientOcclusionStrength / aoReceivers.length
+        : 0;
+    for (const aoReceiver of aoReceivers) aoReceiver.strength = aoStrength;
+    receiverSelfShadowProxy.visible =
+      enabled &&
+      (selfShadowsInput.checked || ambientOcclusionInput.checked);
+    selfShadowLight.visible = enabled && selfShadowsInput.checked;
+    for (const aoLight of aoLights) {
+      aoLight.visible = enabled && ambientOcclusionInput.checked;
+    }
+  };
+  applyLightingState();
 
   // Three allocates directional shadow depth textures lazily. Render once to
   // populate it, then regenerate Spark's splat buffer with the real texture so
   // the first frame labelled Live is already settled.
   renderer.render(scene, camera);
   receiver.update();
+  selfShadowReceiver.update();
+  for (const aoReceiver of aoReceivers) aoReceiver.update();
   await sparkRenderer.update({ scene, camera });
   renderer.render(scene, camera);
   status.textContent = LIVE_STATUS;
 
   strengthInput.addEventListener("input", () => {
     receiverStrength = Number(strengthInput.value);
-    receiver.strength = receiverStrength;
+    applyLightingState();
     strengthValue.textContent = `${Math.round(receiverStrength * 100)}%`;
+  });
+  aoStrengthInput.addEventListener("input", () => {
+    ambientOcclusionStrength = Number(aoStrengthInput.value);
+    applyLightingState();
+    aoStrengthValue.textContent = `${Math.round(ambientOcclusionStrength * 100)}%`;
   });
   heightInput.addEventListener("input", () => {
     casterRoot.position.y = Number(heightInput.value);
@@ -506,11 +554,24 @@ async function init() {
         ? 0.55
         : 0.7
       : 0;
-    receiver.strength = enabled ? receiverStrength : 0;
+    applyLightingState();
     strengthInput.disabled = !enabled;
+    aoStrengthInput.disabled = !enabled || !ambientOcclusionInput.checked;
     viewport.dataset.lighting = String(enabled);
     status.textContent = enabled ? LIVE_STATUS : LIGHTING_OFF_STATUS;
   });
+  selfShadowsInput.addEventListener("change", () => {
+    applyLightingState();
+    viewport.dataset.selfShadows = String(selfShadowsInput.checked);
+  });
+  ambientOcclusionInput.addEventListener("change", () => {
+    applyLightingState();
+    aoStrengthInput.disabled =
+      !lightingInput.checked || !ambientOcclusionInput.checked;
+    viewport.dataset.ambientOcclusion = String(ambientOcclusionInput.checked);
+  });
+  viewport.dataset.selfShadows = String(selfShadowsInput.checked);
+  viewport.dataset.ambientOcclusion = String(ambientOcclusionInput.checked);
   environmentInput.addEventListener("change", () => {
     void applyEnvironment(environmentInput.value);
   });

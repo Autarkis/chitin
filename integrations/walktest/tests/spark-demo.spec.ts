@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
+  test.setTimeout(240_000);
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -10,7 +11,7 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   await page.goto("http://localhost:3219/spark-demo.html");
 
   await expect(page.locator("#status")).toContainText("Live", {
-    timeout: 90_000,
+    timeout: 210_000,
   });
   await expect(page.locator("#splat-count")).toHaveText(/^\d[\d,]+$/);
   await expect(page.locator("#receiver-name")).toHaveText(
@@ -26,9 +27,14 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   const receiverHulls = page.locator("#receiver-hulls");
   const receiverSplats = page.locator("#receiver-splats");
   const lighting = page.locator("#lighting");
+  const selfShadows = page.locator("#self-shadows");
+  const ambientOcclusion = page.locator("#ambient-occlusion");
   await expect(receiverHulls).toBeChecked();
   await expect(receiverSplats).toBeChecked();
   await expect(lighting).toBeChecked();
+  await expect(selfShadows).toBeChecked();
+  await expect(ambientOcclusion).toBeChecked();
+  await expect(page.locator("#ao-strength")).toHaveValue("0.35");
   await expect(page.locator("#environment")).toHaveValue("studio");
   await expect(page.locator("#environment option")).toHaveCount(3);
   await expect(page.locator("#viewport")).toHaveAttribute(
@@ -41,6 +47,7 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
     "false",
   );
   await expect(page.locator("#strength")).toBeDisabled();
+  await expect(page.locator("#ao-strength")).toBeDisabled();
   await expect(page.locator("#status")).toContainText(
     "real-time lighting is off",
   );
@@ -50,6 +57,18 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
     "true",
   );
   await expect(page.locator("#strength")).toBeEnabled();
+  await expect(page.locator("#ao-strength")).toBeEnabled();
+  await selfShadows.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-self-shadows",
+    "false",
+  );
+  await ambientOcclusion.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-ambient-occlusion",
+    "false",
+  );
+  await expect(page.locator("#ao-strength")).toBeDisabled();
   await receiverSplats.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(
     "data-receiver-splats-visible",

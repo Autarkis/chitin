@@ -41,10 +41,10 @@
       .panel {
         position: fixed;
         z-index: 2;
-        top: 24px;
-        left: 24px;
+        top: 16px;
+        left: 16px;
         width: min(330px, calc(100vw - 48px));
-        padding: 20px;
+        padding: 16px;
         border: 1px solid rgba(163, 190, 255, 0.18);
         border-radius: 18px;
         background: rgba(9, 13, 22, 0.82);
@@ -69,7 +69,7 @@
       }
 
       .lede {
-        margin: 10px 0 18px;
+        margin: 8px 0 12px;
         color: #aab6ca;
         font-size: 13px;
         line-height: 1.5;
@@ -79,7 +79,7 @@
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 7px;
-        margin-bottom: 18px;
+        margin-bottom: 12px;
       }
 
       .metric {
@@ -103,7 +103,7 @@
         grid-template-columns: 1fr auto;
         align-items: center;
         gap: 12px;
-        margin-top: 12px;
+        margin-top: 8px;
         color: #c8d3e6;
         font-size: 13px;
       }
@@ -134,9 +134,9 @@
       .switches {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px 14px;
-        margin-top: 16px;
-        padding-top: 14px;
+        gap: 8px 14px;
+        margin-top: 12px;
+        padding-top: 10px;
         border-top: 1px solid rgba(163, 190, 255, 0.12);
       }
 
@@ -158,7 +158,7 @@
       }
 
       #status {
-        margin-top: 15px;
+        margin-top: 10px;
         color: #7f8da4;
         font:
           11px/1.4 ui-monospace,
@@ -258,16 +258,17 @@
       <p class="eyebrow">Chitin × Spark 2.1</p>
       <h1>Hull shadows, received by splats</h1>
       <p class="lede">
-        The coral object is backed by Chitin’s full-detail LOD 0 hulls. Its
-        shadow is sampled directly by <span id="receiver-name">Spark’s example
-        capture</span>—there is no receiver mesh. Amber hulls are a decomposed
-        preview derived from the Gaussian support itself.
+        Chitin compiles both objects into real <code>.phys</code> sidecars. The
+        robot begins as <span id="receiver-name">Spark’s example capture</span>,
+        then Chitin reconstructs and decomposes its support. Amber hulls drive
+        its shadow reception, self-shadowing, and hull-depth AO; Spark supplies
+        appearance only.
       </p>
       <div class="metrics">
         <div class="metric"><strong id="splat-count">—</strong>splats</div>
         <div class="metric"><strong id="hull-count">—</strong>hulls</div>
         <div class="metric">
-          <strong id="receiver-hull-count">—</strong>SPZ hulls
+          <strong id="receiver-hull-count">—</strong>robot .phys hulls
         </div>
       </div>
       <label class="control">
@@ -280,6 +281,18 @@
           max="1"
           step="0.01"
           value="0.75"
+        />
+      </label>
+      <label class="control">
+        <span>AO strength</span>
+        <span class="value" id="ao-strength-value">35%</span>
+        <input
+          id="ao-strength"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0.35"
         />
       </label>
       <label class="control">
@@ -307,13 +320,20 @@
           ><input id="lighting" type="checkbox" checked /> live lighting</label
         >
         <label
+          ><input id="self-shadows" type="checkbox" checked /> self shadows</label
+        >
+        <label
+          ><input id="ambient-occlusion" type="checkbox" checked /> ambient
+          occlusion</label
+        >
+        <label
           ><input id="animate" type="checkbox" checked /> animate caster</label
         >
         <label
           ><input id="hulls" type="checkbox" checked /> caster hull edges</label
         >
         <label
-          ><input id="receiver-hulls" type="checkbox" checked /> derived robot
+          ><input id="receiver-hulls" type="checkbox" checked /> robot .phys
           hulls</label
         >
         <label
@@ -329,7 +349,7 @@
         ><i class="dot" style="background: #72d9c0"></i>Chitin hull edges</span
       >
       <span
-        ><i class="dot" style="background: #ffd166"></i>SPZ-derived hulls</span
+        ><i class="dot" style="background: #ffd166"></i>robot .phys hulls</span
       >
       <span
         ><i class="dot" style="background: #b8ccff"></i>Spark example
