@@ -34,6 +34,9 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
 }) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
 
   await page.goto("http://localhost:3219/release-candidate.html");
   await page.waitForFunction(() => window.__chitinReleaseCandidate?.ready);

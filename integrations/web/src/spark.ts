@@ -220,7 +220,13 @@ export function attachSparkDirectionalShadow(
   // Keep a valid comparison sampler bound until that pass has completed.
   const placeholder = new DepthTexture(1, 1, UnsignedIntType);
   placeholder.compareFunction = LessEqualCompare;
-  const mapUniform = new dyno.DynoSampler2DShadow({ value: placeholder });
+  const mapUniform = new dyno.DynoUniform({
+    type: "sampler2DShadow" as const,
+    value: placeholder,
+    // Dyno emits a uniform's globals before its declaration, which is where
+    // GLSL ES requires the default sampler precision to be established.
+    globals: () => ["precision highp sampler2DShadow;"],
+  });
   const matrixUniform = new dyno.DynoMat4({ value: new Matrix4() });
   const strengthUniform = new dyno.DynoFloat({ value: strength });
   const biasUniform = new dyno.DynoFloat({ value: 0 });
@@ -324,7 +330,7 @@ function directionalShadowModifier({
   strength,
   bias,
 }: {
-  map: dyno.DynoSampler2DShadow<string, Texture>;
+  map: dyno.DynoUniform<"sampler2DShadow", string, Texture>;
   matrix: dyno.DynoMat4<string, Matrix4>;
   strength: dyno.DynoFloat;
   bias: dyno.DynoFloat;
