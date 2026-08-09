@@ -5,11 +5,17 @@ import {
   BasicShadowMap,
   DirectionalLight,
   PCFShadowMap,
+  Vector3,
   type WebGLRenderer,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 
-import { attachSparkDirectionalShadow, loadSparkAsset } from "../src/spark.js";
+import {
+  attachSparkDirectionalShadow,
+  bindSparkToPhysSurface,
+  loadSparkAsset,
+} from "../src/spark.js";
+import type { PhysFile } from "../src/phys-parser.js";
 
 const FIXTURE = resolve(__dirname, "conformance", "static_hull.phys");
 
@@ -59,6 +65,41 @@ describe("Spark adapter", () => {
     });
     expect(asset.shadowProxy).toBeNull();
     asset.dispose();
+  });
+
+  it("binds splats to authoritative .phys surface points and normals", () => {
+    const visual = {
+      numSplats: 1,
+      forEachSplat(callback: (index: number, center: Vector3) => void) {
+        callback(0, new Vector3(2, 0.25, 0.25));
+      },
+    } as unknown as SplatMesh;
+    const phys: PhysFile = {
+      version: 3,
+      flags: 0,
+      hulls: [
+        {
+          vertices: new Float32Array([0, 0, 0, 0, 1, 0, 0, 0, 1]),
+          indices: new Uint16Array([0, 1, 2]),
+          aabbMin: [0, 0, 0],
+          aabbMax: [0, 1, 1],
+          boneIndex: null,
+        },
+      ],
+      bones: [],
+      lodTiers: [],
+      hasBones: false,
+      hasBindPoses: false,
+      hasLod: false,
+    };
+
+    const binding = bindSparkToPhysSurface(visual, phys);
+
+    expect(Array.from(binding.points)).toEqual([0, 0.25, 0.25]);
+    expect(Array.from(binding.normals)).toEqual([1, 0, 0]);
+    expect(() => bindSparkToPhysSurface(visual, { ...phys, hulls: [] })).toThrow(
+      /contains no hulls/,
+    );
   });
 
   it("disposes an owned visual when sidecar parsing fails", async () => {
@@ -111,14 +152,17 @@ describe("Spark adapter", () => {
     expect(visual.version).toBeGreaterThan(version);
     expect(receiver.strength).toBe(0.65);
     expect(receiver.bias).toBeNull();
+    expect(receiver.normalBias).toBe(0);
     expect(receiver.dynamic).toBe(false);
     expect(visual.enableWorldToView).toBe(true);
 
     receiver.strength = 0.8;
     receiver.bias = -0.0002;
+    receiver.normalBias = 0.025;
     receiver.dynamic = true;
     expect(receiver.strength).toBe(0.8);
     expect(receiver.bias).toBe(-0.0002);
+    expect(receiver.normalBias).toBe(0.025);
     expect(receiver.dynamic).toBe(true);
     expect(() => {
       receiver.strength = 2;
@@ -126,6 +170,9 @@ describe("Spark adapter", () => {
     expect(() => {
       receiver.bias = Number.NaN;
     }).toThrow(/finite or null/);
+    expect(() => {
+      receiver.normalBias = -0.01;
+    }).toThrow(/finite and non-negative/);
 
     const secondLight = new DirectionalLight();
     secondLight.castShadow = true;
@@ -179,6 +226,7 @@ describe("Spark adapter", () => {
     ).toThrow(/must cast shadows/);
     visual.dispose();
   });
+
 });
 
 function rendererWithShadowMap(
