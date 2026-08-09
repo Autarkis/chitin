@@ -30,7 +30,7 @@ const camera = new THREE.PerspectiveCamera(
   0.05,
   80,
 );
-camera.position.set(5.2, 3.5, 6.1);
+camera.position.set(4.8, 3.2, -6.4);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -78,27 +78,72 @@ casterRoot.add(hullEdges);
 scene.add(casterRoot);
 
 let receiverStrength = Number(strengthInput.value);
+const casterBaseX = -0.55;
+
+const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
 
 async function buildReceiverSplats(): Promise<SplatMesh> {
-  const width = 57;
-  const spacing = 0.09;
+  status.textContent = "Loading Spark’s robot-head example capture…";
+  try {
+    const visual = new SplatMesh({
+      url: ROBOT_HEAD_URL,
+      enableLod: false,
+    });
+    await visual.initialized;
+    visual.rotation.x = Math.PI;
+    visual.scale.setScalar(1.05);
+    visual.position.set(0.15, 0.62, -0.15);
+    scene.add(visual);
+    const count =
+      visual.splats?.getNumSplats() ??
+      visual.packedSplats?.getNumSplats() ??
+      0;
+    document.getElementById("splat-count")!.textContent =
+      count.toLocaleString();
+    document.getElementById("receiver-name")!.textContent =
+      "Spark robot head";
+    return visual;
+  } catch (error) {
+    console.warn(
+      "Spark example unavailable; using the local procedural fallback",
+      error,
+    );
+    status.textContent =
+      "Spark example unavailable — building the local splat fallback…";
+    return buildProceduralReceiverSplats();
+  }
+}
+
+async function buildProceduralReceiverSplats(): Promise<SplatMesh> {
+  const width = 49;
+  const spacing = 0.105;
   const count = width * width;
   const writer = new SpzWriter({ numSplats: count, shDegree: 0 });
   let index = 0;
   for (let z = 0; z < width; z++) {
     for (let x = 0; x < width; x++) {
-      const px = (x - (width - 1) / 2) * spacing;
-      const pz = (z - (width - 1) / 2) * spacing;
+      const grain = ((x * 37 + z * 61 + x * z * 3) % 101) / 100;
+      const crossGrain = ((x * 71 + z * 29 + x * z * 7) % 97) / 96;
+      const px =
+        (x - (width - 1) / 2) * spacing +
+        (grain - 0.5) * spacing * 0.24;
+      const pz =
+        (z - (width - 1) / 2) * spacing +
+        (crossGrain - 0.5) * spacing * 0.24;
+      const py =
+        Math.sin(px * 1.65) * Math.cos(pz * 1.35) * 0.025 +
+        (grain - 0.5) * 0.008;
       const radial = Math.hypot(px, pz) / 4;
-      writer.setCenter(index, px, 0, pz);
-      writer.setAlpha(index, Math.max(0.72, 0.97 - radial * 0.12));
+      const footprint = spacing * (0.27 + grain * 0.09);
+      writer.setCenter(index, px, py, pz);
+      writer.setAlpha(index, Math.max(0.78, 0.96 - radial * 0.1));
       writer.setRgb(
         index,
-        0.48 + (x / width) * 0.16,
-        0.61 + (z / width) * 0.1,
-        0.84,
+        0.38 + grain * 0.18 + (x / width) * 0.06,
+        0.55 + crossGrain * 0.16,
+        0.8 + grain * 0.12,
       );
-      writer.setScale(index, spacing * 0.72, 0.018, spacing * 0.72);
+      writer.setScale(index, footprint, 0.012, footprint * 0.9);
       writer.setQuat(index, 0, 0, 0, 1);
       index++;
     }
@@ -111,6 +156,7 @@ async function buildReceiverSplats(): Promise<SplatMesh> {
   await visual.initialized;
   scene.add(visual);
   document.getElementById("splat-count")!.textContent = count.toLocaleString();
+  document.getElementById("receiver-name")!.textContent = "local fallback";
   return visual;
 }
 
@@ -173,7 +219,8 @@ async function buildCaster() {
       );
       hullEdges.add(edge);
     }
-    casterRoot.position.y = Number(heightInput.value);
+    casterRoot.scale.setScalar(0.72);
+    casterRoot.position.set(casterBaseX, Number(heightInput.value), 0.7);
   } finally {
     compiler.terminate();
   }
@@ -217,7 +264,7 @@ async function init() {
   renderer.setAnimationLoop(() => {
     const time = (performance.now() - startedAt) / 1000;
     if (animateInput.checked) {
-      casterRoot.position.x = Math.sin(time * 0.7) * 1.2;
+      casterRoot.position.x = casterBaseX + Math.sin(time * 0.7) * 0.65;
       casterRoot.rotation.y = Math.sin(time * 0.43) * 0.32;
     }
     controls.update();

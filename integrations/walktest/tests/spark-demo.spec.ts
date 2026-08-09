@@ -12,7 +12,10 @@ test("Spark shadow demo renders its compiled sidecar", async ({ page }) => {
   await expect(page.locator("#status")).toContainText("Live", {
     timeout: 90_000,
   });
-  await expect(page.locator("#splat-count")).toHaveText("3,249");
+  await expect(page.locator("#splat-count")).toHaveText(/^\d[\d,]+$/);
+  await expect(page.locator("#receiver-name")).toHaveText(
+    /Spark robot head|local fallback/,
+  );
   await expect(page.locator("#hull-count")).toHaveText("2");
   await expect(page.locator("canvas")).toBeVisible();
   expect(browserErrors).toEqual([]);

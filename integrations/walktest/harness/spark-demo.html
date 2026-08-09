@@ -244,7 +244,8 @@
       <h1>Hull shadows, received by splats</h1>
       <p class="lede">
         The coral object is backed by Chitin’s full-detail LOD 0 hulls. Its
-        shadow is sampled directly by the Gaussian-splat surface below.
+        shadow is sampled directly by <span id="receiver-name">Spark’s example
+        capture</span>—there is no receiver mesh.
       </p>
       <div class="metrics">
         <div class="metric"><strong id="splat-count">—</strong>splats</div>
@@ -253,26 +254,26 @@
       </div>
       <label class="control">
         <span>Shadow strength</span>
-        <span class="value" id="strength-value">72%</span>
+        <span class="value" id="strength-value">75%</span>
         <input
           id="strength"
           type="range"
           min="0"
           max="1"
           step="0.01"
-          value="0.72"
+          value="0.75"
         />
       </label>
       <label class="control">
         <span>Caster height</span>
-        <span class="value" id="height-value">1.15</span>
+        <span class="value" id="height-value">2.25</span>
         <input
           id="height"
           type="range"
-          min="0.65"
-          max="2.2"
+          min="0.9"
+          max="3.2"
           step="0.01"
-          value="1.15"
+          value="2.25"
         />
       </label>
       <div class="switches">
@@ -290,7 +291,7 @@
       <span
         ><i class="dot" style="background: #72d9c0"></i>Chitin hull edges</span
       >
-      <span><i class="dot" style="background: #b8ccff"></i>Spark receiver</span>
+      <span><i class="dot" style="background: #b8ccff"></i>Spark example capture</span>
     </div>
     <script type="module" src="dist/spark-demo.js"></script>
   </body>
