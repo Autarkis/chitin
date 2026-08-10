@@ -33,7 +33,7 @@ import {
   type GaussianFieldInput,
   type GaussianFieldReconstructionOptions,
 } from "./splat-preprocess.js";
-import { autoShellThickness, encodeTriangleMeshGlb } from "./mesh-glb.js";
+import { autoShellThickness } from "./mesh-glb.js";
 import {
   type CompilationMetric,
   type CompilationProgress,
@@ -44,8 +44,8 @@ import type { ColliderQualityOptions } from "./quality.js";
 import { BROWSER_PROFILE_NAMES, type BrowserProfileName } from "./shared-constants.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
 import {
-  DecomposeWorker,
-  type DecomposeWorkerOptions,
+  ChitinWorkerClient,
+  type ChitinWorkerClientOptions,
   type WorkerLike,
 } from "./worker-client.js";
 
@@ -73,7 +73,7 @@ export interface WasmAssetUrls {
 export interface ChitinCompilerOptions {
   wasm: WasmAssetUrls;
   workerUrl?: string | URL;
-  /** Test/custom-runtime hook matching DecomposeWorker. */
+  /** Test/custom-runtime hook matching ChitinWorkerClient. */
   workerFactory?: () => WorkerLike;
   /** Maximum simultaneous CoACD workers. Default 2, capped at 4. */
   maxWorkers?: number;
@@ -139,7 +139,7 @@ function elapsed(start: number): number {
   return Math.max(0, now() - start);
 }
 
-interface PreparedGlb {
+interface PreparedGeometry {
   source: string | null;
   summary: CompileGlbResult["source"];
   processed: CanonicalizedMesh;
@@ -223,23 +223,23 @@ function enrichComponentError(cause: unknown, plan: ComponentPlan, componentCoun
  * One compilation may run at a time. Reuse keeps the CoACD WASM module warm.
  */
 export class ChitinCompiler {
-  private readonly workers: DecomposeWorker[];
+  private readonly workers: ChitinWorkerClient[];
   private active = false;
   private activeAbort: AbortController | null = null;
-  private preparedBlob: { input: Blob; value: PreparedGlb } | null = null;
+  private preparedBlob: { input: Blob; value: PreparedGeometry } | null = null;
 
   constructor(private readonly options: ChitinCompilerOptions) {
     const maxWorkers = options.maxWorkers ?? 2;
     if (!Number.isInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 4) {
       throw new ChitinError("INVALID_CONFIG", `maxWorkers must be an integer in [1, 4], got ${maxWorkers}`);
     }
-    const workerOptions: DecomposeWorkerOptions = {
+    const workerOptions: ChitinWorkerClientOptions = {
       workerUrl: options.workerUrl,
       workerFactory: options.workerFactory,
     };
     this.workers = Array.from(
       { length: maxWorkers },
-      () => new DecomposeWorker(
+      () => new ChitinWorkerClient(
         { js: String(options.wasm.js), wasm: String(options.wasm.wasm) },
         workerOptions,
         options.wasm.poissonJs && options.wasm.poissonWasm
@@ -250,23 +250,7 @@ export class ChitinCompiler {
   }
 
   async compileGlb(input: GlbInput, options: CompileGlbOptions = {}): Promise<CompileGlbResult> {
-    if (this.active) {
-      throw new ChitinError("COMPILER_BUSY", "this compiler already has a compilation in progress", {
-        suggestion: "Await the active call or create another ChitinCompiler for parallel work.",
-        retryable: true,
-      });
-    }
-    this.active = true;
-    const lifecycle = new AbortController();
-    this.activeAbort = lifecycle;
-    const merged = mergeSignals(options.signal, lifecycle.signal);
-    try {
-      return await this.compileGlbInternal(input, { ...options, signal: merged.signal });
-    } finally {
-      merged.cleanup();
-      if (this.activeAbort === lifecycle) this.activeAbort = null;
-      this.active = false;
-    }
+    return this.compileGlbInternal(input, options);
   }
 
   async compileGaussianField(
@@ -290,59 +274,86 @@ export class ChitinCompiler {
       ...compileOptions
     } = options;
 
-    const logScale = false;
-    const { positions, normals } = preprocessGaussianField(input, {
-      surfaceRatio,
-      minOpacity: reconstruction?.minOpacity ?? 0.2,
-      logScale,
-    });
-
-    const worker = this.workers[0];
-    const mesh = await worker.poissonReconstruct(
-      positions,
-      normals,
-      {
-        depth: poissonDepth,
-        densityQuantile,
-        signal: compileOptions.signal,
-        onState: (state) => {
-          compileOptions.onProgress?.({
-            stage: "parsing-input",
-            message: state === "loading-poisson-wasm"
-              ? "Loading Poisson WASM module"
-              : "Reconstructing surface from Gaussian field",
-          });
-        },
-      },
-    );
-
-    let filtered: TriangleMesh = {
-      vertices: new Float64Array(mesh.vertices),
-      faces: new Int32Array(mesh.faces),
+    const started = now();
+    const timings: Record<string, number> = {};
+    const emit: EmitFn = (stage, message, stageStarted = started, detail = {}) => {
+      options.onProgress?.({ stage, message, elapsed_ms: elapsed(stageStarted), ...detail });
     };
 
-    if (surfaceProximityFilter > 0) {
-      const inputPositions = new Float64Array(positions);
-      filtered = proximityFilterMesh(
+    return this.runCompilation(options.signal, async (mergedSignal, localAbort) => {
+      const mergedCompileOptions = { ...compileOptions, signal: mergedSignal };
+      emit("reading-input", "Preprocessing Gaussian field");
+      const logScale = false;
+      const preprocessed = preprocessGaussianField(input, {
+        surfaceRatio,
+        minOpacity: reconstruction?.minOpacity ?? 0.2,
+        logScale,
+      });
+      const inputPositions = new Float64Array(preprocessed.positions);
+
+      emit("parsing-input", "Reconstructing surface via Poisson");
+      const worker = this.workers[0];
+      const mesh = await worker.poissonReconstruct(
+        preprocessed.positions,
+        preprocessed.normals,
+        {
+          depth: poissonDepth,
+          densityQuantile,
+          signal: mergedSignal,
+        },
+      );
+      timings.poisson = elapsed(started);
+
+      let filtered: TriangleMesh = {
+        vertices: new Float64Array(mesh.vertices),
+        faces: new Int32Array(mesh.faces),
+      };
+
+      if (surfaceProximityFilter > 0) {
+        filtered = proximityFilterMesh(
+          filtered.vertices as Float64Array,
+          filtered.faces as Int32Array,
+          inputPositions,
+          surfaceProximityFilter,
+        );
+      }
+
+      if (thinShellThickness !== 0) {
+        filtered = extrudeThinShell(
+          filtered.vertices as Float64Array,
+          filtered.faces as Int32Array,
+          thinShellThickness > 0
+            ? thinShellThickness
+            : autoShellThickness(filtered.vertices as Float64Array),
+        );
+      }
+
+      const processed = canonicalizeMesh(
         filtered.vertices as Float64Array,
         filtered.faces as Int32Array,
-        inputPositions,
-        surfaceProximityFilter,
       );
-    }
-
-    if (thinShellThickness !== 0) {
-      filtered = extrudeThinShell(
-        filtered.vertices as Float64Array,
-        filtered.faces as Int32Array,
-        thinShellThickness > 0
-          ? thinShellThickness
-          : autoShellThickness(filtered.vertices as Float64Array),
+      const components = splitMeshComponents(
+        processed.vertices as Float64Array,
+        processed.faces as Int32Array,
       );
-    }
+      const splatCount = input.centers.length / 3;
+      const prepared: PreparedGeometry = {
+        source: "gaussian-field",
+        summary: {
+          mesh_count: 1,
+          primitive_count: 1,
+          node_count: 1,
+          vertex_count: splatCount,
+          triangle_count: processed.faces.length / 3,
+        },
+        processed,
+        components,
+        componentCache: new ComponentResultCache(),
+      };
+      timings.prepare = elapsed(started);
 
-    const glb = encodeTriangleMeshGlb(filtered);
-    return this.compileGlb(glb, compileOptions);
+      return this.compileMeshInternal(prepared, mergedCompileOptions, emit, timings, started, localAbort);
+    });
   }
 
   private async readAndParseGlb(
@@ -350,9 +361,9 @@ export class ChitinCompiler {
     options: CompileGlbOptions,
     emit: EmitFn,
     timings: Record<string, number>,
-  ): Promise<{ prepared: PreparedGlb; cachedBlob: boolean; readStarted: number }> {
+  ): Promise<{ prepared: PreparedGeometry; cachedBlob: boolean; readStarted: number }> {
     const readStarted = now();
-    let prepared: PreparedGlb;
+    let prepared: PreparedGeometry;
     const cachedBlob = typeof Blob !== "undefined" && input instanceof Blob && this.preparedBlob?.input === input;
     if (cachedBlob) {
       emit("reading-input", "Reusing the selected GLB", readStarted);
@@ -402,7 +413,7 @@ export class ChitinCompiler {
   }
 
   private async decomposeComponents(
-    prepared: PreparedGlb,
+    prepared: PreparedGeometry,
     planning: ComponentPlanningResult,
     options: CompileGlbOptions,
     emit: EmitFn,
@@ -445,7 +456,7 @@ export class ChitinCompiler {
       decomposeStarted,
     );
     reportProgress();
-    const runQueue = async (worker: DecomposeWorker) => {
+    const runQueue = async (worker: ChitinWorkerClient) => {
       while (!localAbort.signal.aborted) {
         const queueIndex = cursor++;
         if (queueIndex >= plans.length) return;
@@ -502,6 +513,107 @@ export class ChitinCompiler {
     return { hulls, hullsByComponent, cachedComponentCount: cached, decomposeMs };
   }
 
+  private async runCompilation<T>(
+    signal: AbortSignal | undefined,
+    work: (mergedSignal: AbortSignal, localAbort: AbortController) => Promise<T>,
+  ): Promise<T> {
+    if (this.active) {
+      throw new ChitinError("COMPILER_BUSY", "A compilation is already in progress.", {
+        stage: "reading-input",
+        suggestion: "Await the active call or create another ChitinCompiler for parallel work.",
+        retryable: true,
+      });
+    }
+    this.active = true;
+    const lifecycle = new AbortController();
+    this.activeAbort = lifecycle;
+    const merged = mergeSignals(signal, lifecycle.signal);
+    const localAbort = new AbortController();
+    const abortLocal = () => localAbort.abort();
+    merged.signal.addEventListener("abort", abortLocal, { once: true });
+    try {
+      return await work(merged.signal, localAbort);
+    } finally {
+      merged.signal.removeEventListener("abort", abortLocal);
+      merged.cleanup();
+      this.active = false;
+      this.activeAbort = null;
+    }
+  }
+
+  private async compileMeshInternal(
+    prepared: PreparedGeometry,
+    options: CompileGlbOptions,
+    emit: EmitFn,
+    timings: Record<string, number>,
+    started: number,
+    localAbort: AbortController,
+    cachedBlob = false,
+  ): Promise<CompileGlbResult> {
+    const profile: BrowserProfileName = options.profile ?? "interactive";
+    const { summary, processed, components } = prepared;
+    throwIfAborted(options.signal, "validating-input");
+    const planning = planGlbComponents(processed, components, options);
+    emit(
+      "validating-input",
+      planning.simplifiedCount > 0
+        ? `Validated ${components.length} connected parts · ${planning.simplifiedCount} scene-small parts use one hull`
+        : `Validated ${components.length} connected ${components.length === 1 ? "part" : "parts"}`,
+      started,
+    );
+
+    if ((options.checkManifold ?? true) && this.workers.length > 1) {
+      this.validateComponentManifolds(planning.plans, components.length);
+    }
+
+    const { hulls, hullsByComponent, cachedComponentCount, decomposeMs } = await this.decomposeComponents(
+      prepared,
+      planning,
+      options,
+      emit,
+      components.length,
+      localAbort,
+    );
+    timings.decompose = decomposeMs;
+
+    let qualityMetrics: Record<string, CompilationMetric> | undefined;
+    if (options.quality) {
+      const verifyStarted = now();
+      emit("verifying", "Measuring sampled collider fit", verifyStarted);
+      qualityMetrics = evaluateQualityMetrics(processed, hulls, hullsByComponent, options.quality, planning.plans);
+      timings.verify = elapsed(verifyStarted);
+    }
+
+    const writeStarted = now();
+    emit("writing-phys", "Writing .phys sidecar", writeStarted);
+    const phys = writePhysArtifact(hulls);
+    timings.write_phys = elapsed(writeStarted);
+    const artifactHash = await sha256(phys);
+    throwIfAborted(options.signal, "writing-phys");
+    timings.total = elapsed(started);
+    const { result } = assembleCompilationResult({
+      profile,
+      compilerOptions: this.options,
+      decomposeConfig: options.decompose,
+      summary,
+      processed,
+      hulls,
+      hullsByComponent,
+      phys,
+      timings,
+      artifactHash,
+      ...planning,
+      componentCount: components.length,
+      workerCount: this.workers.length,
+      qualityMetrics,
+      source: prepared.source,
+      cachedBlob,
+      cachedComponentCount,
+    });
+    emit("done", "Compilation complete", started);
+    return result;
+  }
+
   private async compileGlbInternal(
     input: GlbInput,
     options: CompileGlbOptions,
@@ -520,84 +632,15 @@ export class ChitinCompiler {
     }
     const started = now();
     const timings: Record<string, number> = {};
-    const emit = (
-      stage: CompilationStage,
-      message: string,
-      stageStarted = started,
-      detail: Pick<CompilationProgress, "completed" | "total" | "eta_ms"> = {},
-    ) => {
+    const emit: EmitFn = (stage, message, stageStarted = started, detail = {}) => {
       options.onProgress?.({ stage, message, elapsed_ms: elapsed(stageStarted), ...detail });
     };
 
-    const localAbort = new AbortController();
-    const abortLocal = () => localAbort.abort();
-    options.signal?.addEventListener("abort", abortLocal, { once: true });
-    try {
-      const { prepared, cachedBlob, readStarted } = await this.readAndParseGlb(input, options, emit, timings);
-      const { summary, processed, components } = prepared;
-      throwIfAborted(options.signal, "validating-input");
-      const planning = planGlbComponents(processed, components, options);
-      emit(
-        "validating-input",
-        planning.simplifiedCount > 0
-          ? `Validated ${components.length} connected parts · ${planning.simplifiedCount} scene-small parts use one hull`
-          : `Validated ${components.length} connected ${components.length === 1 ? "part" : "parts"}`,
-        readStarted,
-      );
-
-      if ((options.checkManifold ?? true) && this.workers.length > 1) {
-        this.validateComponentManifolds(planning.plans, components.length);
-      }
-
-      const { hulls, hullsByComponent, cachedComponentCount, decomposeMs } = await this.decomposeComponents(
-        prepared,
-        planning,
-        options,
-        emit,
-        components.length,
-        localAbort,
-      );
-      timings.decompose = decomposeMs;
-
-      let qualityMetrics: Record<string, CompilationMetric> | undefined;
-      if (options.quality) {
-        const verifyStarted = now();
-        emit("verifying", "Measuring sampled collider fit", verifyStarted);
-        qualityMetrics = evaluateQualityMetrics(processed, hulls, hullsByComponent, options.quality, planning.plans);
-        timings.verify = elapsed(verifyStarted);
-      }
-
-      const writeStarted = now();
-      emit("writing-phys", "Writing .phys sidecar", writeStarted);
-      const phys = writePhysArtifact(hulls);
-      timings.write_phys = elapsed(writeStarted);
-      const artifactHash = await sha256(phys);
-      throwIfAborted(options.signal, "writing-phys");
-      timings.total = elapsed(started);
-      const { result } = assembleCompilationResult({
-        profile,
-        compilerOptions: this.options,
-        decomposeConfig: options.decompose,
-        summary,
-        processed,
-        hulls,
-        hullsByComponent,
-        phys,
-        timings,
-        artifactHash,
-        ...planning,
-        componentCount: components.length,
-        workerCount: this.workers.length,
-        qualityMetrics,
-        source: prepared.source,
-        cachedBlob,
-        cachedComponentCount,
-      });
-      emit("done", "Compilation complete", started);
-      return result;
-    } finally {
-      options.signal?.removeEventListener("abort", abortLocal);
-    }
+    return this.runCompilation(options.signal, async (mergedSignal, localAbort) => {
+      const mergedOptions = { ...options, signal: mergedSignal };
+      const { prepared, cachedBlob } = await this.readAndParseGlb(input, mergedOptions, emit, timings);
+      return this.compileMeshInternal(prepared, mergedOptions, emit, timings, started, localAbort, cachedBlob);
+    });
   }
 
   /** Release the worker and cancel any in-flight compilation. */
@@ -612,6 +655,18 @@ export async function compileGlb(input: GlbInput, options: OneShotCompileGlbOpti
   const compiler = new ChitinCompiler(options);
   try {
     return await compiler.compileGlb(input, options);
+  } finally {
+    compiler.terminate();
+  }
+}
+
+export async function compileGaussianField(
+  input: GaussianFieldInput,
+  options: OneShotCompileGaussianFieldOptions,
+): Promise<CompileGlbResult> {
+  const compiler = new ChitinCompiler(options);
+  try {
+    return await compiler.compileGaussianField(input, options);
   } finally {
     compiler.terminate();
   }

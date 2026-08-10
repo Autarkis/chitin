@@ -8,10 +8,10 @@ export {
 } from "./decompose.js";
 export { analyzeManifold, checkManifold } from "./manifold.js";
 export type { ManifoldAnalysis } from "./manifold.js";
-export { DecomposeWorker } from "./worker-client.js";
+export { ChitinWorkerClient } from "./worker-client.js";
 export type {
   DecomposeCallOptions,
-  DecomposeWorkerOptions,
+  ChitinWorkerClientOptions,
   WorkerLike,
 } from "./worker-client.js";
 export { mapWorkerError } from "./worker-protocol.js";
@@ -42,7 +42,7 @@ export { ChitinError } from "./errors.js";
 export type { ChitinErrorCode, ChitinErrorOptions } from "./errors.js";
 export { parseGlb } from "./glb.js";
 export type { ParsedGlbMesh } from "./glb.js";
-export { ChitinCompiler, compileGlb } from "./compiler.js";
+export { ChitinCompiler, compileGlb, compileGaussianField } from "./compiler.js";
 export type {
   ChitinCompilerOptions,
   CompileGaussianFieldOptions,
@@ -57,14 +57,14 @@ export type {
 export type {
   GaussianFieldInput,
   GaussianFieldReconstructionOptions,
+  CanonicalGaussianField,
+  ScaleEncoding,
+  OpacityEncoding,
+  QuaternionOrder,
 } from "./splat-preprocess.js";
 export {
+  canonicalizeGaussianField,
   preprocessGaussianField,
-  normalsFromCovariance,
-  orientNormalsConsistently,
-  inflateSplatPoints,
-  proximityFilterMesh,
-  extrudeThinShell,
 } from "./splat-preprocess.js";
 export { encodeTriangleMeshGlb } from "./mesh-glb.js";
 export { evaluateColliderQuality } from "./quality.js";

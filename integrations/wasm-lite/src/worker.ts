@@ -6,7 +6,7 @@ import {
   type WorkerResponse,
 } from "./worker-protocol.js";
 
-// Entry point that runs inside the Web Worker. DecomposeWorker (worker-client.ts)
+// Entry point that runs inside the Web Worker. ChitinWorkerClient (worker-client.ts)
 // spawns this module, sends one `init` then `decompose` messages, and receives
 // `state` / `result` / `error` back. CoACD runs synchronously here, so the only
 // way to cancel is for the client to terminate the worker.
@@ -27,13 +27,19 @@ let poissonWasmJsUrl: string | null = null;
 let poissonWasmBinaryUrl: string | null = null;
 let poissonInitialized = false;
 
+interface EmbindVector {
+  size(): number;
+  get(i: number): number;
+  delete?(): void;
+}
+
 let poissonModule: {
   poissonReconstruct(
     positions: Float64Array,
     normals: Float64Array,
     depth: number,
     densityQuantile: number,
-  ): { vertices: Float32Array; indices: Uint32Array };
+  ): { vertices: EmbindVector; indices: EmbindVector };
 } | null = null;
 
 async function loadPoissonModule(): Promise<typeof poissonModule> {
@@ -57,11 +63,17 @@ async function handlePoisson(req: Extract<WorkerRequest, { type: "poisson" }>): 
       await loadPoissonModule();
     }
     ctx.postMessage({ type: "state", id, state: "reconstructing" });
-    const result = poissonModule!.poissonReconstruct(
+    const raw = poissonModule!.poissonReconstruct(
       req.positions, req.normals, req.depth, req.densityQuantile,
     );
-    const vertices = new Float64Array(result.vertices);
-    const faces = new Int32Array(result.indices);
+    const vertCount = raw.vertices.size();
+    const idxCount = raw.indices.size();
+    const vertices = new Float64Array(vertCount);
+    for (let i = 0; i < vertCount; i++) vertices[i] = raw.vertices.get(i);
+    const faces = new Int32Array(idxCount);
+    for (let i = 0; i < idxCount; i++) faces[i] = raw.indices.get(i);
+    raw.vertices.delete?.();
+    raw.indices.delete?.();
     ctx.postMessage({ type: "state", id, state: "done" });
     const transfer = [vertices.buffer, faces.buffer];
     ctx.postMessage({ type: "poisson-result", id, vertices, faces }, transfer);
