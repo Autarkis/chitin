@@ -283,16 +283,18 @@ console.log(report.verdict.status); // "not_evaluated"
 
 `decompose()` runs CoACD synchronously on the calling thread, so a heavy mesh
 freezes the UI for the whole run (a detailed torus is several seconds).
-`DecomposeWorker` moves the work into a Web Worker, keeps the wasm loaded across
+`ChitinWorkerClient` moves the work into a Web Worker, keeps the wasm loaded across
 calls, and supports cancellation via `AbortSignal`.
 
 ```typescript
-import { DecomposeWorker, writePhys } from "@autarkis/chitin-lite";
+import { ChitinWorkerClient, writePhys } from "@autarkis/chitin-lite";
 
-const worker = new DecomposeWorker({
-  js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
-  wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
-});
+const worker = new ChitinWorkerClient(
+  {
+    js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
+    wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
+  },
+);
 
 const controller = new AbortController();
 const result = await worker.decompose(vertices, faces, { threshold: 0.05 }, {

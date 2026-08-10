@@ -66,17 +66,20 @@ async function handlePoisson(req: Extract<WorkerRequest, { type: "poisson" }>): 
     const raw = poissonModule!.poissonReconstruct(
       req.positions, req.normals, req.depth, req.densityQuantile,
     );
-    const vertCount = raw.vertices.size();
-    const idxCount = raw.indices.size();
-    const vertices = new Float64Array(vertCount);
-    for (let i = 0; i < vertCount; i++) vertices[i] = raw.vertices.get(i);
-    const faces = new Int32Array(idxCount);
-    for (let i = 0; i < idxCount; i++) faces[i] = raw.indices.get(i);
-    raw.vertices.delete?.();
-    raw.indices.delete?.();
-    ctx.postMessage({ type: "state", id, state: "done" });
-    const transfer = [vertices.buffer, faces.buffer];
-    ctx.postMessage({ type: "poisson-result", id, vertices, faces }, transfer);
+    try {
+      const vertCount = raw.vertices.size();
+      const idxCount = raw.indices.size();
+      const vertices = new Float64Array(vertCount);
+      for (let i = 0; i < vertCount; i++) vertices[i] = raw.vertices.get(i);
+      const faces = new Int32Array(idxCount);
+      for (let i = 0; i < idxCount; i++) faces[i] = raw.indices.get(i);
+      ctx.postMessage({ type: "state", id, state: "done" });
+      const transfer = [vertices.buffer, faces.buffer];
+      ctx.postMessage({ type: "poisson-result", id, vertices, faces }, transfer);
+    } finally {
+      raw.vertices.delete?.();
+      raw.indices.delete?.();
+    }
   } catch (err) {
     ctx.postMessage({ type: "error", id, ...mapWorkerError(err) });
   }

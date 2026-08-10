@@ -92,7 +92,7 @@ em++ \
     -s ENVIRONMENT=web,worker,node \
     -s SINGLE_FILE=0 \
     --bind \
-    -std=c++17 \
+    -std=c++20 \
     -I"${POISSON_SRC}/Src" \
     "${SCRIPT_DIR}/src/poisson_bind.cpp" \
     -o "${OUT_DIR}/poisson.mjs"
