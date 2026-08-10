@@ -27,6 +27,14 @@ import {
 import { writePhys } from "./phys-writer.js";
 import { evaluateQualityMetrics } from "./quality-report.js";
 import {
+  preprocessGaussianField,
+  proximityFilterMesh,
+  extrudeThinShell,
+  type GaussianFieldInput,
+  type GaussianFieldReconstructionOptions,
+} from "./splat-preprocess.js";
+import { autoShellThickness, encodeTriangleMeshGlb } from "./mesh-glb.js";
+import {
   type CompilationMetric,
   type CompilationProgress,
   type CompilationReport,
@@ -56,6 +64,10 @@ export interface WasmAssetUrls {
   wasm: string | URL;
   /** Package/build identity recorded in the compilation report. */
   version?: string;
+  /** Poisson WASM module URL. When set, compileGaussianField uses Poisson reconstruction. */
+  poissonJs?: string | URL;
+  /** Poisson WASM binary URL. Required when poissonJs is set. */
+  poissonWasm?: string | URL;
 }
 
 export interface ChitinCompilerOptions {
@@ -99,6 +111,23 @@ export interface CompileGlbResult {
     triangle_count: number;
   };
 }
+
+export interface CompileGaussianFieldOptions extends CompileGlbOptions {
+  reconstruction?: GaussianFieldReconstructionOptions;
+  /** Poisson octree depth. Defaults to 7. */
+  poissonDepth?: number;
+  /** Low-density vertex trim threshold. Defaults to 0.1. */
+  densityQuantile?: number;
+  /** Splat surface densification ratio. Defaults to 0.5. */
+  surfaceRatio?: number;
+  /** Max distance ratio for proximity filtering. 0 = disabled. Defaults to 3. */
+  surfaceProximityFilter?: number;
+  /** Thin shell extrusion thickness. 0 = disabled. Defaults to auto. */
+  thinShellThickness?: number;
+}
+
+export interface OneShotCompileGaussianFieldOptions
+  extends CompileGaussianFieldOptions, ChitinCompilerOptions {}
 
 export interface OneShotCompileGlbOptions extends CompileGlbOptions, ChitinCompilerOptions {}
 
@@ -213,6 +242,9 @@ export class ChitinCompiler {
       () => new DecomposeWorker(
         { js: String(options.wasm.js), wasm: String(options.wasm.wasm) },
         workerOptions,
+        options.wasm.poissonJs && options.wasm.poissonWasm
+          ? { js: String(options.wasm.poissonJs), wasm: String(options.wasm.poissonWasm) }
+          : undefined,
       ),
     );
   }
@@ -235,6 +267,82 @@ export class ChitinCompiler {
       if (this.activeAbort === lifecycle) this.activeAbort = null;
       this.active = false;
     }
+  }
+
+  async compileGaussianField(
+    input: GaussianFieldInput,
+    options: CompileGaussianFieldOptions = {},
+  ): Promise<CompileGlbResult> {
+    if (!this.options.wasm.poissonJs || !this.options.wasm.poissonWasm) {
+      throw new ChitinError(
+        "INVALID_CONFIG",
+        "compileGaussianField requires poissonJs and poissonWasm URLs in wasm options",
+      );
+    }
+
+    const {
+      reconstruction,
+      poissonDepth = 7,
+      densityQuantile = 0.1,
+      surfaceRatio = 0.5,
+      surfaceProximityFilter = 3,
+      thinShellThickness = 0,
+      ...compileOptions
+    } = options;
+
+    const logScale = false;
+    const { positions, normals } = preprocessGaussianField(input, {
+      surfaceRatio,
+      minOpacity: reconstruction?.minOpacity ?? 0.2,
+      logScale,
+    });
+
+    const worker = this.workers[0];
+    const mesh = await worker.poissonReconstruct(
+      positions,
+      normals,
+      {
+        depth: poissonDepth,
+        densityQuantile,
+        signal: compileOptions.signal,
+        onState: (state) => {
+          compileOptions.onProgress?.({
+            stage: "parsing-input",
+            message: state === "loading-poisson-wasm"
+              ? "Loading Poisson WASM module"
+              : "Reconstructing surface from Gaussian field",
+          });
+        },
+      },
+    );
+
+    let filtered: TriangleMesh = {
+      vertices: new Float64Array(mesh.vertices),
+      faces: new Int32Array(mesh.faces),
+    };
+
+    if (surfaceProximityFilter > 0) {
+      const inputPositions = new Float64Array(positions);
+      filtered = proximityFilterMesh(
+        filtered.vertices as Float64Array,
+        filtered.faces as Int32Array,
+        inputPositions,
+        surfaceProximityFilter,
+      );
+    }
+
+    if (thinShellThickness !== 0) {
+      filtered = extrudeThinShell(
+        filtered.vertices as Float64Array,
+        filtered.faces as Int32Array,
+        thinShellThickness > 0
+          ? thinShellThickness
+          : autoShellThickness(filtered.vertices as Float64Array),
+      );
+    }
+
+    const glb = encodeTriangleMeshGlb(filtered);
+    return this.compileGlb(glb, compileOptions);
   }
 
   private async readAndParseGlb(

@@ -9,6 +9,8 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 const artifacts = [
   { file: "coacd.mjs", min: 40_000, max: 200_000 },
   { file: "coacd.wasm", min: 400_000, max: 800_000 },
+  { file: "poisson.mjs", min: 20_000, max: 300_000 },
+  { file: "poisson.wasm", min: 200_000, max: 2_000_000 },
 ];
 
 let ok = true;

@@ -45,13 +45,28 @@ export type { ParsedGlbMesh } from "./glb.js";
 export { ChitinCompiler, compileGlb } from "./compiler.js";
 export type {
   ChitinCompilerOptions,
+  CompileGaussianFieldOptions,
   CompileGlbOptions,
   CompileGlbResult,
   GlbInput,
   InteractiveComponentPolicy,
+  OneShotCompileGaussianFieldOptions,
   OneShotCompileGlbOptions,
   WasmAssetUrls,
 } from "./compiler.js";
+export type {
+  GaussianFieldInput,
+  GaussianFieldReconstructionOptions,
+} from "./splat-preprocess.js";
+export {
+  preprocessGaussianField,
+  normalsFromCovariance,
+  orientNormalsConsistently,
+  inflateSplatPoints,
+  proximityFilterMesh,
+  extrudeThinShell,
+} from "./splat-preprocess.js";
+export { encodeTriangleMeshGlb } from "./mesh-glb.js";
 export { evaluateColliderQuality } from "./quality.js";
 export type {
   ColliderQualityComponentResult,

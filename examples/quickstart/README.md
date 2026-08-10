@@ -40,7 +40,7 @@ npm ci
 npm run build
 ```
 
-The CoACD artifacts must exist at `integrations/coacd-wasm/coacd.mjs` and
+The CoACD artifacts must exist at `integrations/chitin-wasm/coacd.mjs` and
 `coacd.wasm`. Copy them from `integrations/wasm/dist/` after running the WASM
 build when necessary. Then:
 

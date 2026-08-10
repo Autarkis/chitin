@@ -22,7 +22,7 @@ if (!npmCli) {
 
 const wasmLite = join(repo, "integrations", "wasm-lite");
 const web = join(repo, "integrations", "web");
-const coacdPackage = join(repo, "integrations", "coacd-wasm");
+const coacdPackage = join(repo, "integrations", "chitin-wasm");
 const wasmDist = join(repo, "integrations", "wasm", "dist");
 const candidate = join(walktest, ".release-candidate");
 const tarballs = join(candidate, "tarballs");
@@ -104,7 +104,7 @@ runNpm(
 rmSync(publicPackages, { recursive: true, force: true });
 const installedScope = join(walktest, "node_modules", "@autarkis");
 const installedLite = join(installedScope, "chitin-lite");
-const installedWasm = join(installedScope, "chitin-coacd-wasm");
+const installedWasm = join(installedScope, "chitin-wasm");
 
 // A module Worker resolves its relative imports at runtime, so serve the whole
 // packaged dist directory instead of copying a source-tree worker entry point.
@@ -118,7 +118,7 @@ copyFileSync(join(installedWasm, "coacd.wasm"), join(publicPackages, "coacd", "c
 const packageNames = [
   "chitin-lite",
   "chitin-web",
-  "chitin-coacd-wasm",
+  "chitin-wasm",
 ];
 const versions = Object.fromEntries(
   packageNames.map((name) => {

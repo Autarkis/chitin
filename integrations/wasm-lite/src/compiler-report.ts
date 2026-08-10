@@ -29,8 +29,8 @@ function runtime(options: ChitinCompilerOptions): CompilationRuntime {
     kind: "browser_wasm",
     implementation: "@autarkis/chitin-lite",
     version: CHITIN_LITE_VERSION,
-    compiler_version: `${CHITIN_LITE_VERSION}+coacd-wasm${wasmVersion}`,
-    dependencies: { "@autarkis/chitin-coacd-wasm": wasmVersion },
+    compiler_version: `${CHITIN_LITE_VERSION}+chitin-wasm${wasmVersion}`,
+    dependencies: { "@autarkis/chitin-wasm": wasmVersion },
   };
 }
 

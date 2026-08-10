@@ -1,7 +1,9 @@
 import { ChitinError } from "./errors.js";
+import type { TriangleMesh } from "./mesh.js";
 import type { DecomposeConfig, DecomposeResult } from "./types.js";
 import type {
   DecomposeState,
+  PoissonState,
   WorkerRequest,
   WorkerResponse,
 } from "./worker-protocol.js";
@@ -24,7 +26,7 @@ export interface DecomposeWorkerOptions {
    * the package's `dist/worker.js` URL. */
   workerUrl?: string | URL;
   /** Called on every lifecycle transition of every call. */
-  onState?: (state: DecomposeState) => void;
+  onState?: (state: DecomposeState | PoissonState) => void;
 }
 
 export interface DecomposeCallOptions {
@@ -45,9 +47,11 @@ export interface DecomposeCallOptions {
 
 interface Pending {
   id: number;
-  resolve: (r: DecomposeResult) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolve: (r: any) => void;
   reject: (e: Error) => void;
-  onState?: (state: DecomposeState) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onState?: (state: any) => void;
   cleanup: () => void;
 }
 
@@ -65,6 +69,7 @@ export class DecomposeWorker {
   constructor(
     private readonly wasmUrls: { js: string; wasm: string },
     private readonly opts: DecomposeWorkerOptions = {},
+    private readonly poissonUrls?: { js: string; wasm: string },
   ) {}
 
   private spawn(): WorkerLike {
@@ -82,6 +87,13 @@ export class DecomposeWorker {
       wasmJsUrl: this.wasmUrls.js,
       wasmBinaryUrl: this.wasmUrls.wasm,
     });
+    if (this.poissonUrls) {
+      worker.postMessage({
+        type: "init-poisson",
+        wasmJsUrl: this.poissonUrls.js,
+        wasmBinaryUrl: this.poissonUrls.wasm,
+      });
+    }
     return worker;
   }
 
@@ -97,6 +109,12 @@ export class DecomposeWorker {
       p.cleanup();
       this.pending = null;
       p.resolve({ hulls: msg.hulls });
+      return;
+    }
+    if (msg.type === "poisson-result") {
+      p.cleanup();
+      this.pending = null;
+      p.resolve({ vertices: msg.vertices, faces: msg.faces });
       return;
     }
     // error
@@ -196,6 +214,63 @@ export class DecomposeWorker {
         // value structured-clone can't copy. Nothing was delivered, so the
         // worker is still good -- but the pending slot has to be released or
         // this client rejects every later call as "already in progress".
+        this.pending = null;
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  poissonReconstruct(
+    positions: Float64Array,
+    normals: Float64Array,
+    options: {
+      depth: number;
+      densityQuantile: number;
+      signal?: AbortSignal;
+      onState?: (state: PoissonState) => void;
+    },
+  ): Promise<{ vertices: Float64Array; faces: Int32Array }> {
+    return new Promise((resolve, reject) => {
+      if (this.pending) {
+        reject(new ChitinError("WORKER_ERROR", "decompose worker already in progress"));
+        return;
+      }
+      const worker = this.spawn();
+      const id = this.nextId++;
+      const cleanup = (): void => {
+        signal?.removeEventListener("abort", onAbort);
+      };
+      this.pending = {
+        id,
+        resolve,
+        reject,
+        cleanup,
+        onState: options.onState,
+      };
+      const { signal } = options;
+      const onAbort = (): void => {
+        worker.terminate();
+        this.worker = null;
+        this.pending = null;
+        cleanup();
+        reject(new ChitinError("CANCELLED", "poisson reconstruction cancelled"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        const transfer = [positions.buffer, normals.buffer];
+        worker.postMessage(
+          {
+            type: "poisson",
+            id,
+            positions,
+            normals,
+            depth: options.depth,
+            densityQuantile: options.densityQuantile,
+          },
+          transfer,
+        );
+      } catch (err) {
         this.pending = null;
         cleanup();
         reject(err instanceof Error ? err : new Error(String(err)));
