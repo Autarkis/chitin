@@ -38,6 +38,47 @@ const selfShadowsInput = document.getElementById(
 const ambientOcclusionInput = document.getElementById(
   "ambient-occlusion",
 ) as HTMLInputElement;
+const sceneTab = document.getElementById("scene-tab") as HTMLButtonElement;
+const hullSetupTab = document.getElementById(
+  "hull-setup-tab",
+) as HTMLButtonElement;
+const scenePanel = document.getElementById("scene-panel")!;
+const hullSetupPanel = document.getElementById("hull-setup-panel")!;
+const physFileButton = document.getElementById(
+  "phys-file-button",
+) as HTMLButtonElement;
+const physFileInput = document.getElementById(
+  "phys-file-input",
+) as HTMLInputElement;
+const applyHullsButton = document.getElementById(
+  "apply-hulls",
+) as HTMLButtonElement;
+const resetHullsButton = document.getElementById(
+  "reset-hulls",
+) as HTMLButtonElement;
+const bindingStatus = document.getElementById("binding-status")!;
+const physFileName = document.getElementById("phys-file-name")!;
+const physFileDetail = document.getElementById("phys-file-detail")!;
+const setupHullCount = document.getElementById("setup-hull-count")!;
+const physVersion = document.getElementById("phys-version")!;
+const physSize = document.getElementById("phys-size")!;
+const hullPositionInputs = ["x", "y", "z"].map(
+  (axis) => document.getElementById(`hull-pos-${axis}`) as HTMLInputElement,
+);
+const hullRotationInputs = ["x", "y", "z"].map(
+  (axis) => document.getElementById(`hull-rot-${axis}`) as HTMLInputElement,
+);
+const hullScaleInput = document.getElementById(
+  "hull-scale",
+) as HTMLInputElement;
+
+type PhysArtifact = ReturnType<typeof parsePhys>;
+
+interface LoadedPhys {
+  phys: PhysArtifact;
+  byteLength: number;
+  label: string;
+}
 
 const LIVE_STATUS =
   "Live — Spark appearance is composited with deferred lighting from stored Chitin .phys hulls.";
@@ -119,10 +160,14 @@ const hemisphereLight = new THREE.HemisphereLight(
 );
 scene.add(hemisphereLight);
 
-function createHullDepthLight(position: THREE.Vector3): THREE.DirectionalLight {
+function createHullDepthLight(
+  position: THREE.Vector3,
+  target = new THREE.Vector3(0.15, 0.62, -0.15),
+): THREE.DirectionalLight {
   const depthLight = new THREE.DirectionalLight(0xffffff, 0.000001);
+  depthLight.layers.set(1);
   depthLight.position.copy(position);
-  depthLight.target.position.set(0.15, 0.62, -0.15);
+  depthLight.target.position.copy(target);
   depthLight.castShadow = true;
   depthLight.shadow.mapSize.set(1024, 1024);
   depthLight.shadow.camera.left = -3.2;
@@ -137,8 +182,10 @@ function createHullDepthLight(position: THREE.Vector3): THREE.DirectionalLight {
   return depthLight;
 }
 
-light.shadow.camera.layers.set(0);
-const selfShadowLight = createHullDepthLight(light.position.clone());
+const selfShadowLight = createHullDepthLight(
+  light.position.clone(),
+  light.target.position.clone(),
+);
 const aoLights = [
   new THREE.Vector3(4.5, 4.5, 3.5),
   new THREE.Vector3(-4.5, 4.5, -3.5),
@@ -157,11 +204,15 @@ scene.add(casterRoot);
 
 const receiverHullPreview = new THREE.Group();
 receiverHullPreview.name = "Robot Chitin .phys hull preview";
-scene.add(receiverHullPreview);
-
 const receiverSelfShadowProxy = new THREE.Group();
 receiverSelfShadowProxy.name = "Robot Chitin .phys lighting proxy";
-scene.add(receiverSelfShadowProxy);
+const receiverBindingRoot = new THREE.Group();
+receiverBindingRoot.name = "Robot Chitin appearance-to-physics binding";
+receiverBindingRoot.add(receiverHullPreview, receiverSelfShadowProxy);
+scene.add(receiverBindingRoot);
+
+let stagedReceiverPhys: LoadedPhys | null = null;
+let appliedReceiverPhys: LoadedPhys | null = null;
 
 let receiverStrength = Number(strengthInput.value);
 let ambientOcclusionStrength = Number(aoStrengthInput.value);
@@ -226,10 +277,65 @@ function copyVisualTransform(target: THREE.Object3D, visual: SplatMesh): void {
   target.scale.copy(visual.scale);
 }
 
-function buildRobotPhysGeometry(
-  phys: ReturnType<typeof parsePhys>,
-  visual: SplatMesh,
+function setControlTab(tab: "scene" | "setup"): void {
+  const showScene = tab === "scene";
+  sceneTab.ariaSelected = String(showScene);
+  hullSetupTab.ariaSelected = String(!showScene);
+  sceneTab.tabIndex = showScene ? 0 : -1;
+  hullSetupTab.tabIndex = showScene ? -1 : 0;
+  scenePanel.hidden = !showScene;
+  hullSetupPanel.hidden = showScene;
+  viewport.dataset.controlTab = tab;
+}
+
+function setBindingStatus(
+  state: "loading" | "staged" | "applied" | "error",
+  message: string,
 ): void {
+  bindingStatus.dataset.state = state;
+  bindingStatus.textContent = message;
+  viewport.dataset.hullBindingStatus = state;
+}
+
+function formatBytes(byteLength: number): string {
+  if (byteLength < 1024) return `${byteLength} B`;
+  return `${(byteLength / 1024).toFixed(1)} KB`;
+}
+
+function updatePhysSummary(artifact: LoadedPhys): void {
+  physFileName.textContent = artifact.label;
+  physFileDetail.textContent =
+    `${artifact.phys.hulls.length.toLocaleString()} hulls · ` +
+    `Chitin format v${artifact.phys.version}`;
+  setupHullCount.textContent = artifact.phys.hulls.length.toLocaleString();
+  physVersion.textContent = `v${artifact.phys.version}`;
+  physSize.textContent = formatBytes(artifact.byteLength);
+  document.getElementById("receiver-hull-count")!.textContent =
+    artifact.phys.hulls.length.toLocaleString();
+}
+
+function clearRenderedGroup(group: THREE.Group): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  group.traverse((object) => {
+    if (
+      !(object instanceof THREE.Mesh || object instanceof THREE.LineSegments)
+    ) {
+      return;
+    }
+    geometries.add(object.geometry);
+    const objectMaterials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    for (const material of objectMaterials) materials.add(material);
+  });
+  group.clear();
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
+}
+
+function rebuildReceiverPreview(phys: PhysArtifact): void {
+  clearRenderedGroup(receiverHullPreview);
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: 0xffd166,
     depthWrite: false,
@@ -248,13 +354,179 @@ function buildRobotPhysGeometry(
       new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), edgeMaterial),
     );
   }
-  copyVisualTransform(receiverHullPreview, visual);
   receiverHullPreview.visible = receiverHullsInput.checked;
+}
+
+function rebuildReceiverLightingProxy(phys: PhysArtifact): void {
+  clearRenderedGroup(receiverSelfShadowProxy);
   const shadowProxy = createShadowProxy(phys, { mode: "merged-hulls" });
   shadowProxy.traverse((object) => object.layers.set(1));
   receiverSelfShadowProxy.add(shadowProxy);
   receiverSelfShadowProxy.traverse((object) => object.layers.set(1));
-  copyVisualTransform(receiverSelfShadowProxy, visual);
+}
+
+function readAlignmentInputs(): {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: number;
+} | null {
+  const position = hullPositionInputs.map((input) => Number(input.value)) as [
+    number,
+    number,
+    number,
+  ];
+  const rotation = hullRotationInputs.map((input) => Number(input.value)) as [
+    number,
+    number,
+    number,
+  ];
+  const scale = Number(hullScaleInput.value);
+  if (
+    !position.every(Number.isFinite) ||
+    !rotation.every(Number.isFinite) ||
+    !Number.isFinite(scale) ||
+    scale <= 0
+  ) {
+    return null;
+  }
+  return { position, rotation, scale };
+}
+
+function stageAlignment(): void {
+  const alignment = readAlignmentInputs();
+  if (alignment === null) {
+    applyHullsButton.disabled = true;
+    setBindingStatus(
+      "error",
+      "Enter finite coordinates and a scale above zero.",
+    );
+    return;
+  }
+  receiverHullPreview.position.fromArray(alignment.position);
+  receiverHullPreview.rotation.set(
+    THREE.MathUtils.degToRad(alignment.rotation[0]),
+    THREE.MathUtils.degToRad(alignment.rotation[1]),
+    THREE.MathUtils.degToRad(alignment.rotation[2]),
+  );
+  receiverHullPreview.scale.setScalar(alignment.scale);
+  applyHullsButton.disabled = stagedReceiverPhys === null;
+  setBindingStatus(
+    "staged",
+    `${stagedReceiverPhys?.label ?? ".phys"} staged — apply to update scene lighting.`,
+  );
+}
+
+function resetAlignmentInputs(): void {
+  for (const input of [...hullPositionInputs, ...hullRotationInputs]) {
+    input.value = "0";
+  }
+  hullScaleInput.value = "1";
+  stageAlignment();
+}
+
+function stageReceiverPhys(artifact: LoadedPhys): void {
+  stagedReceiverPhys = artifact;
+  rebuildReceiverPreview(artifact.phys);
+  updatePhysSummary(artifact);
+  stageAlignment();
+}
+
+function applyReceiverBinding(): void {
+  if (stagedReceiverPhys === null) return;
+  const alignment = readAlignmentInputs();
+  if (alignment === null) return;
+  rebuildReceiverLightingProxy(stagedReceiverPhys.phys);
+  receiverSelfShadowProxy.position.copy(receiverHullPreview.position);
+  receiverSelfShadowProxy.quaternion.copy(receiverHullPreview.quaternion);
+  receiverSelfShadowProxy.scale.copy(receiverHullPreview.scale);
+  appliedReceiverPhys = stagedReceiverPhys;
+  applyHullsButton.disabled = true;
+  viewport.dataset.hullBindingAsset = appliedReceiverPhys.label;
+  viewport.dataset.hullBindingTransform = JSON.stringify(alignment);
+  setBindingStatus(
+    "applied",
+    `${appliedReceiverPhys.label} applied to deferred lighting.`,
+  );
+}
+
+function initializeReceiverBinding(
+  artifact: LoadedPhys,
+  visual: SplatMesh,
+): void {
+  copyVisualTransform(receiverBindingRoot, visual);
+  stagedReceiverPhys = artifact;
+  appliedReceiverPhys = artifact;
+  rebuildReceiverPreview(artifact.phys);
+  rebuildReceiverLightingProxy(artifact.phys);
+  updatePhysSummary(artifact);
+  viewport.dataset.hullBindingAsset = artifact.label;
+  viewport.dataset.hullBindingTransform = JSON.stringify({
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: 1,
+  });
+  setBindingStatus(
+    "applied",
+    `${artifact.label} loaded and applied to deferred lighting.`,
+  );
+}
+
+function bindHullSetupControls(): void {
+  sceneTab.addEventListener("click", () => setControlTab("scene"));
+  hullSetupTab.addEventListener("click", () => setControlTab("setup"));
+  for (const tab of [sceneTab, hullSetupTab]) {
+    tab.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const nextTab = tab === sceneTab ? hullSetupTab : sceneTab;
+      const next = nextTab === sceneTab ? "scene" : "setup";
+      setControlTab(next);
+      nextTab.focus();
+    });
+  }
+  for (const input of [
+    ...hullPositionInputs,
+    ...hullRotationInputs,
+    hullScaleInput,
+  ]) {
+    input.addEventListener("input", stageAlignment);
+  }
+  resetHullsButton.addEventListener("click", resetAlignmentInputs);
+  applyHullsButton.addEventListener("click", applyReceiverBinding);
+  physFileButton.addEventListener("click", () => physFileInput.click());
+  physFileInput.addEventListener("change", () => {
+    const file = physFileInput.files?.[0];
+    if (file === undefined) return;
+    void (async () => {
+      physFileButton.disabled = true;
+      setBindingStatus("loading", `Inspecting ${file.name}…`);
+      try {
+        if (!file.name.toLowerCase().endsWith(".phys")) {
+          throw new Error("Choose a .phys sidecar generated by Chitin.");
+        }
+        const buffer = await file.arrayBuffer();
+        const phys = parsePhys(buffer);
+        if (phys.hulls.length === 0) {
+          throw new Error("The selected sidecar contains no collider hulls.");
+        }
+        stageReceiverPhys({
+          phys,
+          byteLength: buffer.byteLength,
+          label: file.name,
+        });
+      } catch (error) {
+        applyHullsButton.disabled = true;
+        setBindingStatus(
+          "error",
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        physFileButton.disabled = false;
+        physFileInput.value = "";
+      }
+    })();
+  });
+  setControlTab("scene");
 }
 
 async function buildReceiverSplats(): Promise<SplatMesh> {
@@ -280,17 +552,18 @@ async function buildReceiverSplats(): Promise<SplatMesh> {
 async function loadPhys(
   url: string,
   label: string,
-): Promise<ReturnType<typeof parsePhys>> {
+): Promise<LoadedPhys> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
       `Unable to load ${label} (${response.status} ${response.statusText})`,
     );
   }
-  return parsePhys(await response.arrayBuffer());
+  const buffer = await response.arrayBuffer();
+  return { phys: parsePhys(buffer), byteLength: buffer.byteLength, label };
 }
 
-function buildCaster(phys: ReturnType<typeof parsePhys>) {
+function buildCaster(phys: PhysArtifact) {
   document.getElementById("hull-count")!.textContent = String(
     phys.hulls.length,
   );
@@ -329,11 +602,9 @@ async function init() {
     loadPhys(ROBOT_PHYS_URL, "robot-head.phys"),
     loadPhys(CASTER_PHYS_URL, "l-prism.phys"),
   ]);
-  document.getElementById("receiver-hull-count")!.textContent =
-    robotPhys.hulls.length.toLocaleString();
-  buildRobotPhysGeometry(robotPhys, receiverVisual);
+  initializeReceiverBinding(robotPhys, receiverVisual);
 
-  buildCaster(casterPhys);
+  buildCaster(casterPhys.phys);
 
   status.textContent = "Creating the hull G-buffer and deferred composite…";
   const deferredLighting = createDeferredHullLightingPass({
@@ -350,7 +621,7 @@ async function init() {
       },
       {
         light: selfShadowLight,
-        strength: selfShadowsInput.checked ? receiverStrength * 0.65 : 0,
+        strength: selfShadowsInput.checked ? receiverStrength * 0.28 : 0,
         bias: -0.0001,
         normalBias: 0.018,
       },
@@ -366,6 +637,7 @@ async function init() {
     ],
   });
   viewport.dataset.lightingMode = "deferred-hulls";
+  viewport.dataset.selfShadowSource = "phys-hulls";
   const [receiver, selfShadowReceiver, ...aoReceivers] =
     deferredLighting.lights;
 
@@ -373,7 +645,7 @@ async function init() {
     const enabled = lightingInput.checked;
     receiver.strength = enabled ? receiverStrength : 0;
     selfShadowReceiver.strength =
-      enabled && selfShadowsInput.checked ? receiverStrength * 0.65 : 0;
+      enabled && selfShadowsInput.checked ? receiverStrength * 0.28 : 0;
     const aoStrength =
       enabled && ambientOcclusionInput.checked
         ? ambientOcclusionStrength / aoReceivers.length
@@ -469,6 +741,7 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+bindHullSetupControls();
 init().catch((error) => {
   console.error(error);
   status.textContent = `Demo failed: ${error instanceof Error ? error.message : String(error)}`;

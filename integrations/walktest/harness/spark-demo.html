@@ -44,12 +44,16 @@
         top: 16px;
         left: 16px;
         width: min(330px, calc(100vw - 48px));
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
         padding: 16px;
         border: 1px solid rgba(163, 190, 255, 0.18);
         border-radius: 18px;
         background: rgba(9, 13, 22, 0.82);
         box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
         backdrop-filter: blur(18px);
+        scrollbar-width: thin;
+        scrollbar-color: rgba(126, 231, 196, 0.35) transparent;
       }
 
       .eyebrow {
@@ -96,6 +100,38 @@
         margin-bottom: 2px;
         color: white;
         font-size: 15px;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        margin: 2px 0 12px;
+        padding: 4px;
+        border-radius: 10px;
+        background: rgba(117, 144, 198, 0.08);
+      }
+
+      .tab-button {
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: #8f9db3;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .tab-button[aria-selected="true"] {
+        background: rgba(126, 231, 196, 0.13);
+        color: #a8f3da;
+        box-shadow: inset 0 0 0 1px rgba(126, 231, 196, 0.16);
+      }
+
+      .tab-panel[hidden] {
+        display: none;
       }
 
       .control {
@@ -147,6 +183,201 @@
         color: #bac6da;
         font-size: 12px;
         cursor: pointer;
+      }
+
+      .setup-copy {
+        margin: 0 0 10px;
+        color: #9facc0;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .asset-pair {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .asset-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 9px;
+        padding: 9px;
+        border: 1px solid rgba(163, 190, 255, 0.12);
+        border-radius: 9px;
+        background: rgba(117, 144, 198, 0.06);
+      }
+
+      .asset-type {
+        display: grid;
+        width: 34px;
+        height: 26px;
+        place-items: center;
+        border-radius: 6px;
+        background: rgba(126, 231, 196, 0.12);
+        color: #8feace;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+      }
+
+      .asset-row strong,
+      .asset-row small {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .asset-row strong {
+        color: #e7eefb;
+        font-size: 11px;
+      }
+
+      .asset-row small {
+        margin-top: 2px;
+        color: #77869d;
+        font-size: 9px;
+      }
+
+      .secondary-button,
+      .primary-button {
+        padding: 7px 9px;
+        border: 1px solid rgba(163, 190, 255, 0.16);
+        border-radius: 7px;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .secondary-button {
+        background: rgba(117, 144, 198, 0.08);
+        color: #b8c6da;
+      }
+
+      .primary-button {
+        background: #70e2be;
+        border-color: transparent;
+        color: #07120f;
+      }
+
+      .primary-button:disabled {
+        cursor: default;
+        opacity: 0.38;
+      }
+
+      .setup-switches {
+        display: flex;
+        gap: 16px;
+        margin: 10px 0;
+        color: #bac6da;
+        font-size: 11px;
+      }
+
+      .setup-switches label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .binding-summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin: 10px 0;
+      }
+
+      .binding-summary div {
+        padding: 7px;
+        border-radius: 8px;
+        background: rgba(117, 144, 198, 0.07);
+        text-align: center;
+      }
+
+      .binding-summary strong,
+      .binding-summary small {
+        display: block;
+      }
+
+      .binding-summary strong {
+        color: #eef5ff;
+        font-size: 12px;
+      }
+
+      .binding-summary small {
+        margin-top: 2px;
+        color: #77869d;
+        font-size: 9px;
+      }
+
+      .transform-editor {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(163, 190, 255, 0.12);
+      }
+
+      .transform-editor h2 {
+        margin: 0 0 8px;
+        color: #dbe6f6;
+        font-size: 12px;
+      }
+
+      .axis-row {
+        display: grid;
+        grid-template-columns: 48px repeat(3, minmax(0, 1fr));
+        gap: 5px;
+        align-items: center;
+        margin-top: 6px;
+        color: #8f9db3;
+        font-size: 10px;
+      }
+
+      .axis-row input {
+        width: 100%;
+        min-width: 0;
+        padding: 6px 5px;
+        border: 1px solid rgba(163, 190, 255, 0.14);
+        border-radius: 6px;
+        outline: none;
+        background: rgba(117, 144, 198, 0.08);
+        color: #e3ecfa;
+        font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        text-align: center;
+      }
+
+      .axis-row input:focus {
+        border-color: rgba(126, 231, 196, 0.55);
+      }
+
+      .scale-row {
+        grid-template-columns: 48px 1fr;
+      }
+
+      .setup-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      #binding-status {
+        margin: 8px 0 0;
+        color: #7f8da4;
+        font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      #binding-status[data-state="staged"] {
+        color: #ffd166;
+      }
+
+      #binding-status[data-state="applied"] {
+        color: #7ee7c4;
+      }
+
+      #binding-status[data-state="error"] {
+        color: #ff8f7d;
       }
 
       #receiver-hulls {
@@ -271,7 +502,30 @@
           <strong id="receiver-hull-count">—</strong>robot .phys hulls
         </div>
       </div>
-      <label class="control">
+      <div class="tabs" role="tablist" aria-label="Demo controls">
+        <button
+          id="scene-tab"
+          class="tab-button"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="scene-panel"
+        >
+          Scene
+        </button>
+        <button
+          id="hull-setup-tab"
+          class="tab-button"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="hull-setup-panel"
+        >
+          Chitin setup
+        </button>
+      </div>
+      <div id="scene-panel" class="tab-panel" role="tabpanel" aria-labelledby="scene-tab">
+        <label class="control">
         <span>Shadow strength</span>
         <span class="value" id="strength-value">75%</span>
         <input
@@ -282,8 +536,8 @@
           step="0.01"
           value="0.75"
         />
-      </label>
-      <label class="control">
+        </label>
+        <label class="control">
         <span>AO strength</span>
         <span class="value" id="ao-strength-value">35%</span>
         <input
@@ -294,8 +548,8 @@
           step="0.01"
           value="0.35"
         />
-      </label>
-      <label class="control">
+        </label>
+        <label class="control">
         <span>Caster height</span>
         <span class="value" id="height-value">2.25</span>
         <input
@@ -306,16 +560,16 @@
           step="0.01"
           value="2.25"
         />
-      </label>
-      <label class="control">
+        </label>
+        <label class="control">
         <span>HDR environment</span>
         <select id="environment">
           <option value="studio">Dark studio</option>
           <option value="venice">Venice sunset</option>
           <option value="overpass">Pedestrian overpass</option>
         </select>
-      </label>
-      <div class="switches">
+        </label>
+        <div class="switches">
         <label
           ><input id="lighting" type="checkbox" checked /> live lighting</label
         >
@@ -332,14 +586,74 @@
         <label
           ><input id="hulls" type="checkbox" checked /> caster hull edges</label
         >
-        <label
-          ><input id="receiver-hulls" type="checkbox" checked /> robot .phys
-          hulls</label
-        >
-        <label
-          ><input id="receiver-splats" type="checkbox" checked /> robot
-          splats</label
-        >
+        </div>
+      </div>
+      <div
+        id="hull-setup-panel"
+        class="tab-panel"
+        role="tabpanel"
+        aria-labelledby="hull-setup-tab"
+        hidden
+      >
+        <p class="setup-copy">
+          Stage a Chitin sidecar, align it against the appearance, then apply it
+          to the scene lighting proxy.
+        </p>
+        <div class="asset-pair">
+          <div class="asset-row">
+            <span class="asset-type">SPZ</span>
+            <span><strong>robot-head.spz</strong><small>appearance source</small></span>
+            <span></span>
+          </div>
+          <div class="asset-row">
+            <span class="asset-type">PHYS</span>
+            <span
+              ><strong id="phys-file-name">robot-head.phys</strong
+              ><small id="phys-file-detail">stored Chitin sidecar</small></span
+            >
+            <button id="phys-file-button" class="secondary-button" type="button">
+              Replace
+            </button>
+            <input id="phys-file-input" type="file" accept=".phys" hidden />
+          </div>
+        </div>
+        <div class="setup-switches" aria-label="Hull setup preview layers">
+          <label
+            ><input id="receiver-splats" type="checkbox" checked /> appearance</label
+          >
+          <label
+            ><input id="receiver-hulls" type="checkbox" checked /> hull preview</label
+          >
+        </div>
+        <div class="binding-summary">
+          <div><strong id="setup-hull-count">—</strong><small>hulls</small></div>
+          <div><strong id="phys-version">—</strong><small>format</small></div>
+          <div><strong id="phys-size">—</strong><small>sidecar</small></div>
+        </div>
+        <section class="transform-editor" aria-labelledby="alignment-heading">
+          <h2 id="alignment-heading">Hull alignment</h2>
+          <div class="axis-row">
+            <span>Position</span>
+            <input id="hull-pos-x" type="number" step="0.01" value="0" aria-label="Hull position X" />
+            <input id="hull-pos-y" type="number" step="0.01" value="0" aria-label="Hull position Y" />
+            <input id="hull-pos-z" type="number" step="0.01" value="0" aria-label="Hull position Z" />
+          </div>
+          <div class="axis-row">
+            <span>Rotation</span>
+            <input id="hull-rot-x" type="number" step="1" value="0" aria-label="Hull rotation X in degrees" />
+            <input id="hull-rot-y" type="number" step="1" value="0" aria-label="Hull rotation Y in degrees" />
+            <input id="hull-rot-z" type="number" step="1" value="0" aria-label="Hull rotation Z in degrees" />
+          </div>
+          <div class="axis-row scale-row">
+            <span>Scale</span>
+            <input id="hull-scale" type="number" min="0.01" step="0.01" value="1" aria-label="Hull uniform scale" />
+          </div>
+        </section>
+        <div class="setup-actions">
+          <button id="reset-hulls" class="secondary-button" type="button">Reset alignment</button>
+          <button id="apply-hulls" class="primary-button" type="button" disabled>Apply to scene</button>
+        </div>
+        <p id="binding-status" data-state="loading" role="status">Loading paired sidecar…</p>
       </div>
       <div id="status">Preparing packed Chitin runtime…</div>
     </section>

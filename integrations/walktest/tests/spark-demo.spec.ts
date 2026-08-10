@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resolve } from "node:path";
 
 test("Spark demo lights stored sidecars through deferred hulls", async ({
   page,
@@ -45,6 +46,71 @@ test("Spark demo lights stored sidecars through deferred hulls", async ({
     "data-lighting-mode",
     "deferred-hulls",
   );
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-self-shadow-source",
+    "phys-hulls",
+  );
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-hull-binding-status",
+    "applied",
+  );
+
+  const sceneTab = page.getByRole("tab", { name: "Scene" });
+  const setupTab = page.getByRole("tab", { name: "Chitin setup" });
+  await sceneTab.press("ArrowRight");
+  await expect(setupTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#hull-setup-panel")).toBeVisible();
+  await expect(page.locator("#phys-file-name")).toHaveText(
+    "robot-head.phys",
+  );
+  await expect(page.locator("#setup-hull-count")).toHaveText(/^[1-9]\d*$/);
+  await expect(page.locator("#phys-version")).toHaveText(/^v\d+$/);
+  await expect(page.locator("#phys-size")).toHaveText(/KB$/);
+  await expect(page.locator("#binding-status")).toContainText(
+    "applied to deferred lighting",
+  );
+  await expect(page.locator("#apply-hulls")).toBeDisabled();
+
+  await page.locator("#phys-file-input").setInputFiles(
+    resolve("harness/assets/robot-head.phys"),
+  );
+  await expect(page.locator("#binding-status")).toContainText("staged");
+  await expect(page.locator("#apply-hulls")).toBeEnabled();
+  await page.getByLabel("Hull position X").fill("0.10");
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-hull-binding-status",
+    "staged",
+  );
+  await page.locator("#apply-hulls").click();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-hull-binding-status",
+    "applied",
+  );
+  expect(
+    JSON.parse(
+      (await page
+        .locator("#viewport")
+        .getAttribute("data-hull-binding-transform"))!,
+    ),
+  ).toEqual({ position: [0.1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+  await expect(page.locator("#apply-hulls")).toBeDisabled();
+  await page.locator("#reset-hulls").click();
+  await page.locator("#apply-hulls").click();
+
+  await receiverSplats.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-receiver-splats-visible",
+    "false",
+  );
+  await receiverHulls.uncheck();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-receiver-hulls-visible",
+    "false",
+  );
+  await receiverSplats.check();
+  await receiverHulls.check();
+
+  await page.getByRole("tab", { name: "Scene" }).click();
   await lighting.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(
     "data-lighting",
@@ -73,15 +139,5 @@ test("Spark demo lights stored sidecars through deferred hulls", async ({
     "false",
   );
   await expect(page.locator("#ao-strength")).toBeDisabled();
-  await receiverSplats.uncheck();
-  await expect(page.locator("#viewport")).toHaveAttribute(
-    "data-receiver-splats-visible",
-    "false",
-  );
-  await receiverHulls.uncheck();
-  await expect(page.locator("#viewport")).toHaveAttribute(
-    "data-receiver-hulls-visible",
-    "false",
-  );
   expect(browserErrors).toEqual([]);
 });
