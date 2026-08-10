@@ -153,10 +153,21 @@ const deferred = createDeferredHullLightingPass({
 renderer.setAnimationLoop(() => deferred.render());
 ```
 
-The camera normally renders layer 0. The deferred pass renders `hullLayer`
-only into its hidden G-buffer and uses the source scene depth to avoid shading
-ordinary meshes in front of the hull receiver. Call `dispose()` when the pass
-is no longer needed.
+The camera normally renders layer 0. The deferred pass renders `hullLayer` into
+its hidden G-buffer and refreshes shadow maps for lights assigned to that
+layer. Put duplicate self-shadow and hull-depth AO lights on `hullLayer` so
+their maps contain only the `.phys` proxy. For directional self-shadowing, copy
+the scene light's position and target so the two maps share one direction:
+
+```typescript
+selfShadowLight.layers.set(1);
+selfShadowLight.position.copy(sceneLight.position);
+selfShadowLight.target.position.copy(sceneLight.target.position);
+selfShadowLight.castShadow = true;
+```
+
+The pass uses the source scene depth to avoid shading ordinary meshes in front
+of the hull receiver. Call `dispose()` when the pass is no longer needed.
 
 ### Spark gaussian splats
 

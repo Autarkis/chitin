@@ -1,4 +1,5 @@
 import {
+  Color,
   DirectionalLight,
   PerspectiveCamera,
   Scene,
@@ -15,6 +16,33 @@ function rendererStub(): WebGLRenderer {
       return target.set(640, 360);
     },
   } as WebGLRenderer;
+}
+
+function renderingStub(renderMasks: number[]): WebGLRenderer {
+  const clearColor = new Color(0x112233);
+  return {
+    shadowMap: { autoUpdate: false },
+    getDrawingBufferSize(target: Vector2) {
+      return target.set(640, 360);
+    },
+    getRenderTarget() {
+      return null;
+    },
+    setRenderTarget() {},
+    clear() {},
+    render(_scene: Scene, camera: PerspectiveCamera) {
+      renderMasks.push(camera.layers.mask);
+    },
+    getClearColor(target: Color) {
+      return target.copy(clearColor);
+    },
+    getClearAlpha() {
+      return 1;
+    },
+    setClearColor(color: Color | number) {
+      clearColor.set(color);
+    },
+  } as unknown as WebGLRenderer;
 }
 
 describe("deferred hull lighting", () => {
@@ -69,5 +97,28 @@ describe("deferred hull lighting", () => {
         lights: [{ light, strength: 0.5 }],
       }),
     ).toThrow(/must cast shadows/);
+  });
+
+  it("refreshes shadows for both scene and hidden hull layers", () => {
+    const renderMasks: number[] = [];
+    const renderer = renderingStub(renderMasks);
+    const camera = new PerspectiveCamera();
+    camera.layers.set(5);
+    const light = new DirectionalLight();
+    light.castShadow = true;
+    const pass = createDeferredHullLightingPass({
+      renderer,
+      scene: new Scene(),
+      camera,
+      hullLayer: 2,
+      lights: [{ light, strength: 0.65 }],
+    });
+
+    pass.render();
+
+    expect(renderMasks.slice(0, 2)).toEqual([1, 1 << 2]);
+    expect(renderer.shadowMap.autoUpdate).toBe(false);
+    expect(camera.layers.mask).toBe(1 << 5);
+    pass.dispose();
   });
 });

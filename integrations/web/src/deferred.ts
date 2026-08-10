@@ -223,18 +223,21 @@ export function createDeferredHullLightingPass(
       const previousClearAlpha = renderer.getClearAlpha();
 
       try {
+        renderer.shadowMap.autoUpdate = true;
         camera.layers.set(0);
         renderer.setRenderTarget(colorTarget);
         renderer.clear(true, true, true);
         renderer.render(scene, camera);
 
-        renderer.shadowMap.autoUpdate = false;
         scene.overrideMaterial = hullMaterial;
         scene.background = null;
         camera.layers.set(hullLayer);
         renderer.setClearColor(0x000000, 0);
         renderer.setRenderTarget(hullTarget);
         renderer.clear(true, true, true);
+        // Three filters shadow casters through the active render camera's
+        // layers. This hull render therefore also refreshes shadow maps for
+        // lights assigned to `hullLayer`, enabling true hull-on-hull shadows.
         renderer.render(scene, camera);
 
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
