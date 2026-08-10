@@ -236,6 +236,11 @@ export class ChitinWorkerClient {
         reject(new ChitinError("WORKER_ERROR", "decompose worker already in progress"));
         return;
       }
+      const { signal } = options;
+      if (signal?.aborted) {
+        reject(new ChitinError("CANCELLED", "aborted before start"));
+        return;
+      }
       if (!this.worker) this.worker = this.spawn();
       const worker = this.worker;
       const id = this.nextId++;
@@ -250,7 +255,6 @@ export class ChitinWorkerClient {
         cleanup,
         onState: options.onState,
       };
-      const { signal } = options;
       const onAbort = (): void => {
         worker.terminate();
         this.worker = null;

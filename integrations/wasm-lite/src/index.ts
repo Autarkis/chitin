@@ -66,7 +66,6 @@ export {
   canonicalizeGaussianField,
   preprocessGaussianField,
 } from "./splat-preprocess.js";
-export { encodeTriangleMeshGlb } from "./mesh-glb.js";
 export { evaluateColliderQuality } from "./quality.js";
 export type {
   ColliderQualityComponentResult,

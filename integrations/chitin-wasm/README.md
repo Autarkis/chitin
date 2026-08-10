@@ -28,9 +28,24 @@ const phys = writePhys(result.hulls); // ArrayBuffer, a v3 .phys sidecar
 
 ```typescript
 import { compileGaussianField } from "@autarkis/chitin-lite";
+import type { GaussianFieldInput } from "@autarkis/chitin-lite";
 
-// Poisson module is loaded internally via @autarkis/chitin-wasm/poisson
-const mesh = await compileGaussianField(gaussians, { depth: 8 });
+const field: GaussianFieldInput = {
+  centers: new Float32Array([/* x,y,z, ... */]),
+  scales: new Float32Array([/* sx,sy,sz, ... */]),
+  rotations: new Float32Array([/* qw,qx,qy,qz, ... */]),
+  opacities: new Float32Array([/* alpha, ... */]),
+};
+const result = await compileGaussianField(field, {
+  wasm: {
+    js: "/coacd/coacd.mjs",
+    wasm: "/coacd/coacd.wasm",
+    poissonJs: "/poisson/poisson.mjs",
+    poissonWasm: "/poisson/poisson.wasm",
+  },
+  poissonDepth: 8,
+});
+console.log(result.phys, result.hulls, result.report);
 ```
 
 To pin your own copy instead of the CDN, install the package and serve the files
