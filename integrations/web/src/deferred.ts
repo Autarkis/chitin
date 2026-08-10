@@ -181,7 +181,7 @@ export function createDeferredHullLightingPass(
         gl_Position = vec4(position.xy, 0.0, 1.0);
       }
     `,
-    fragmentShader: compositeFragmentShader(bindings.length),
+    fragmentShader: deferredHullLightingFragmentShader(bindings.length),
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
@@ -295,7 +295,7 @@ function renderTarget(width: number, height: number): WebGLRenderTarget {
   return target;
 }
 
-function compositeFragmentShader(lightCount: number): string {
+export function deferredHullLightingFragmentShader(lightCount: number): string {
   const declarations = Array.from(
     { length: lightCount },
     (_, index) => `
@@ -313,7 +313,7 @@ function compositeFragmentShader(lightCount: number): string {
       {
         vec3 lightDirection = normalize(chitinLightDirection${index});
         float receiverFacing = smoothstep(
-          -0.05, 0.15, dot(viewDirection, lightDirection)
+          -0.05, 0.15, dot(hullNormal, lightDirection)
         );
         vec3 biasNormal = dot(hullNormal, lightDirection) >= 0.0
           ? hullNormal
@@ -380,11 +380,7 @@ function compositeFragmentShader(lightCount: number): string {
       }
 
       vec3 worldPosition = reconstructWorldPosition(hullDepth);
-      vec3 viewDirection = normalize(chitinCameraWorld[3].xyz - worldPosition);
       vec3 hullNormal = normalize(hullSample.xyz * 2.0 - 1.0);
-      if (dot(hullNormal, viewDirection) < 0.0) {
-        hullNormal = -hullNormal;
-      }
       float lighting = 1.0;
       ${samples}
       writeOutput(vec4(source.rgb * lighting, source.a));

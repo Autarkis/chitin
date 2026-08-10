@@ -8,7 +8,10 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 
-import { createDeferredHullLightingPass } from "../src/deferred.js";
+import {
+  createDeferredHullLightingPass,
+  deferredHullLightingFragmentShader,
+} from "../src/deferred.js";
 
 function rendererStub(): WebGLRenderer {
   return {
@@ -46,6 +49,13 @@ function renderingStub(renderMasks: number[]): WebGLRenderer {
 }
 
 describe("deferred hull lighting", () => {
+  it("keeps receiver visibility independent of camera angle", () => {
+    const shader = deferredHullLightingFragmentShader(1);
+
+    expect(shader).toContain("dot(hullNormal, lightDirection)");
+    expect(shader).not.toContain("dot(viewDirection, lightDirection)");
+  });
+
   it("exposes validated mutable light controls", () => {
     const light = new DirectionalLight();
     light.castShadow = true;
