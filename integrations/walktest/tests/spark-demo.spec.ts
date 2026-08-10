@@ -70,6 +70,30 @@ test("Spark demo lights stored sidecars through deferred hulls", async ({
     "applied to deferred lighting",
   );
   await expect(page.locator("#apply-hulls")).toBeDisabled();
+  await expect(page.locator("#detail")).toHaveValue("0.025");
+  await expect(page.locator("#reconstruction-resolution")).toHaveValue("72");
+  await expect(page.locator("#max-hulls")).toHaveValue("96");
+  await expect(page.locator("#download-phys")).toBeEnabled();
+
+  await page.getByRole("button", { name: "Balanced" }).click();
+  expect(await page.locator("#detail").inputValue()).toMatch(/^0\.10?$/);
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-hull-detail",
+    "0.100",
+  );
+  await expect(page.locator("#explode-distance-control")).toBeHidden();
+  await page.locator("#explode-hulls").check();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-receiver-hulls-exploded",
+    "true",
+  );
+  await expect(page.locator("#explode-distance-control")).toBeVisible();
+  await page.locator("#explode-hulls").uncheck();
+
+  await expect(page.locator("#compile-hulls")).toBeEnabled();
+  await page.locator(".advanced-settings summary").click();
+  await expect(page.locator("#reconstruction-resolution option")).toHaveCount(5);
+  await expect(page.locator("#max-hulls option")).toHaveCount(5);
 
   await page.locator("#phys-file-input").setInputFiles(
     resolve("harness/assets/robot-head.phys"),
@@ -128,10 +152,22 @@ test("Spark demo lights stored sidecars through deferred hulls", async ({
   );
   await expect(page.locator("#strength")).toBeEnabled();
   await expect(page.locator("#ao-strength")).toBeEnabled();
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-external-shadow-strength",
+    "0.750",
+  );
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-self-shadow-strength",
+    "0.750",
+  );
   await selfShadows.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(
     "data-self-shadows",
     "false",
+  );
+  await expect(page.locator("#viewport")).toHaveAttribute(
+    "data-self-shadow-strength",
+    "0.000",
   );
   await ambientOcclusion.uncheck();
   await expect(page.locator("#viewport")).toHaveAttribute(

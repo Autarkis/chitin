@@ -150,6 +150,10 @@
         accent-color: #70e2be;
       }
 
+      .control[hidden] {
+        display: none;
+      }
+
       .control select {
         grid-column: 1 / -1;
         width: 100%;
@@ -280,6 +284,125 @@
         display: flex;
         align-items: center;
         gap: 6px;
+      }
+
+      .fit-editor {
+        margin: 11px 0;
+        padding: 10px;
+        border: 1px solid rgba(163, 190, 255, 0.12);
+        border-radius: 10px;
+        background: rgba(117, 144, 198, 0.05);
+      }
+
+      .fit-editor h2,
+      .advanced-settings summary {
+        margin: 0;
+        color: #dbe6f6;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .fit-presets {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+        margin: 9px 0;
+      }
+
+      .fit-presets button {
+        min-width: 0;
+        padding: 7px 4px;
+        border: 1px solid rgba(163, 190, 255, 0.13);
+        border-radius: 7px;
+        background: rgba(117, 144, 198, 0.07);
+        color: #8f9db3;
+        font: inherit;
+        font-size: 9px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .fit-presets button[aria-pressed="true"] {
+        border-color: rgba(126, 231, 196, 0.32);
+        background: rgba(126, 231, 196, 0.12);
+        color: #9ef0d4;
+      }
+
+      .compact-control {
+        margin-top: 7px;
+        font-size: 11px;
+      }
+
+      .compact-control input[type="range"] {
+        margin: 0;
+      }
+
+      .range-hint,
+      .compile-status {
+        margin: 5px 0 0;
+        color: #77869d;
+        font-size: 9px;
+        line-height: 1.4;
+      }
+
+      .advanced-settings {
+        margin-top: 9px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(163, 190, 255, 0.1);
+      }
+
+      .advanced-settings summary {
+        cursor: pointer;
+      }
+
+      .advanced-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+        margin-top: 8px;
+      }
+
+      .advanced-grid label {
+        display: grid;
+        gap: 4px;
+        color: #8997ad;
+        font-size: 9px;
+      }
+
+      .advanced-grid input,
+      .advanced-grid select {
+        width: 100%;
+        min-width: 0;
+        padding: 6px;
+        border: 1px solid rgba(163, 190, 255, 0.14);
+        border-radius: 6px;
+        background: rgba(117, 144, 198, 0.08);
+        color: #e3ecfa;
+        font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .compile-actions {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+        margin-top: 9px;
+      }
+
+      .progress-track {
+        height: 3px;
+        margin-top: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(117, 144, 198, 0.12);
+      }
+
+      .progress-track span {
+        display: block;
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: #70e2be;
+        transition: width 160ms ease;
       }
 
       .binding-summary {
@@ -526,7 +649,7 @@
       </div>
       <div id="scene-panel" class="tab-panel" role="tabpanel" aria-labelledby="scene-tab">
         <label class="control">
-        <span>Shadow strength</span>
+        <span>Shadow strength · caster + self</span>
         <span class="value" id="strength-value">75%</span>
         <input
           id="strength"
@@ -596,8 +719,8 @@
         hidden
       >
         <p class="setup-copy">
-          Stage a Chitin sidecar, align it against the appearance, then apply it
-          to the scene lighting proxy.
+          Load the stored production sidecar or regenerate a candidate from the
+          decoded Spark Gaussians. Changes stay staged until you apply them.
         </p>
         <div class="asset-pair">
           <div class="asset-row">
@@ -624,12 +747,80 @@
           <label
             ><input id="receiver-hulls" type="checkbox" checked /> hull preview</label
           >
+          <label
+            ><input id="explode-hulls" type="checkbox" /> explode</label
+          >
         </div>
+        <label class="control compact-control" id="explode-distance-control" hidden>
+          <span>Explode distance</span>
+          <span class="value" id="explode-distance-value">0.35</span>
+          <input id="explode-distance" type="range" min="0.05" max="0.8" step="0.05" value="0.35" />
+        </label>
         <div class="binding-summary">
           <div><strong id="setup-hull-count">—</strong><small>hulls</small></div>
           <div><strong id="phys-version">—</strong><small>format</small></div>
           <div><strong id="phys-size">—</strong><small>sidecar</small></div>
         </div>
+        <section class="fit-editor" aria-labelledby="fit-heading">
+          <h2 id="fit-heading">Generate from Spark Gaussians</h2>
+          <div id="fit-presets" class="fit-presets" aria-label="Hull fit presets">
+            <button type="button" data-detail="0.025" aria-pressed="true">Precise</button>
+            <button type="button" data-detail="0.10" aria-pressed="false">Balanced</button>
+            <button type="button" data-detail="0.30" aria-pressed="false">Coarse</button>
+          </div>
+          <label class="control compact-control">
+            <span>Detail / concavity</span>
+            <span class="value" id="detail-value">0.025</span>
+            <input id="detail" type="range" min="0.025" max="0.30" step="0.005" value="0.025" />
+          </label>
+          <p class="range-hint">Lower preserves tighter features; higher emits cheaper hulls.</p>
+          <details class="advanced-settings">
+            <summary>Reconstruction settings</summary>
+            <div class="advanced-grid">
+              <label>Voxel detail
+                <select id="reconstruction-resolution">
+                  <option value="32">32 · draft</option>
+                  <option value="48">48 · fast</option>
+                  <option value="72" selected>72 · standard</option>
+                  <option value="96">96 · high</option>
+                  <option value="128">128 · very high</option>
+                </select>
+              </label>
+              <label>Max hulls
+                <select id="max-hulls">
+                  <option value="16">16</option>
+                  <option value="32">32</option>
+                  <option value="64">64</option>
+                  <option value="96" selected>96</option>
+                  <option value="128">128</option>
+                </select>
+              </label>
+              <label>Opacity cutoff
+                <input id="opacity-cutoff" type="number" min="0" max="1" step="0.05" value="0.20" />
+              </label>
+              <label>Support radius
+                <input id="support-multiplier" type="number" min="0.25" max="4" step="0.05" value="1.75" />
+              </label>
+              <label>Shell thickness
+                <input id="shell-thickness" type="number" min="0.5" max="4" step="0.05" value="1.15" />
+              </label>
+              <label>Hull vertices
+                <select id="max-hull-vertices">
+                  <option value="32">32</option>
+                  <option value="64" selected>64</option>
+                  <option value="96">96</option>
+                  <option value="128">128</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <div class="compile-actions">
+            <button id="compile-hulls" class="primary-button" type="button">Regenerate hulls</button>
+            <button id="cancel-compile" class="secondary-button" type="button" hidden>Cancel</button>
+          </div>
+          <div class="progress-track" id="compile-progress" role="progressbar" aria-label="Hull generation" hidden><span></span></div>
+          <p id="compile-status" class="compile-status" role="status">Stored sidecar is active; generation is opt-in.</p>
+        </section>
         <section class="transform-editor" aria-labelledby="alignment-heading">
           <h2 id="alignment-heading">Hull alignment</h2>
           <div class="axis-row">
@@ -653,6 +844,7 @@
           <button id="reset-hulls" class="secondary-button" type="button">Reset alignment</button>
           <button id="apply-hulls" class="primary-button" type="button" disabled>Apply to scene</button>
         </div>
+        <button id="download-phys" class="secondary-button" type="button" disabled>Download staged .phys</button>
         <p id="binding-status" data-state="loading" role="status">Loading paired sidecar…</p>
       </div>
       <div id="status">Preparing packed Chitin runtime…</div>

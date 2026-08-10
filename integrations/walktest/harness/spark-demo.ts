@@ -1,3 +1,8 @@
+import {
+  ChitinCompiler,
+  type CompilationProgress,
+  type GaussianFieldInput,
+} from "@autarkis/chitin-lite";
 import { parsePhys } from "@autarkis/chitin-web";
 import {
   createDeferredHullLightingPass,
@@ -71,11 +76,57 @@ const hullRotationInputs = ["x", "y", "z"].map(
 const hullScaleInput = document.getElementById(
   "hull-scale",
 ) as HTMLInputElement;
+const explodeHullsInput = document.getElementById(
+  "explode-hulls",
+) as HTMLInputElement;
+const explodeDistanceControl = document.getElementById(
+  "explode-distance-control",
+)!;
+const explodeDistanceInput = document.getElementById(
+  "explode-distance",
+) as HTMLInputElement;
+const explodeDistanceValue = document.getElementById(
+  "explode-distance-value",
+)!;
+const detailInput = document.getElementById("detail") as HTMLInputElement;
+const detailValue = document.getElementById("detail-value")!;
+const fitPresets = document.getElementById("fit-presets")!;
+const reconstructionResolutionInput = document.getElementById(
+  "reconstruction-resolution",
+) as HTMLSelectElement;
+const maxHullsInput = document.getElementById(
+  "max-hulls",
+) as HTMLSelectElement;
+const opacityCutoffInput = document.getElementById(
+  "opacity-cutoff",
+) as HTMLInputElement;
+const supportMultiplierInput = document.getElementById(
+  "support-multiplier",
+) as HTMLInputElement;
+const shellThicknessInput = document.getElementById(
+  "shell-thickness",
+) as HTMLInputElement;
+const maxHullVerticesInput = document.getElementById(
+  "max-hull-vertices",
+) as HTMLSelectElement;
+const compileHullsButton = document.getElementById(
+  "compile-hulls",
+) as HTMLButtonElement;
+const cancelCompileButton = document.getElementById(
+  "cancel-compile",
+) as HTMLButtonElement;
+const compileProgress = document.getElementById("compile-progress")!;
+const compileProgressBar = compileProgress.querySelector("span")!;
+const compileStatus = document.getElementById("compile-status")!;
+const downloadPhysButton = document.getElementById(
+  "download-phys",
+) as HTMLButtonElement;
 
 type PhysArtifact = ReturnType<typeof parsePhys>;
 
 interface LoadedPhys {
   phys: PhysArtifact;
+  buffer: ArrayBuffer;
   byteLength: number;
   label: string;
 }
@@ -213,6 +264,13 @@ scene.add(receiverBindingRoot);
 
 let stagedReceiverPhys: LoadedPhys | null = null;
 let appliedReceiverPhys: LoadedPhys | null = null;
+let receiverVisual: SplatMesh | null = null;
+let gaussianField: GaussianFieldInput | null = null;
+let activeCompileController: AbortController | null = null;
+let previewHullGroups: Array<{
+  group: THREE.Group;
+  direction: THREE.Vector3;
+}> = [];
 
 let receiverStrength = Number(strengthInput.value);
 let ambientOcclusionStrength = Number(aoStrengthInput.value);
@@ -221,6 +279,26 @@ const casterBaseX = -0.55;
 const ROBOT_HEAD_URL = "https://sparkjs.dev/assets/splats/robot-head.spz";
 const ROBOT_PHYS_URL = "./assets/robot-head.phys";
 const CASTER_PHYS_URL = "./assets/l-prism.phys";
+const compiler = new ChitinCompiler({
+  wasm: {
+    js: new URL("./dist/packages/coacd/coacd.mjs", location.href).href,
+    wasm: new URL("./dist/packages/coacd/coacd.wasm", location.href).href,
+    version: "0.2.0",
+  },
+  workerUrl: new URL("./dist/packages/chitin-lite/worker.js", location.href),
+  maxWorkers: 2,
+});
+
+const compileProgressByStage: Record<CompilationProgress["stage"], number> = {
+  "reading-input": 8,
+  "parsing-input": 20,
+  "validating-input": 32,
+  "loading-wasm": 40,
+  decomposing: 45,
+  verifying: 90,
+  "writing-phys": 96,
+  done: 100,
+};
 
 async function applyEnvironment(name: string): Promise<void> {
   const url = ENVIRONMENTS[name];
@@ -275,6 +353,38 @@ function copyVisualTransform(target: THREE.Object3D, visual: SplatMesh): void {
   target.position.copy(visual.position);
   target.quaternion.copy(visual.quaternion);
   target.scale.copy(visual.scale);
+}
+
+function extractGaussianField(visual: SplatMesh): GaussianFieldInput {
+  const count =
+    visual.splats?.getNumSplats() ??
+    visual.packedSplats?.getNumSplats() ??
+    visual.numSplats;
+  const centers = new Float32Array(count * 3);
+  const scales = new Float32Array(count * 3);
+  const quaternions = new Float32Array(count * 4);
+  const opacities = new Float32Array(count);
+  visual.forEachSplat((index, center, scale, quaternion, opacity) => {
+    center.toArray(centers, index * 3);
+    scale.toArray(scales, index * 3);
+    quaternion.toArray(quaternions, index * 4);
+    opacities[index] = opacity;
+  });
+  return { centers, scales, quaternions, opacities };
+}
+
+function updateExplodedPreview(): void {
+  const distance = explodeHullsInput.checked
+    ? Number(explodeDistanceInput.value)
+    : 0;
+  for (const { group, direction } of previewHullGroups) {
+    group.position.copy(direction).multiplyScalar(distance);
+  }
+  explodeDistanceControl.hidden = !explodeHullsInput.checked;
+  explodeDistanceValue.textContent = Number(
+    explodeDistanceInput.value,
+  ).toFixed(2);
+  viewport.dataset.receiverHullsExploded = String(explodeHullsInput.checked);
 }
 
 function setControlTab(tab: "scene" | "setup"): void {
@@ -336,6 +446,7 @@ function clearRenderedGroup(group: THREE.Group): void {
 
 function rebuildReceiverPreview(phys: PhysArtifact): void {
   clearRenderedGroup(receiverHullPreview);
+  previewHullGroups = [];
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: 0xffd166,
     depthWrite: false,
@@ -348,12 +459,26 @@ function rebuildReceiverPreview(phys: PhysArtifact): void {
     opacity: 0.72,
     transparent: true,
   });
-  for (const geometry of createHullGeometries(phys)) {
-    receiverHullPreview.add(new THREE.Mesh(geometry, fillMaterial));
-    receiverHullPreview.add(
+  const geometries = createHullGeometries(phys);
+  const overallBounds = new THREE.Box3();
+  const centers = geometries.map((geometry) => {
+    geometry.computeBoundingBox();
+    if (geometry.boundingBox !== null) overallBounds.union(geometry.boundingBox);
+    return geometry.boundingBox?.getCenter(new THREE.Vector3()) ?? new THREE.Vector3();
+  });
+  const overallCenter = overallBounds.getCenter(new THREE.Vector3());
+  geometries.forEach((geometry, index) => {
+    const hullGroup = new THREE.Group();
+    hullGroup.add(new THREE.Mesh(geometry, fillMaterial));
+    hullGroup.add(
       new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20), edgeMaterial),
     );
-  }
+    receiverHullPreview.add(hullGroup);
+    const direction = centers[index].clone().sub(overallCenter);
+    if (direction.lengthSq() > 1e-8) direction.normalize();
+    previewHullGroups.push({ group: hullGroup, direction });
+  });
+  updateExplodedPreview();
   receiverHullPreview.visible = receiverHullsInput.checked;
 }
 
@@ -428,6 +553,7 @@ function stageReceiverPhys(artifact: LoadedPhys): void {
   stagedReceiverPhys = artifact;
   rebuildReceiverPreview(artifact.phys);
   updatePhysSummary(artifact);
+  downloadPhysButton.disabled = false;
   stageAlignment();
 }
 
@@ -459,6 +585,7 @@ function initializeReceiverBinding(
   rebuildReceiverPreview(artifact.phys);
   rebuildReceiverLightingProxy(artifact.phys);
   updatePhysSummary(artifact);
+  downloadPhysButton.disabled = false;
   viewport.dataset.hullBindingAsset = artifact.label;
   viewport.dataset.hullBindingTransform = JSON.stringify({
     position: [0, 0, 0],
@@ -469,6 +596,152 @@ function initializeReceiverBinding(
     "applied",
     `${artifact.label} loaded and applied to deferred lighting.`,
   );
+}
+
+function updateFitPreset(): void {
+  const detail = Number(detailInput.value);
+  detailValue.textContent = detail.toFixed(3);
+  for (const button of fitPresets.querySelectorAll<HTMLButtonElement>(
+    "button[data-detail]",
+  )) {
+    button.ariaPressed = String(Number(button.dataset.detail) === detail);
+  }
+  viewport.dataset.hullDetail = detail.toFixed(3);
+}
+
+function updateCompileProgress(progress: CompilationProgress): void {
+  let percentage = compileProgressByStage[progress.stage];
+  if (
+    progress.stage === "decomposing" &&
+    progress.completed !== undefined &&
+    progress.total !== undefined &&
+    progress.total > 0
+  ) {
+    percentage = 45 + Math.round((progress.completed / progress.total) * 40);
+  }
+  compileProgressBar.style.width = `${percentage}%`;
+  compileProgress.setAttribute("aria-valuenow", String(percentage));
+  const eta =
+    progress.eta_ms !== undefined && progress.eta_ms >= 1000
+      ? ` · about ${Math.max(1, Math.round(progress.eta_ms / 1000))}s left`
+      : "";
+  compileStatus.textContent = `${progress.message ?? progress.stage}${eta}`;
+}
+
+function readGenerationSettings(): {
+  detail: number;
+  resolution: number;
+  maxHulls: number;
+  minOpacity: number;
+  supportMultiplier: number;
+  shellThickness: number;
+  maxHullVertices: number;
+} {
+  const settings = {
+    detail: Number(detailInput.value),
+    resolution: Number(reconstructionResolutionInput.value),
+    maxHulls: Number(maxHullsInput.value),
+    minOpacity: Number(opacityCutoffInput.value),
+    supportMultiplier: Number(supportMultiplierInput.value),
+    shellThickness: Number(shellThicknessInput.value),
+    maxHullVertices: Number(maxHullVerticesInput.value),
+  };
+  if (
+    !Object.values(settings).every(Number.isFinite) ||
+    settings.minOpacity < 0 ||
+    settings.minOpacity > 1 ||
+    settings.supportMultiplier <= 0 ||
+    settings.shellThickness < 0.5 ||
+    settings.shellThickness > 4
+  ) {
+    throw new Error("Enter valid finite reconstruction settings.");
+  }
+  return settings;
+}
+
+async function compileReceiverHulls(): Promise<void> {
+  if (receiverVisual === null || activeCompileController !== null) return;
+  let settings: ReturnType<typeof readGenerationSettings>;
+  try {
+    settings = readGenerationSettings();
+  } catch (error) {
+    compileStatus.textContent =
+      error instanceof Error ? error.message : String(error);
+    viewport.dataset.hullCompilerStatus = "error";
+    return;
+  }
+
+  const controller = new AbortController();
+  activeCompileController = controller;
+  compileHullsButton.disabled = true;
+  cancelCompileButton.hidden = false;
+  compileProgress.hidden = false;
+  compileProgressBar.style.width = "2%";
+  compileStatus.textContent = "Decoding Spark’s Gaussian field…";
+  viewport.dataset.hullCompilerStatus = "compiling";
+
+  try {
+    gaussianField ??= extractGaussianField(receiverVisual);
+    const result = await compiler.compileGaussianField(gaussianField, {
+      reconstruction: {
+        resolution: settings.resolution,
+        supportMultiplier: settings.supportMultiplier,
+        minOpacity: settings.minOpacity,
+        shellThickness: settings.shellThickness,
+      },
+      decompose: {
+        threshold: settings.detail,
+        maxConvexHull: settings.maxHulls,
+        maxChVertex: settings.maxHullVertices,
+      },
+      componentPolicy: {
+        maxHulls: settings.maxHulls,
+        detailedComponentMinThreshold: 0,
+      },
+      signal: controller.signal,
+      onProgress: updateCompileProgress,
+    });
+    if (controller.signal.aborted) return;
+    const label = `robot-head-detail-${settings.detail.toFixed(3)}.phys`;
+    stageReceiverPhys({
+      phys: parsePhys(result.phys),
+      buffer: result.phys,
+      byteLength: result.phys.byteLength,
+      label,
+    });
+    compileProgressBar.style.width = "100%";
+    compileStatus.textContent =
+      `${label} generated locally · ${result.hulls.length.toLocaleString()} hulls · staged for review.`;
+    viewport.dataset.hullCompilerStatus = "staged";
+    viewport.dataset.hullCompilerSettings = JSON.stringify(settings);
+  } catch (error) {
+    const cancelled = controller.signal.aborted;
+    compileStatus.textContent = cancelled
+      ? "Generation cancelled; the current applied .phys is unchanged."
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    viewport.dataset.hullCompilerStatus = cancelled ? "cancelled" : "error";
+  } finally {
+    if (activeCompileController === controller) activeCompileController = null;
+    compileHullsButton.disabled = false;
+    cancelCompileButton.hidden = true;
+    if (viewport.dataset.hullCompilerStatus !== "staged") {
+      compileProgress.hidden = true;
+    }
+  }
+}
+
+function downloadStagedPhys(): void {
+  if (stagedReceiverPhys === null) return;
+  const url = URL.createObjectURL(
+    new Blob([stagedReceiverPhys.buffer], { type: "application/octet-stream" }),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = stagedReceiverPhys.label;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function bindHullSetupControls(): void {
@@ -493,6 +766,24 @@ function bindHullSetupControls(): void {
   }
   resetHullsButton.addEventListener("click", resetAlignmentInputs);
   applyHullsButton.addEventListener("click", applyReceiverBinding);
+  explodeHullsInput.addEventListener("change", updateExplodedPreview);
+  explodeDistanceInput.addEventListener("input", updateExplodedPreview);
+  detailInput.addEventListener("input", updateFitPreset);
+  fitPresets.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
+      "button[data-detail]",
+    );
+    if (button?.dataset.detail === undefined) return;
+    detailInput.value = button.dataset.detail;
+    updateFitPreset();
+  });
+  compileHullsButton.addEventListener("click", () => {
+    void compileReceiverHulls();
+  });
+  cancelCompileButton.addEventListener("click", () => {
+    activeCompileController?.abort();
+  });
+  downloadPhysButton.addEventListener("click", downloadStagedPhys);
   physFileButton.addEventListener("click", () => physFileInput.click());
   physFileInput.addEventListener("change", () => {
     const file = physFileInput.files?.[0];
@@ -511,6 +802,7 @@ function bindHullSetupControls(): void {
         }
         stageReceiverPhys({
           phys,
+          buffer,
           byteLength: buffer.byteLength,
           label: file.name,
         });
@@ -526,6 +818,8 @@ function bindHullSetupControls(): void {
       }
     })();
   });
+  updateFitPreset();
+  updateExplodedPreview();
   setControlTab("scene");
 }
 
@@ -560,7 +854,12 @@ async function loadPhys(
     );
   }
   const buffer = await response.arrayBuffer();
-  return { phys: parsePhys(buffer), byteLength: buffer.byteLength, label };
+  return {
+    phys: parsePhys(buffer),
+    buffer,
+    byteLength: buffer.byteLength,
+    label,
+  };
 }
 
 function buildCaster(phys: PhysArtifact) {
@@ -597,12 +896,13 @@ function buildCaster(phys: PhysArtifact) {
 
 async function init() {
   status.textContent = "Loading paired Spark and Chitin assets…";
-  const [receiverVisual, robotPhys, casterPhys] = await Promise.all([
+  const [visual, robotPhys, casterPhys] = await Promise.all([
     buildReceiverSplats(),
     loadPhys(ROBOT_PHYS_URL, "robot-head.phys"),
     loadPhys(CASTER_PHYS_URL, "l-prism.phys"),
   ]);
-  initializeReceiverBinding(robotPhys, receiverVisual);
+  receiverVisual = visual;
+  initializeReceiverBinding(robotPhys, visual);
 
   buildCaster(casterPhys.phys);
 
@@ -621,9 +921,9 @@ async function init() {
       },
       {
         light: selfShadowLight,
-        strength: selfShadowsInput.checked ? receiverStrength * 0.28 : 0,
-        bias: -0.0001,
-        normalBias: 0.018,
+        strength: selfShadowsInput.checked ? receiverStrength : 0,
+        bias: -0.0002,
+        normalBias: 0.025,
       },
       ...aoLights.map((aoLight) => ({
         light: aoLight,
@@ -645,12 +945,14 @@ async function init() {
     const enabled = lightingInput.checked;
     receiver.strength = enabled ? receiverStrength : 0;
     selfShadowReceiver.strength =
-      enabled && selfShadowsInput.checked ? receiverStrength * 0.28 : 0;
+      enabled && selfShadowsInput.checked ? receiverStrength : 0;
     const aoStrength =
       enabled && ambientOcclusionInput.checked
         ? ambientOcclusionStrength / aoReceivers.length
         : 0;
     for (const aoReceiver of aoReceivers) aoReceiver.strength = aoStrength;
+    viewport.dataset.externalShadowStrength = receiver.strength.toFixed(3);
+    viewport.dataset.selfShadowStrength = selfShadowReceiver.strength.toFixed(3);
     selfShadowLight.visible = enabled && selfShadowsInput.checked;
     for (const aoLight of aoLights) {
       aoLight.visible = enabled && ambientOcclusionInput.checked;
@@ -687,7 +989,7 @@ async function init() {
     viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
   });
   receiverSplatsInput.addEventListener("change", () => {
-    receiverVisual.visible = receiverSplatsInput.checked;
+    visual.visible = receiverSplatsInput.checked;
     viewport.dataset.receiverSplatsVisible = String(receiverSplatsInput.checked);
   });
   viewport.dataset.receiverHullsVisible = String(receiverHullsInput.checked);
