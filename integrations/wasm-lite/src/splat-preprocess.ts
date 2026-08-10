@@ -7,12 +7,93 @@ export interface GaussianFieldInput {
   opacities?: ArrayLike<number>;
 }
 
+export type ScaleEncoding = "linear" | "log";
+export type OpacityEncoding = "linear" | "logit";
+export type QuaternionOrder = "xyzw" | "wxyz";
+
+export interface CanonicalGaussianField {
+  centers: Float64Array;
+  scales: Float64Array;
+  quaternions: Float64Array;
+  opacities?: Float64Array;
+  scaleEncoding: ScaleEncoding;
+  opacityEncoding: OpacityEncoding;
+  quaternionOrder: QuaternionOrder;
+}
+
+export function canonicalizeGaussianField(
+  input: GaussianFieldInput,
+  options: {
+    scaleEncoding?: ScaleEncoding;
+    opacityEncoding?: OpacityEncoding;
+    quaternionOrder?: QuaternionOrder;
+    minOpacity?: number;
+  } = {},
+): CanonicalGaussianField {
+  const scaleEncoding = options.scaleEncoding ?? "linear";
+  const opacityEncoding = options.opacityEncoding ?? "linear";
+  const quaternionOrder = options.quaternionOrder ?? "xyzw";
+  const minOpacity = options.minOpacity ?? 0;
+
+  const totalCount = input.centers.length / 3;
+  if (input.centers.length === 0 || input.centers.length % 3 !== 0) {
+    throw new Error("centers must contain at least one xyz triplet");
+  }
+  if (input.scales.length !== totalCount * 3) {
+    throw new Error(`scales must contain ${totalCount * 3} values`);
+  }
+  if (input.quaternions.length !== totalCount * 4) {
+    throw new Error(`quaternions must contain ${totalCount * 4} values`);
+  }
+  if (input.opacities !== undefined && input.opacities.length !== totalCount) {
+    throw new Error(`opacities must contain ${totalCount} values`);
+  }
+
+  const activeIndices: number[] = [];
+  for (let i = 0; i < totalCount; i++) {
+    let opacity = input.opacities?.[i] ?? 1;
+    if (opacityEncoding === "logit") opacity = 1 / (1 + Math.exp(-opacity));
+    if (opacity >= minOpacity) activeIndices.push(i);
+  }
+  const count = activeIndices.length;
+  if (count === 0) throw new Error("No Gaussians meet minOpacity threshold");
+
+  const centers = new Float64Array(count * 3);
+  const scales = new Float64Array(count * 3);
+  const quaternions = new Float64Array(count * 4);
+  const opacities = input.opacities ? new Float64Array(count) : undefined;
+
+  for (let i = 0; i < count; i++) {
+    const src = activeIndices[i];
+    centers[i * 3] = input.centers[src * 3];
+    centers[i * 3 + 1] = input.centers[src * 3 + 1];
+    centers[i * 3 + 2] = input.centers[src * 3 + 2];
+    scales[i * 3] = input.scales[src * 3];
+    scales[i * 3 + 1] = input.scales[src * 3 + 1];
+    scales[i * 3 + 2] = input.scales[src * 3 + 2];
+    if (quaternionOrder === "xyzw") {
+      quaternions[i * 4] = input.quaternions[src * 4];
+      quaternions[i * 4 + 1] = input.quaternions[src * 4 + 1];
+      quaternions[i * 4 + 2] = input.quaternions[src * 4 + 2];
+      quaternions[i * 4 + 3] = input.quaternions[src * 4 + 3];
+    } else {
+      quaternions[i * 4] = input.quaternions[src * 4 + 1];
+      quaternions[i * 4 + 1] = input.quaternions[src * 4 + 2];
+      quaternions[i * 4 + 2] = input.quaternions[src * 4 + 3];
+      quaternions[i * 4 + 3] = input.quaternions[src * 4];
+    }
+    if (opacities && input.opacities) {
+      let opacity = input.opacities[src];
+      if (opacityEncoding === "logit") opacity = 1 / (1 + Math.exp(-opacity));
+      opacities[i] = opacity;
+    }
+  }
+
+  return { centers, scales, quaternions, opacities, scaleEncoding, opacityEncoding: "linear", quaternionOrder: "xyzw" };
+}
+
 export interface GaussianFieldReconstructionOptions {
-  resolution?: number;
-  supportMultiplier?: number;
   minOpacity?: number;
-  shellThickness?: number;
-  minComponentVoxels?: number;
 }
 
 export interface SplatPreprocessResult {
@@ -237,38 +318,26 @@ export function tileNormals(normals: Float64Array, count: number): Float64Array 
  * oriented, inflated point cloud ready for Poisson reconstruction.
  */
 export function preprocessGaussianField(
-  input: GaussianFieldInput,
-  options: { surfaceRatio?: number; minOpacity?: number; logScale?: boolean } = {},
+  input: GaussianFieldInput | CanonicalGaussianField,
+  options: { surfaceRatio?: number; minOpacity?: number; logScale?: boolean;
+    scaleEncoding?: ScaleEncoding; opacityEncoding?: OpacityEncoding;
+    quaternionOrder?: QuaternionOrder } = {},
 ): SplatPreprocessResult {
   const surfaceRatio = options.surfaceRatio ?? 0.5;
   const minOpacity = options.minOpacity ?? 0.2;
-  const logScale = options.logScale ?? false;
-  const totalCount = input.centers.length / 3;
 
-  // Filter by opacity
-  const activeIndices: number[] = [];
-  for (let i = 0; i < totalCount; i++) {
-    if ((input.opacities?.[i] ?? 1) >= minOpacity) activeIndices.push(i);
-  }
-  const count = activeIndices.length;
-  if (count === 0) throw new Error("No Gaussians meet minOpacity threshold");
+  const canonical = "scaleEncoding" in input
+    ? input
+    : canonicalizeGaussianField(input, {
+        scaleEncoding: options.scaleEncoding ?? (options.logScale ? "log" : "linear"),
+        opacityEncoding: options.opacityEncoding ?? "linear",
+        quaternionOrder: options.quaternionOrder ?? "xyzw",
+        minOpacity,
+      });
 
-  const centers = new Float64Array(count * 3);
-  const scales = new Float64Array(count * 3);
-  const quaternions = new Float64Array(count * 4);
-  for (let i = 0; i < count; i++) {
-    const src = activeIndices[i];
-    centers[i * 3] = input.centers[src * 3];
-    centers[i * 3 + 1] = input.centers[src * 3 + 1];
-    centers[i * 3 + 2] = input.centers[src * 3 + 2];
-    scales[i * 3] = input.scales[src * 3];
-    scales[i * 3 + 1] = input.scales[src * 3 + 1];
-    scales[i * 3 + 2] = input.scales[src * 3 + 2];
-    quaternions[i * 4] = input.quaternions[src * 4];
-    quaternions[i * 4 + 1] = input.quaternions[src * 4 + 1];
-    quaternions[i * 4 + 2] = input.quaternions[src * 4 + 2];
-    quaternions[i * 4 + 3] = input.quaternions[src * 4 + 3];
-  }
+  const { centers, scales, quaternions, scaleEncoding } = canonical;
+  const count = centers.length / 3;
+  const logScale = scaleEncoding === "log";
 
   const rawNormals = normalsFromCovariance(scales, quaternions, count, logScale);
   const normals = orientNormalsConsistently(centers, rawNormals, count);
@@ -549,7 +618,20 @@ function estimateMedianNN(
   count: number,
   sampleSize: number,
 ): number {
-  const grid = buildSpatialHash(positions, count, 1.0);
+  if (count < 2) return 1;
+
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < count; i++) {
+    const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  const extent = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+  const cellSize = extent / Math.cbrt(count);
+
+  const grid = buildSpatialHash(positions, count, cellSize);
   const distances: number[] = [];
   const step = Math.max(1, Math.floor(count / sampleSize));
 
@@ -583,7 +665,7 @@ function estimateMedianNN(
     if (bestDist < Infinity) distances.push(Math.sqrt(bestDist));
   }
 
-  if (distances.length === 0) return 1;
+  if (distances.length === 0) return cellSize;
   distances.sort((a, b) => a - b);
   return distances[Math.floor(distances.length / 2)];
 }

@@ -2,7 +2,7 @@ import { ChitinError, type ChitinErrorCode } from "./errors.js";
 import type { CompilationErrorInfo } from "./report.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
 
-// The message contract between DecomposeWorker (main thread) and worker.ts
+// The message contract between ChitinWorkerClient (main thread) and worker.ts
 // (inside the Web Worker). Kept in its own module so both sides — and the
 // tests' fake worker — share one source of truth.
 
