@@ -13,6 +13,22 @@ The release-candidate gate does not publish packages or create release tags.
 It serves Worker/WASM files copied back out of the installed tarballs, so a
 missing package file fails before publication.
 
+## Run the Chitin Spark demo
+
+Do not open `harness/spark-demo.html` directly. Browsers block its module Worker
+from a `file://` origin, so hull regeneration cannot run there.
+
+On Windows, double-click `START_SPARK_DEMO.cmd`. On macOS or Linux, run:
+
+```bash
+./start_spark_demo.sh
+```
+
+Both launchers prepare the local npm release candidate, bundle the demo, start
+a local-only server, and open
+`http://127.0.0.1:3219/spark-demo`. Keep the launcher terminal open while using
+the demo; press Ctrl+C there to stop it.
+
 ## Run the release-candidate gate
 
 Build CoACD WASM once if `../wasm/dist/coacd.mjs` and `coacd.wasm` do not exist:

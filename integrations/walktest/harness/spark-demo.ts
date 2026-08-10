@@ -661,6 +661,12 @@ function readGenerationSettings(): {
 
 async function compileReceiverHulls(): Promise<void> {
   if (receiverVisual === null || activeCompileController !== null) return;
+  if (location.protocol === "file:") {
+    compileStatus.textContent =
+      "Hull regeneration needs the local demo server. Run START_SPARK_DEMO.cmd on Windows or ./start_spark_demo.sh on macOS/Linux.";
+    viewport.dataset.hullCompilerStatus = "server-required";
+    return;
+  }
   let settings: ReturnType<typeof readGenerationSettings>;
   try {
     settings = readGenerationSettings();
