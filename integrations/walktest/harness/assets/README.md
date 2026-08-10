@@ -1,7 +1,10 @@
 # Spark demo sidecars
 
-These are build-time Chitin outputs. The demo loads them as ordinary runtime
-assets and never reconstructs or decomposes their source geometry.
+These are build-time Chitin outputs. The demo's production-default path loads
+them as ordinary runtime assets and does not reconstruct or decompose their
+source geometry. The **Chitin setup** tab also exposes explicit, opt-in browser
+regeneration for authoring and inspection; a generated candidate remains staged
+until it is applied or downloaded.
 
 ## `robot-head.phys`
 
@@ -16,6 +19,9 @@ assets and never reconstructs or decomposes their source geometry.
 Regenerate this sidecar only when the paired visual source or compiler settings
 change. Gaussian data is a generation input and runtime visual; after generation
 the stored `.phys` is authoritative for geometry-dependent behavior.
+
+See [`docs/gaussian-splats.md`](../../../../docs/gaussian-splats.md) for the full
+asset lifecycle and lighting architecture.
 
 ## `l-prism.phys`
 

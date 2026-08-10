@@ -498,6 +498,7 @@ import * as THREE from "three";
 import { addToWorld } from "@autarkis/chitin-web/rapier";
 import {
   attachSparkDirectionalShadow,
+  bindSparkToPhysSurface,
   loadSparkAsset,
 } from "@autarkis/chitin-web/spark";
 import { physTransformFromObject3D } from "@autarkis/chitin-web/three";
@@ -518,6 +519,7 @@ const receiver = attachSparkDirectionalShadow({
   visual: asset.visual,
   renderer,
   light,
+  surface: bindSparkToPhysSurface(asset.visual, asset.phys),
   strength: 0.65,
 });
 
@@ -530,14 +532,19 @@ addToWorld(RAPIER, world, asset.phys, undefined, {
 The hull meshes cast through Three.js's shadow pass. Spark 2.1 has no
 Three-style `receiveShadow` flag, so the adapter bridges Three's directional
 comparison-depth texture into Spark's world-modifier pipeline. Shadow visibility
-is evaluated at each world-space splat center without modifying the source SPZ.
-This requires `THREE.PCFShadowMap`; dynamic receiving re-accumulates the visual
-each frame. Set `dynamic: false` and call `receiver.update()` after static scene
-changes to control that work explicitly.
+is evaluated per visible Gaussian, but receiver positions and normals come from
+the bound Chitin hull surface. The source SPZ is not modified. This requires
+`THREE.PCFShadowMap`; dynamic receiving re-accumulates the visual each frame.
+Set `dynamic: false` and call `receiver.update()` after static scene changes to
+control that work explicitly.
 
 Shadow proxies select the highest-detail `.phys` tier by default. A lower
 `lodConcavity` is only used when explicitly requested, and `merged-hulls`
 batches the same triangles without simplifying the silhouette.
+
+For precompiled SPZ + `.phys` deployment, browser Gaussian generation,
+hull-derived deferred lighting, self-shadowing, AO, and the Spark demo, see
+[Gaussian splats and `.phys` sidecars](gaussian-splats.md).
 
 ### Web quickstart: PLY to walkable browser scene
 

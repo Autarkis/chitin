@@ -30,6 +30,12 @@ Chitin is free MIT-licensed infrastructure, but the strategic distinction is not
 
 The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines. In the browser, the dependency-free `@autarkis/chitin-web` root materializes bind-posed or stored hull geometry as typed arrays. `/rapier`, `/three`, and `/spark` consume that shared layer; renderer adapters never implement collider generation themselves.
 
+For Gaussian visuals, this boundary continues into lighting. The renderer-owned
+asset supplies appearance. The sibling `.phys` supplies collision, raycast,
+shadow-caster, shadow-receiver, self-shadow, and hull-depth AO geometry. The
+Three.js deferred pass is one renderer implementation of that contract, not the
+foundation layer. See [Gaussian splats and `.phys` sidecars](gaussian-splats.md).
+
 ## Components
 
 ```
@@ -165,7 +171,7 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 
 **CoACD compiles to WASM without OpenVDB.** CoACD uses OpenVDB only for manifold repair as a preprocessing step. Building with `-DWITH_3RD_PARTY_LIBS=OFF` drops OpenVDB, Boost, TBB, and spdlog -- leaving pure C++ with header-only deps (CDT, nanoflann, vendored Bullet quickhull). The result is a 558KB `.wasm` module that runs the full MCTS decomposition algorithm in the browser. The trade-off is that input meshes must be manifold; without OpenVDB there is no automatic repair.
 
-**Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles both the mesh path (GLB → CoACD → `.phys`) and the Gaussian splat path (splat preprocessing → Poisson WASM reconstruction → CoACD → `.phys`). Both tiers produce the same `.phys` format. The browser's Poisson reconstruction is Kazhdan's PoissonRecon compiled to WASM, matching the algorithm Open3D wraps on the server. Native algorithms ship as `@autarkis/chitin-wasm` (CoACD + Poisson).
+**Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles both the mesh path (GLB → CoACD → `.phys`) and the Gaussian splat path (decoded oriented Gaussian field → Poisson WASM reconstruction, or a dependency-free sealed voxel shell when Poisson assets are not configured → CoACD → `.phys`). Both tiers produce the same `.phys` format. The browser's Poisson reconstruction is Kazhdan's PoissonRecon compiled to WASM, matching the algorithm Open3D wraps on the server; raw point-cloud repair remains in Python. Native algorithms ship as `@autarkis/chitin-wasm` (CoACD + Poisson).
 
 ## What chitin is not
 

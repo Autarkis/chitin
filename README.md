@@ -30,7 +30,7 @@ It is not a splat viewer feature or a single-engine import button. Viewer collis
 
 - **Gaussian splat scenes**: extract collision geometry from PLY point clouds with opacity filtering
 - **Robotics simulation**: generate colliders for scanned environments (Isaac Sim, Gazebo, MuJoCo)
-- **Web/XR**: load `.phys` sidecars in the browser alongside your 3D viewer (Three.js + Rapier)
+- **Web/XR**: load `.phys` beside Three.js or Spark visuals for physics, hull-derived shadows, and inspection
 - **Game engines**: Unity's ScriptedImporter turns `.phys` into MeshColliders on drop; the Unreal plugin imports the hull data as an asset
 - **Rigged characters**: per-bone convex hulls in bone-local space, ready for ragdoll or hit detection
 - **Generated and mutable worlds**: locally physicalize novel mesh components
@@ -175,6 +175,10 @@ build cannot repair open meshes because it intentionally omits that dependency;
 the GLB path reports the offending connected part, while the native CoACD build
 can voxel-remesh open geometry.
 
+The production workflow, package boundaries, hull-derived lighting design, and
+Spark demo are documented in
+[Gaussian splats and `.phys` sidecars](docs/gaussian-splats.md).
+
 ## CLI
 
 ```bash
@@ -291,6 +295,8 @@ by the Chitin hulls. All runtime peers are optional, and `/spark` composes the
 shared data and Three layers without reimplementing Rapier collider generation.
 
 A full working example with capsule walk controller and Playwright tests lives in [`integrations/walktest/`](integrations/walktest/). See [docs/usage.md](docs/usage.md#web-quickstart-ply-to-walkable-browser-scene) for the end-to-end walkthrough.
+For the SPZ + `.phys` production path and deferred hull lighting, see
+[docs/gaussian-splats.md](docs/gaussian-splats.md).
 
 ### Unity: drag-and-drop import
 

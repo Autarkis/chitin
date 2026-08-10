@@ -29,6 +29,19 @@ a local-only server, and open
 `http://127.0.0.1:3219/spark-demo`. Keep the launcher terminal open while using
 the demo; press Ctrl+C there to stop it.
 
+The production default loads `robot-head.spz` and its precompiled sibling
+`robot-head.phys`. The **Chitin setup** tab can inspect, explode, replace,
+align, stage, apply, and download hulls. Browser regeneration from decoded
+Gaussians is an opt-in authoring path with Collider Lab-style detail,
+reconstruction, hull-budget, and vertices-per-hull controls. The **Scene** tab
+controls HDR environment, hull-derived external and self shadows, and
+hull-depth AO.
+
+The architecture and full workflow are documented in
+[`docs/gaussian-splats.md`](../../docs/gaussian-splats.md). Asset provenance and
+the exact stored sidecar settings are in
+[`harness/assets/README.md`](harness/assets/README.md).
+
 ## Run the release-candidate gate
 
 Build CoACD WASM once if `../wasm/dist/coacd.mjs` and `coacd.wasm` do not exist:
