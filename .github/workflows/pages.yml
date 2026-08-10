@@ -44,8 +44,8 @@ jobs:
 
       - name: Stage local packages
         run: |
-          cp integrations/wasm/dist/coacd.mjs integrations/coacd-wasm/coacd.mjs
-          cp integrations/wasm/dist/coacd.wasm integrations/coacd-wasm/coacd.wasm
+          cp integrations/wasm/dist/coacd.mjs integrations/chitin-wasm/coacd.mjs
+          cp integrations/wasm/dist/coacd.wasm integrations/chitin-wasm/coacd.wasm
           ( cd integrations/wasm-lite && npm ci && npm run build )
           ( cd integrations/web && npm ci && npm run build )
 

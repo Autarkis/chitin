@@ -1,4 +1,4 @@
-# Releasing `@autarkis/chitin-coacd-wasm`
+# Releasing `@autarkis/chitin-wasm`
 
 npm trusted publishing can only be configured after the package exists. Bootstrap
 one prerelease with token authentication, then configure OIDC for later releases
@@ -11,14 +11,14 @@ Build the artifacts (needs Emscripten) and stage them into the package. The
 
 ```bash
 ( cd integrations/wasm && bash build.sh )
-cp integrations/wasm/dist/coacd.mjs integrations/wasm/dist/coacd.wasm integrations/coacd-wasm/
+cp integrations/wasm/dist/{coacd,poisson}.{mjs,wasm} integrations/chitin-wasm/
 ```
 
 Publish a prerelease under a non-`latest` dist-tag with your npm token, then
 revert the temporary version bump and remove the staged artifacts.
 
 ```bash
-cd integrations/coacd-wasm
+cd integrations/chitin-wasm
 npm version 0.2.0-bootstrap.0 --no-git-tag-version
 npm publish --access public --tag bootstrap
 git checkout package.json

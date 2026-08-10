@@ -97,7 +97,7 @@ async function run(): Promise<ReleaseCandidateResult> {
     wasm: {
       js: new URL("./dist/packages/coacd/coacd.mjs", location.href).href,
       wasm: new URL("./dist/packages/coacd/coacd.wasm", location.href).href,
-      version: candidate.packages["@autarkis/chitin-coacd-wasm"],
+      version: candidate.packages["@autarkis/chitin-wasm"],
     },
     workerUrl: new URL("./dist/packages/chitin-lite/worker.js", location.href),
   });

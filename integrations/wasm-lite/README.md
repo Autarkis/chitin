@@ -9,16 +9,16 @@ npm install @autarkis/chitin-lite
 ```
 
 You also need the CoACD WASM module. It ships as a separate package,
-[`@autarkis/chitin-coacd-wasm`](https://www.npmjs.com/package/@autarkis/chitin-coacd-wasm),
+[`@autarkis/chitin-wasm`](https://www.npmjs.com/package/@autarkis/chitin-wasm),
 so it can be loaded straight from a CDN (npm CDNs send CORS headers; GitHub
 release assets do not):
 
 ```
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm
+https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs
+https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm
 ```
 
-To pin your own copy, `npm install @autarkis/chitin-coacd-wasm` and serve the two
+To pin your own copy, `npm install @autarkis/chitin-wasm` and serve the two
 files from your app.
 
 ## Usage
@@ -139,6 +139,59 @@ componentPolicy: {
 }
 ```
 
+### Compile a Gaussian field off the main thread
+
+`compileGaussianField()` takes raw Gaussian splat parameters, reconstructs a
+surface via Poisson WASM, filters by proximity, decomposes with CoACD, and writes
+a `.phys` sidecar. The pipeline is:
+
+1. **TS preprocessing** — estimate normals from the covariance ellipsoids,
+   inflate splats by scale to produce oriented point samples.
+2. **Poisson WASM reconstruction** — screened Poisson surface reconstruction at
+   the requested octree depth.
+3. **Proximity filter** — discard reconstructed faces whose vertices are far from
+   any input Gaussian (controlled by `surfaceRatio`).
+4. **CoACD decomposition** — convex decomposition of the filtered mesh.
+5. **`.phys` write** — portable sidecar identical to the GLB path output.
+
+```typescript
+import { ChitinCompiler } from "@autarkis/chitin-lite";
+
+const compiler = new ChitinCompiler({
+  wasm: {
+    js: "/wasm/coacd.mjs",
+    wasm: "/wasm/coacd.wasm",
+    poissonJs: "/wasm/poisson.mjs",
+    poissonWasm: "/wasm/poisson.wasm",
+  },
+  maxWorkers: 2,
+});
+
+const { phys, hulls, report } = await compiler.compileGaussianField(
+  { centers, scales, quaternions, opacities },
+  {
+    poissonDepth: 7,
+    densityQuantile: 0.1,
+    surfaceRatio: 0.5,
+    onProgress: ({ stage, message }) => console.log(stage, message),
+  },
+);
+```
+
+#### `GaussianFieldInput`
+
+```typescript
+interface GaussianFieldInput {
+  centers: ArrayLike<number>;    // flat xyz, length N*3
+  scales: ArrayLike<number>;     // flat xyz scales, length N*3
+  quaternions: ArrayLike<number>; // flat xyzw rotations, length N*4
+  opacities?: ArrayLike<number>; // per-Gaussian opacity [0,1], length N
+}
+```
+
+`opacities` gates `densityQuantile` filtering — Gaussians below the quantile are
+discarded before Poisson reconstruction. When omitted, all Gaussians contribute.
+
 ### Initialize the WASM module
 
 ```typescript
@@ -146,8 +199,8 @@ import { initFromUrl } from "@autarkis/chitin-lite";
 
 // Point to wherever you host the WASM build output
 await initFromUrl(
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
+  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
 );
 ```
 
@@ -194,8 +247,8 @@ const report = createCompilationReport({
     kind: "browser_wasm",
     implementation: "@autarkis/chitin-lite",
     version: "0.2.0",
-    compiler_version: "0.2.0+coacd-wasm0.2.0",
-    dependencies: { "@autarkis/chitin-coacd-wasm": "0.2.0" },
+    compiler_version: "0.2.0+chitin-wasm0.2.0",
+    dependencies: { "@autarkis/chitin-wasm": "0.2.0" },
   },
 });
 
@@ -215,8 +268,8 @@ import { createColliders } from "@autarkis/chitin-web/rapier";
 
 const { phys: physBuffer, report } = await compileGlb(file, {
   wasm: {
-    js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
-    wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+    js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
+    wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
     version: "0.2.0",
   },
 });
@@ -237,8 +290,8 @@ calls, and supports cancellation via `AbortSignal`.
 import { DecomposeWorker, writePhys } from "@autarkis/chitin-lite";
 
 const worker = new DecomposeWorker({
-  js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.mjs",
-  wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-coacd-wasm@0.2.0/coacd.wasm",
+  js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
+  wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
 });
 
 const controller = new AbortController();
@@ -304,6 +357,10 @@ The component-policy fields shown above apply only to high-level GLB
 compilation. They do not change the low-level `decompose(vertices, faces)` API.
 
 ## Constraints
+
+Gaussian field compilation requires the Poisson WASM URLs (`poissonJs` /
+`poissonWasm`) in the `wasm` config object. Calls to `compileGaussianField`
+without them reject with `WORKER_ERROR`.
 
 The WASM build requires each connected input part to be a closed manifold and
 excludes OpenVDB's manifold repair to keep the module small. The high-level GLB

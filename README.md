@@ -63,38 +63,57 @@ Requires Python 3.12. (`chitin[splat]` requires open3d, which does not yet have 
 
 ### Browser path
 
-For static GLB meshes, you can skip Python entirely and run decomposition in the browser:
+You can skip Python entirely and compile in the browser — both static meshes
+and Gaussian splats:
 
 ```bash
 npm install @autarkis/chitin-lite
 ```
 
-This drives CoACD compiled to WebAssembly (558KB) in a Worker and writes the
-same `.phys` format the Python compiler produces. `compileGlb()` accepts a
-`File`, `Blob`, buffer, or URL and returns the sidecar, hulls, source facts, and
-the versioned compilation report. The CoACD runtime ships separately as
-`@autarkis/chitin-coacd-wasm` so applications can bundle or host the two assets
-deliberately. See [`integrations/wasm-lite/`](integrations/wasm-lite/) for the API
-and [`examples/quickstart/`](examples/quickstart/) for the drag-and-drop Collider
-Lab.
+This drives CoACD and Poisson reconstruction compiled to WebAssembly in a
+Worker and writes the same `.phys` format the Python compiler produces. The
+native WASM modules ship separately as `@autarkis/chitin-wasm` (CoACD for
+decomposition, Poisson for surface reconstruction from splats).
+
+**Mesh compilation** — `compileGlb()` accepts a `File`, `Blob`, buffer, or URL:
 
 ```typescript
 import { ChitinCompiler } from "@autarkis/chitin-lite";
-import ChitinWorker from "@autarkis/chitin-lite/worker?worker";
-import coacdModuleUrl from "@autarkis/chitin-coacd-wasm?url";
-import coacdWasmUrl from "@autarkis/chitin-coacd-wasm/coacd.wasm?url";
+import coacdModuleUrl from "@autarkis/chitin-wasm?url";
+import coacdWasmUrl from "@autarkis/chitin-wasm/coacd.wasm?url";
 
 const compiler = new ChitinCompiler({
-  wasm: { js: coacdModuleUrl, wasm: coacdWasmUrl, version: "0.2.0" },
-  workerFactory: () => new ChitinWorker(),
+  wasm: { js: coacdModuleUrl, wasm: coacdWasmUrl },
   maxWorkers: 2,
 });
-const { phys, hulls, source, report } = await compiler.compileGlb(file, {
+const { phys, hulls, report } = await compiler.compileGlb(file, {
   componentPolicy: { maxHulls: 128 },
-  onProgress: ({ stage, completed, total, eta_ms }) =>
-    console.log(stage, completed, total, eta_ms),
 });
 ```
+
+**Gaussian splat compilation** — `compileGaussianField()` takes splat
+parameters (centers, scales, quaternions, opacities) and runs the full
+pipeline: surface reconstruction via Poisson WASM, then CoACD decomposition:
+
+```typescript
+import poissonModuleUrl from "@autarkis/chitin-wasm/poisson?url";
+import poissonWasmUrl from "@autarkis/chitin-wasm/poisson.wasm?url";
+
+const compiler = new ChitinCompiler({
+  wasm: {
+    js: coacdModuleUrl, wasm: coacdWasmUrl,
+    poissonJs: poissonModuleUrl, poissonWasm: poissonWasmUrl,
+  },
+});
+const { phys, hulls } = await compiler.compileGaussianField(
+  { centers, scales, quaternions, opacities },
+  { poissonDepth: 7 },
+);
+```
+
+See [`integrations/wasm-lite/`](integrations/wasm-lite/) for the full API
+and [`examples/quickstart/`](examples/quickstart/) for the drag-and-drop Collider
+Lab.
 
 Artifact-fit sampling and the interactive component policy are documented in
 [the interactive compiler budget](docs/usage.md#interactive-compiler-budget).

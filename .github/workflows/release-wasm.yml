@@ -28,7 +28,7 @@ jobs:
       - name: Validate tag matches package version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#wasm-v}"
-          PKG_VERSION=$(node -p "require('./integrations/coacd-wasm/package.json').version")
+          PKG_VERSION=$(node -p "require('./integrations/chitin-wasm/package.json').version")
           echo "tag=${TAG_VERSION} package=${PKG_VERSION}"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::tag version (${TAG_VERSION}) does not match package.json (${PKG_VERSION})"; exit 1
@@ -70,7 +70,7 @@ jobs:
           fi
 
       - name: Stage npm package
-        run: cp integrations/wasm/dist/coacd.mjs integrations/wasm/dist/coacd.wasm integrations/coacd-wasm/
+        run: cp integrations/wasm/dist/coacd.mjs integrations/wasm/dist/coacd.wasm integrations/chitin-wasm/
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -80,7 +80,7 @@ jobs:
             integrations/wasm/dist/coacd.wasm
 
       - name: Publish to npm
-        working-directory: integrations/coacd-wasm
+        working-directory: integrations/chitin-wasm
         run: |
           npm install -g npm@latest
           npm publish --access public
