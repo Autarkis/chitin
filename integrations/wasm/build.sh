@@ -80,8 +80,15 @@ echo ""
 echo "Compiling PoissonRecon WASM module with Embind..."
 # PoissonRecon is header-only (template-heavy). No static library build needed —
 # poisson_bind.cpp includes the headers and instantiates the templates directly.
-# DISABLE_THREADS because WASM is single-threaded; the library's ThreadPool
-# falls back to serial execution when threading is unavailable.
+# The library's ThreadPool falls back to serial execution in single-threaded WASM.
+#
+# 32-bit fix: NestedVector uses `((size_t)1) << (LogSize * (Depth+1))` with
+# LogSize=20, Depth=1 → shift count 40, which overflows wasm32's 32-bit size_t.
+# Reducing NESTED_VECTOR_LEVELS to 0 keeps only the base case (1<<20 = 1M entries,
+# sufficient for Poisson depths ≤ 10). The define is unguarded in PreProcessor.h,
+# so we patch it in-place before compiling.
+sed -i 's/^#define NESTED_VECTOR_LEVELS 1/#define NESTED_VECTOR_LEVELS 0/' \
+    "${POISSON_SRC}/Src/PreProcessor.h"
 em++ \
     -O3 \
     -s MODULARIZE=1 \
