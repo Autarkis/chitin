@@ -4,9 +4,11 @@ __pycache__/
 dist/
 build/
 
-# CoACD wasm artifacts are built and staged into the package only at publish time.
-integrations/coacd-wasm/coacd.mjs
-integrations/coacd-wasm/coacd.wasm
+# WASM artifacts are built and staged into the package only at publish time.
+integrations/chitin-wasm/coacd.mjs
+integrations/chitin-wasm/coacd.wasm
+integrations/chitin-wasm/poisson.mjs
+integrations/chitin-wasm/poisson.wasm
 .eggs/
 *.egg
 .venv/

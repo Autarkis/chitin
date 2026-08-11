@@ -5,8 +5,8 @@ import {
   type CompileGlbResult,
 } from "@autarkis/chitin-lite";
 import ChitinWorker from "@autarkis/chitin-lite/worker?worker";
-import coacdModuleUrl from "@autarkis/chitin-coacd-wasm?url";
-import coacdWasmUrl from "@autarkis/chitin-coacd-wasm/coacd.wasm?url";
+import coacdModuleUrl from "@autarkis/chitin-wasm?url";
+import coacdWasmUrl from "@autarkis/chitin-wasm/coacd.wasm?url";
 
 import type { ChitinDemoApi } from "./demo-api";
 import { NullPreviewController, PreviewController, type PreviewApi } from "./preview-controller";

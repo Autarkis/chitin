@@ -2,15 +2,24 @@ import { ChitinError, type ChitinErrorCode } from "./errors.js";
 import type { CompilationErrorInfo } from "./report.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
 
-// The message contract between DecomposeWorker (main thread) and worker.ts
+// The message contract between ChitinWorkerClient (main thread) and worker.ts
 // (inside the Web Worker). Kept in its own module so both sides — and the
 // tests' fake worker — share one source of truth.
 
 /** Lifecycle of a single decompose call, reported as it advances. */
 export type DecomposeState = "loading-wasm" | "decomposing" | "done";
 
+/** Lifecycle of a single Poisson reconstruction call. */
+export type PoissonState = "loading-poisson-wasm" | "reconstructing" | "done";
+
 export interface InitRequest {
   type: "init";
+  wasmJsUrl: string;
+  wasmBinaryUrl: string;
+}
+
+export interface PoissonInitRequest {
+  type: "init-poisson";
   wasmJsUrl: string;
   wasmBinaryUrl: string;
 }
@@ -24,18 +33,34 @@ export interface DecomposeRequest {
   checkManifold: boolean;
 }
 
-export type WorkerRequest = InitRequest | DecomposeRequest;
+export interface PoissonRequest {
+  type: "poisson";
+  id: number;
+  positions: Float64Array;
+  normals: Float64Array;
+  depth: number;
+  densityQuantile: number;
+}
+
+export type WorkerRequest = InitRequest | PoissonInitRequest | DecomposeRequest | PoissonRequest;
 
 export interface StateMessage {
   type: "state";
   id: number;
-  state: DecomposeState;
+  state: DecomposeState | PoissonState;
 }
 
 export interface ResultMessage {
   type: "result";
   id: number;
   hulls: ConvexHull[];
+}
+
+export interface PoissonResultMessage {
+  type: "poisson-result";
+  id: number;
+  vertices: Float64Array;
+  faces: Int32Array;
 }
 
 export interface ErrorMessage {
@@ -49,7 +74,7 @@ export interface ErrorMessage {
   context: CompilationErrorInfo["context"];
 }
 
-export type WorkerResponse = StateMessage | ResultMessage | ErrorMessage;
+export type WorkerResponse = StateMessage | ResultMessage | PoissonResultMessage | ErrorMessage;
 
 // Emscripten reports a heap that cannot grow in a few different phrasings
 // depending on build flags; match the ones CoACD's module can surface.

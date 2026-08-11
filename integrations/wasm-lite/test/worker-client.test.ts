@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { ConvexHull } from "../src/types.js";
-import { DecomposeWorker, type WorkerLike } from "../src/worker-client.js";
+import { ChitinWorkerClient, type WorkerLike } from "../src/worker-client.js";
 import type { WorkerRequest, WorkerResponse } from "../src/worker-protocol.js";
 
 // A programmable stand-in for a Web Worker: it records what the client posts and
@@ -57,7 +57,7 @@ function makeWorker(instanceOnState?: (s: string) => void) {
     fakes.push(f);
     return f;
   };
-  return new DecomposeWorker(
+  return new ChitinWorkerClient(
     { js: "coacd.mjs", wasm: "coacd.wasm" },
     { workerFactory: factory, onState: instanceOnState },
   );
@@ -67,7 +67,7 @@ beforeEach(() => {
   fakes = [];
 });
 
-describe("DecomposeWorker", () => {
+describe("ChitinWorkerClient", () => {
   it("sends init with the wasm URLs before the first decompose", () => {
     const w = makeWorker();
     void w.decompose(V, F).catch(() => {});
