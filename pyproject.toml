@@ -50,7 +50,7 @@ dev = [
     # .pre-commit-config.yaml. The formatter's output is not stable across ruff
     # minor releases, so an unpinned range lets CI drift away from the version
     # the pre-commit hook runs and reintroduces format-check-only CI failures.
-    "ruff==0.15.4",
+    "ruff==0.16.3",
     "pre-commit>=4.0",
 ]
 
