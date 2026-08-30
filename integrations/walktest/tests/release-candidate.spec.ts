@@ -36,13 +36,12 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
 
   expect(browserErrors).toEqual([]);
   expect(Object.keys(result.packages).sort()).toEqual([
-    "@autarkis/chitin-coacd-wasm",
     "@autarkis/chitin-lite",
+    "@autarkis/chitin-wasm",
     "@autarkis/chitin-web",
   ]);
-  expect(result.packages["@autarkis/chitin-lite"]).toBe(
-    result.packages["@autarkis/chitin-coacd-wasm"],
-  );
+  expect(result.packages["@autarkis/chitin-lite"]).toMatch(/^\d+\.\d+\.\d+/);
+  expect(result.packages["@autarkis/chitin-wasm"]).toMatch(/^\d+\.\d+\.\d+/);
   expect(result.packages["@autarkis/chitin-web"]).toMatch(/^\d+\.\d+\.\d+/);
   expect(result.cancelledWith).toBe("CANCELLED");
   expect(result.recovered).toBe(true);

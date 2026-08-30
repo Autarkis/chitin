@@ -13,7 +13,7 @@
     "benchmark:samples": "playwright test tests/sample-quality.benchmark.spec.ts --project=chromium --reporter=line"
   },
   "dependencies": {
-    "@autarkis/chitin-coacd-wasm": "file:../../integrations/coacd-wasm",
+    "@autarkis/chitin-wasm": "file:../../integrations/chitin-wasm",
     "@autarkis/chitin-lite": "file:../../integrations/wasm-lite",
     "@autarkis/chitin-web": "file:../../integrations/web",
     "three": "^0.184.0"

@@ -28,7 +28,7 @@ jobs:
       - name: Validate tag matches package version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#wasm-v}"
-          PKG_VERSION=$(node -p "require('./integrations/coacd-wasm/package.json').version")
+          PKG_VERSION=$(node -p "require('./integrations/chitin-wasm/package.json').version")
           echo "tag=${TAG_VERSION} package=${PKG_VERSION}"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::tag version (${TAG_VERSION}) does not match package.json (${PKG_VERSION})"; exit 1
@@ -68,9 +68,18 @@ jobs:
           if [ "$mjs" -lt 40000 ] || [ "$mjs" -gt 200000 ]; then
             echo "::error::coacd.mjs size ${mjs} outside [40000, 200000]"; exit 1
           fi
+          pwasm=$(wc -c < dist/poisson.wasm)
+          pmjs=$(wc -c < dist/poisson.mjs)
+          echo "poisson.wasm=${pwasm} bytes  poisson.mjs=${pmjs} bytes"
+          if [ "$pwasm" -lt 200000 ] || [ "$pwasm" -gt 2000000 ]; then
+            echo "::error::poisson.wasm size ${pwasm} outside [200000, 2000000]"; exit 1
+          fi
+          if [ "$pmjs" -lt 20000 ] || [ "$pmjs" -gt 300000 ]; then
+            echo "::error::poisson.mjs size ${pmjs} outside [20000, 300000]"; exit 1
+          fi
 
       - name: Stage npm package
-        run: cp integrations/wasm/dist/coacd.mjs integrations/wasm/dist/coacd.wasm integrations/coacd-wasm/
+        run: cp integrations/wasm/dist/{coacd,poisson}.{mjs,wasm} integrations/chitin-wasm/
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -78,9 +87,11 @@ jobs:
           files: |
             integrations/wasm/dist/coacd.mjs
             integrations/wasm/dist/coacd.wasm
+            integrations/wasm/dist/poisson.mjs
+            integrations/wasm/dist/poisson.wasm
 
       - name: Publish to npm
-        working-directory: integrations/coacd-wasm
+        working-directory: integrations/chitin-wasm
         run: |
           npm install -g npm@latest
           npm publish --access public

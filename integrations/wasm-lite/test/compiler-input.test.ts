@@ -37,7 +37,7 @@ describe("ChitinCompiler inputs", () => {
       runtime: {
         kind: "browser_wasm",
         version: "0.2.0",
-        dependencies: { "@autarkis/chitin-coacd-wasm": "0.2.0" },
+        dependencies: { "@autarkis/chitin-wasm": "0.2.0" },
       },
       reproducibility: { scope: "same_runtime_toolchain", deterministic: null },
       config: { requested: { threshold: 0.05 } },

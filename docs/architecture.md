@@ -165,7 +165,7 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 
 **CoACD compiles to WASM without OpenVDB.** CoACD uses OpenVDB only for manifold repair as a preprocessing step. Building with `-DWITH_3RD_PARTY_LIBS=OFF` drops OpenVDB, Boost, TBB, and spdlog -- leaving pure C++ with header-only deps (CDT, nanoflann, vendored Bullet quickhull). The result is a 558KB `.wasm` module that runs the full MCTS decomposition algorithm in the browser. The trade-off is that input meshes must be manifold; without OpenVDB there is no automatic repair.
 
-**Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles the light path: mesh → convex hulls → `.phys`. Both produce the same `.phys` format. Open3D stays on the server; CoACD runs everywhere.
+**Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles both the mesh path (GLB → CoACD → `.phys`) and the Gaussian splat path (splat preprocessing → Poisson WASM reconstruction → CoACD → `.phys`). Both tiers produce the same `.phys` format. The browser's Poisson reconstruction is Kazhdan's PoissonRecon compiled to WASM, matching the algorithm Open3D wraps on the server. Native algorithms ship as `@autarkis/chitin-wasm` (CoACD + Poisson).
 
 ## What chitin is not
 

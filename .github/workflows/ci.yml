@@ -37,7 +37,7 @@ jobs:
             exit 0
           fi
           if git diff --name-only "$BASE"...HEAD | grep -qE \
-            '^(integrations/(wasm|coacd-wasm|wasm-lite|web|walktest)/|examples/quickstart/|\.github/workflows/ci\.yml$)'; then
+            '^(integrations/(wasm|chitin-wasm|wasm-lite|web|walktest)/|examples/quickstart/|\.github/workflows/ci\.yml$)'; then
             echo "wasm=true" >> "$GITHUB_OUTPUT"
           else
             echo "wasm=false" >> "$GITHUB_OUTPUT"
@@ -190,7 +190,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coacd-wasm
+          name: chitin-wasm
           path: |
             integrations/wasm/dist/coacd.mjs
             integrations/wasm/dist/coacd.wasm
