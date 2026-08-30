@@ -6,6 +6,14 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- **Fixed:** direct mesh inputs containing disconnected, overlapping solids
+  were passed to CoACD as one triangle soup. Each solid could be watertight,
+  while their concatenation was not one valid boundary; this made both normal
+  and preprocess-off decomposition stall until the timeout fallback. Chitin
+  now decomposes each vertex-connected source component independently and
+  records the split in the build plan. The `robotics` preset moves from the
+  measured 0.01 runtime cliff to bounded concavity 0.05; callers can still
+  request 0.01 explicitly after benchmarking their asset.
 - **Fixed:** PLY meshes were silently routed through the point-cloud/Poisson
   path instead of the mesh path. `adapters.ply.load_ply` never populated
   `AdapterResult.faces`, and `analyze._analyze_ply` hardcoded

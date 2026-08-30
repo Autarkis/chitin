@@ -166,8 +166,10 @@ def test_quality_warnings_flags_fallback(box_result):
 
 
 def test_profiles_produce_different_configs():
-    # Two profiles must not produce byte-identical builds: robotics decomposes
-    # tighter than interactive, so the resolved config (and thus geometry) differs.
+    # Two profiles must not produce byte-identical builds: robotics enables snug
+    # fitting even though its bounded concavity now matches the base default.
     inter_cfg = apply_profile(Config(), get_profile("interactive"))
     rob_cfg = apply_profile(Config(), get_profile("robotics"))
-    assert inter_cfg.concavity != rob_cfg.concavity
+    assert inter_cfg != rob_cfg
+    assert inter_cfg.snug_fit is False
+    assert rob_cfg.snug_fit is True

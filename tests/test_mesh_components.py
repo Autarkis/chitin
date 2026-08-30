@@ -2,6 +2,7 @@ import numpy as np
 import trimesh
 
 from chitin import Config, extract_from_mesh
+from chitin.acceptance import apply_profile, get_profile
 from chitin.stages.decompose import split_mesh_components
 
 
@@ -130,6 +131,18 @@ def test_original_u_shape_repro_at_point_zero_one_no_longer_stalls():
 
     assert len(result.hulls) == 3
     assert result.build_plan.detected["mesh_component_count"] == 3
+    assert result.build_plan.detected.get("fallback_hulls", 0) == 0
+
+
+def test_robotics_connected_u_shape_terminates_without_fallback():
+    vertices, faces = _connected_u_prism()
+    assert len(split_mesh_components(vertices, faces)) == 1
+
+    config = apply_profile(Config(coacd_timeout=15.0), get_profile("robotics"))
+    result = extract_from_mesh(vertices, faces, config=config)
+
+    assert config.concavity == 0.05
+    assert len(result.hulls) >= 2
     assert result.build_plan.detected.get("fallback_hulls", 0) == 0
 
 

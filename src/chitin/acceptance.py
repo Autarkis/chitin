@@ -112,14 +112,16 @@ PROFILES: dict[str, Profile] = {
             min_covered_fraction=0.85,
         ),
     ),
-    # Robotics colliders: tight decomposition and snug fit. A coarse AABB
+    # Robotics colliders: bounded decomposition and snug fit. Concavity 0.01
+    # has a measured runtime cliff even on small concave meshes; 0.05 remains
+    # detailed while terminating on the representative corpus. A coarse AABB
     # fallback would put a phantom box around the asset, so a CoACD timeout is
     # disqualifying — the build is rejected rather than shipped. So is a build
     # run with --fast: a collider a simulation is validated against has to be
     # reproducible from its manifest.
     "robotics": Profile(
         name="robotics",
-        preset={"concavity": 0.01, "snug_fit": True},
+        preset={"concavity": 0.05, "snug_fit": True},
         policy=AcceptancePolicy(
             name="robotics",
             mode="strict",

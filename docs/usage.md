@@ -116,7 +116,7 @@ job's `report.json`.
 |---------|---------|-----------------|
 | `interactive` (default) | none | never rejects (permissive) |
 | `walkable` | coarser concavity (0.1), denser Poisson filtering | coverage below 85% |
-| `robotics` | tight concavity (0.01), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90%, or the build ran `--fast` (not reproducible) |
+| `robotics` | bounded concavity (0.05), snug fit | any CoACD-timeout bounding-box fallback, no hulls, coverage below 90%, or the build ran `--fast` (not reproducible) |
 
 A profile only fills fields you did not set, so an explicit `--concavity`
 always overrides the profile's preset -- including when the value you pass is
@@ -703,6 +703,10 @@ That preserves author-provided solid boundaries in formats such as GLB and
 prevents overlapping, individually watertight primitives from being handed to
 CoACD as one invalid solid. `coacd_preprocess_mode="off"` therefore applies to
 each eligible solid rather than to the combined triangle soup.
+
+The `robotics` profile uses 0.05 because the corpus above shows a severe 0.01
+runtime cliff. You can still request 0.01 explicitly when an asset-specific
+benchmark shows that the tighter threshold completes within your time budget.
 
 For multi-LOD, set `concavity` to your tightest tier and `lod_concavities` to progressively coarser values. The consumer picks the right tier at runtime based on distance, platform, or simulation budget.
 

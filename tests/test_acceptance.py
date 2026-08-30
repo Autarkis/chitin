@@ -122,7 +122,7 @@ def test_verdict_to_dict_shape():
 
 def test_apply_profile_fills_defaults():
     applied = apply_profile(Config(), get_profile("robotics"))
-    assert applied.concavity == 0.01  # preset filled the default
+    assert applied.concavity == 0.05  # preset filled the default
     assert applied.snug_fit is True
 
 
