@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 
 
 # Diagnostics an acceptance policy gates on. A build that subdivides its input
-# -- per bone, per octree cell, per seam-repair group -- decomposes each piece
+# -- per source-mesh component, bone, octree cell, or seam-repair group --
+# decomposes each piece
 # under a throwaway plan so the pieces' pipeline steps don't flood the asset's,
 # and octree cells run in a separate process where a shared plan isn't reachable
 # at all. These counters have to be carried back either way: a strict profile

@@ -60,6 +60,8 @@ def test_timeout_budget_is_configurable():
         verts, faces, config=Config(concavity=0.1, coacd_timeout=0.001)
     )
 
-    assert result.build_plan.detected["coacd_timeouts"] == 1
-    assert result.build_plan.detected["fallback_hulls"] == 1
-    assert len(result.hulls) == 1
+    # The source has two disconnected solids, so the per-decomposition-unit
+    # budget is enforced and reported once for each component.
+    assert result.build_plan.detected["coacd_timeouts"] == 2
+    assert result.build_plan.detected["fallback_hulls"] == 2
+    assert len(result.hulls) == 2

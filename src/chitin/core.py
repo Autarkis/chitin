@@ -10,7 +10,7 @@ from chitin.config import Config
 from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult, Hull, LodHulls
-from chitin.stages.decompose import decompose_and_build
+from chitin.stages.decompose import decompose_and_build, decompose_source_mesh
 from chitin.stages.filter import post_poisson_filter
 from chitin.stages.reconstruct import poisson_reconstruct
 from chitin.stages.segment import segment_by_bone
@@ -316,8 +316,8 @@ def extract_from_mesh(
             mesh_vertex_count=len(vertices),
             build_plan=_plan,
         )
-    result = decompose_and_build(
-        vertices, faces, len(vertices), len(vertices), _resolved, _plan=_plan
+    result = decompose_source_mesh(
+        vertices, faces, len(vertices), _resolved, _plan=_plan
     )
 
     from chitin.verify.coverage import coverage_report

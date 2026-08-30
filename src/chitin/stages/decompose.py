@@ -59,6 +59,62 @@ def aabb(vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return vertices.min(axis=0), vertices.max(axis=0)
 
 
+def split_mesh_components(
+    vertices: np.ndarray, faces: np.ndarray
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Split a triangle mesh into compact vertex-connected components.
+
+    Source formats commonly concatenate several solids into one vertex/face
+    array. Passing that whole array to CoACD is both wasteful and, when the
+    solids overlap, pathological: the combined triangle soup is not one valid
+    solid even though every individual component is watertight. Decomposing the
+    components independently preserves the same collision union and avoids
+    making CoACD discover boundaries the source already provides.
+
+    The implementation is pure NumPy/Python so base installs do not acquire a
+    SciPy dependency through trimesh's graph helpers. Components retain source
+    face order; vertices are compacted and faces reindexed per component.
+    """
+    vertices = np.asarray(vertices, dtype=np.float64)
+    faces = np.asarray(faces, dtype=np.int32)
+    if len(faces) == 0:
+        return []
+
+    parent = np.arange(len(vertices), dtype=np.int64)
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = int(parent[index])
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for a, b, c in faces:
+        union(int(a), int(b))
+        union(int(a), int(c))
+
+    grouped: dict[int, list[int]] = {}
+    for face_index, face in enumerate(faces):
+        grouped.setdefault(find(int(face[0])), []).append(face_index)
+
+    components: list[tuple[np.ndarray, np.ndarray]] = []
+    for face_indices in grouped.values():
+        component_faces = faces[np.asarray(face_indices, dtype=np.int64)]
+        used, inverse = np.unique(component_faces.ravel(), return_inverse=True)
+        components.append(
+            (
+                vertices[used],
+                inverse.reshape((-1, 3)).astype(np.int32, copy=False),
+            )
+        )
+    return components
+
+
 class CoACDTimeoutError(RuntimeError):
     """CoACD exceeded its time budget or the worker crashed."""
 
@@ -594,6 +650,94 @@ def decompose_and_build(
         hulls=hulls,
         source_vertex_count=source_count,
         mesh_vertex_count=mesh_count,
+        build_plan=_plan,
+        lod_tiers=lod_tiers,
+    )
+
+
+def decompose_source_mesh(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    source_count: int,
+    config: ResolvedConfig,
+    _plan: BuildPlan | None = None,
+) -> ExtractionResult:
+    """Decompose each topological source-mesh component independently.
+
+    Reconstructed point clouds and octree cells have their own partitioning
+    policies. This wrapper is intentionally for direct source meshes (GLB,
+    OBJ, array input), where disconnected primitives are author-provided solid
+    boundaries and should remain separate decomposition units.
+    """
+    components = split_mesh_components(vertices, faces)
+    if len(components) <= 1:
+        return decompose_and_build(
+            vertices,
+            faces,
+            source_count,
+            len(vertices),
+            config,
+            _plan=_plan,
+        )
+
+    if _plan is not None:
+        _plan.step("split_components")
+        _plan.step("decompose")
+        _plan.detected["mesh_component_count"] = len(components)
+        _plan.detected["mesh_component_face_counts"] = [
+            len(component_faces) for _, component_faces in components
+        ]
+
+    hulls: list[Hull] = []
+    lod_by_concavity: dict[float, list[Hull]] = {}
+    processed_vertices = 0
+    decimated_components = 0
+
+    for component_vertices, component_faces in components:
+        child_plan = None
+        if _plan is not None:
+            child_plan = BuildPlan(
+                input_kind=_plan.input_kind,
+                collider_kind=_plan.collider_kind,
+            )
+        result = decompose_and_build(
+            component_vertices,
+            component_faces,
+            len(component_vertices),
+            len(component_vertices),
+            config,
+            _plan=child_plan,
+        )
+        hulls.extend(result.hulls)
+        processed_vertices += (
+            child_plan.processed_vertices
+            if child_plan is not None
+            else result.mesh_vertex_count
+        )
+        if child_plan is not None:
+            _plan.merge_signals(child_plan.child_signals())
+            if child_plan.decimated:
+                decimated_components += 1
+        for tier in result.lod_tiers or []:
+            lod_by_concavity.setdefault(tier.concavity, []).extend(tier.hulls)
+
+    if _plan is not None:
+        _plan.processed_vertices = processed_vertices
+        if decimated_components:
+            _plan.decimated = True
+            _plan.detected["decimated_components"] = decimated_components
+
+    lod_tiers = None
+    if lod_by_concavity:
+        lod_tiers = [
+            LodHulls(concavity=concavity, hulls=lod_by_concavity[concavity])
+            for concavity in sorted(lod_by_concavity)
+        ]
+
+    return ExtractionResult(
+        hulls=hulls,
+        source_vertex_count=source_count,
+        mesh_vertex_count=len(vertices),
         build_plan=_plan,
         lod_tiers=lod_tiers,
     )

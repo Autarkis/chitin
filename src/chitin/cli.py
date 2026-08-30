@@ -128,8 +128,8 @@ def _add_extract_parser(sub: argparse._SubParsersAction) -> None:
         "--max-hulls",
         type=int,
         default=2048,
-        help="Max convex hulls per decomposition unit (per octree cell / "
-        "per bone), not a global cap (default: 2048)",
+        help="Max convex hulls per decomposition unit (per source-mesh component / "
+        "octree cell / bone), not a global cap (default: 2048)",
     )
     p.add_argument(
         "--lod-concavities",

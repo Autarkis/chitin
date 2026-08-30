@@ -57,7 +57,7 @@ Because `.phys` is a sidecar, the visual runtime does not need to be Chitin-awar
 | `--concavity` | 0.05 | CoACD concavity threshold. Lower = tighter fit, more hulls. |
 | `--opacity-threshold` | 0.1 | Minimum opacity to keep a point (splat inputs only). |
 | `--poisson-depth` | auto | Poisson reconstruction depth (point cloud inputs only). Auto-selects per cell based on point count. |
-| `--max-hulls` | 2048 | Max convex hulls per decomposition unit (per octree cell / per bone), not a global cap. |
+| `--max-hulls` | 2048 | Max convex hulls per decomposition unit (per source-mesh component / octree cell / bone), not a global cap. |
 | `--lod-concavities` | none | Comma-separated concavity thresholds for LOD tiers. |
 | `--density-quantile` | 0.1 | Poisson density filter quantile. Raise to 0.3+ for environments. |
 | `--proximity-filter` | auto (5.0 for point-cloud/splat input) | Remove mesh vertices farther than N * median_nn_distance from input. 0 disables. |
@@ -590,7 +590,7 @@ for hull in phys.hulls:
 | `opacity_threshold` | float | 0.5 | Minimum opacity to keep a point (splat inputs). |
 | `poisson_depth` | int or None | None | Poisson reconstruction depth (point cloud inputs). None = auto-select per cell based on point count. Manual override 4-7 recommended; depths of 8+ are accepted but run in an isolated subprocess, since Open3D can segfault nondeterministically at high depth. |
 | `min_hull_vertices` | int | 4 | Discard hulls with fewer vertices than this. |
-| `max_hulls` | int | 2048 | Max convex hulls per decomposition unit (per octree cell / per bone), not a global cap. |
+| `max_hulls` | int | 2048 | Max convex hulls per decomposition unit (per source-mesh component / octree cell / bone), not a global cap. |
 | `opacity_is_logit` | bool | False | Set True if opacity values are logits (pre-sigmoid). Auto-detected for PLY inputs. |
 | `coacd_preprocess_mode` | str | "auto" | CoACD preprocessing mode. |
 | `coacd_preprocess_resolution` | int | 50 | CoACD preprocessing resolution. |
@@ -697,6 +697,12 @@ Measured hull counts, three real glTF-Sample-Assets meshes (fetched by `examples
 Hull count depends on mesh complexity, not on concavity alone: at 0.05, the low-poly clearcoat-wicker mesh produces 1 hull while the higher-poly iridescent-dish-with-olives produces 47. These three small assets (57 KB-461 KB) are not a general benchmark — do not extrapolate these exact counts to arbitrary meshes; re-measure on your own asset if you need a hull budget.
 
 Environment: chitin 0.1.2, CoACD via the `coacd` package (1.0.11), Windows 11, Python 3.12.11.
+
+Direct mesh inputs are decomposed one vertex-connected component at a time.
+That preserves author-provided solid boundaries in formats such as GLB and
+prevents overlapping, individually watertight primitives from being handed to
+CoACD as one invalid solid. `coacd_preprocess_mode="off"` therefore applies to
+each eligible solid rather than to the combined triangle soup.
 
 For multi-LOD, set `concavity` to your tightest tier and `lod_concavities` to progressively coarser values. The consumer picks the right tier at runtime based on distance, platform, or simulation budget.
 
