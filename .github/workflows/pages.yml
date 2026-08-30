@@ -36,7 +36,7 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
 
-      - name: Build CoACD WASM
+      - name: Build native WASM modules
         working-directory: integrations/wasm
         env:
           COACD_SRC: ${{ runner.temp }}/coacd-src
@@ -44,8 +44,7 @@ jobs:
 
       - name: Stage local packages
         run: |
-          cp integrations/wasm/dist/coacd.mjs integrations/chitin-wasm/coacd.mjs
-          cp integrations/wasm/dist/coacd.wasm integrations/chitin-wasm/coacd.wasm
+          cp integrations/wasm/dist/{coacd,poisson}.{mjs,wasm} integrations/chitin-wasm/
           ( cd integrations/wasm-lite && npm ci && npm run build )
           ( cd integrations/web && npm ci && npm run build )
 

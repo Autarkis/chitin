@@ -40,7 +40,7 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
 
-      - name: Build CoACD WASM
+      - name: Build native WASM modules
         working-directory: integrations/wasm
         env:
           COACD_SRC: ${{ runner.temp }}/coacd-src
