@@ -234,9 +234,11 @@ def test_writer_rejects_oversized_hull():
     )
     import tempfile
 
-    with tempfile.NamedTemporaryFile(suffix=".phys") as f:
-        with pytest.raises(ValueError, match="exceeds uint16"):
-            result.to_phys(f.name)
+    with (
+        tempfile.NamedTemporaryFile(suffix=".phys") as f,
+        pytest.raises(ValueError, match="exceeds uint16"),
+    ):
+        result.to_phys(f.name)
 
 
 @needs_core

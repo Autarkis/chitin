@@ -7,8 +7,8 @@ from chitin.result import Hull
 
 pytest.importorskip("scipy")
 
-from chitin.stages.snugfit import refine_hulls  # noqa: E402
-from chitin.verify.convex import outward_face_planes, point_plane_margins  # noqa: E402
+from chitin.stages.snugfit import refine_hulls
+from chitin.verify.convex import outward_face_planes, point_plane_margins
 
 
 def _box_hull(center=(0.0, 0.0, 0.0), half=(1.0, 1.0, 1.0)):

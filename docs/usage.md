@@ -317,7 +317,7 @@ import numpy as np
 from chitin import extract_from_mesh, Config
 
 vertices = np.array([...], dtype=np.float32)  # (N, 3)
-faces = np.array([...], dtype=np.int32)        # (M, 3)
+faces = np.array([...], dtype=np.int32)  # (M, 3)
 
 result = extract_from_mesh(vertices, faces, config=Config(concavity=0.1))
 ```
@@ -336,7 +336,9 @@ for hull in phys.hulls:
 
 # LOD tiers (empty list if v2 or no LOD)
 for tier in phys.lod_tiers:
-    print(f"concavity={tier.concavity}: {tier.hull_count} hulls, {tier.total_vertices} verts")
+    print(
+        f"concavity={tier.concavity}: {tier.hull_count} hulls, {tier.total_vertices} verts"
+    )
 
 # pick the tier closest to a target concavity
 coarse = phys.lod_tier(0.3)

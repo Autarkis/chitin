@@ -117,7 +117,7 @@ class CompilationReport:
 
 
 def _metric(
-    value: bool | int | float | str | None,
+    value: bool | float | str | None,
     unit: str,
     *,
     absent: str = "not_measured",

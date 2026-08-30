@@ -7,7 +7,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 COMPONENT_TYPE_SIZE = {
     5120: 1,  # BYTE
     5121: 1,  # UNSIGNED_BYTE
@@ -90,16 +89,16 @@ def parse_skin(path: Path) -> GltfSkinData | None:
 
 def _read_glb(path: Path) -> tuple[dict, bytes]:
     with open(path, "rb") as f:
-        magic, version, length = struct.unpack("<III", f.read(12))
+        magic, _version, length = struct.unpack("<III", f.read(12))
         if magic != 0x46546C67:
             raise ValueError("not a valid GLB file")
 
-        json_chunk_len, json_chunk_type = struct.unpack("<II", f.read(8))
+        json_chunk_len, _json_chunk_type = struct.unpack("<II", f.read(8))
         json_data = json.loads(f.read(json_chunk_len))
 
         bin_data = b""
         if f.tell() < length:
-            bin_chunk_len, bin_chunk_type = struct.unpack("<II", f.read(8))
+            bin_chunk_len, _bin_chunk_type = struct.unpack("<II", f.read(8))
             bin_data = f.read(bin_chunk_len)
 
     return json_data, bin_data

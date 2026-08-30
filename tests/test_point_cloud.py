@@ -201,8 +201,8 @@ def test_auto_poisson_depth():
 
 
 def test_aabb_iou_identical():
-    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
+    from chitin.stages.decompose import aabb_iou
 
     verts = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32)
     idx = np.array([0, 1, 0], dtype=np.uint32)
@@ -211,8 +211,8 @@ def test_aabb_iou_identical():
 
 
 def test_aabb_iou_no_overlap():
-    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
+    from chitin.stages.decompose import aabb_iou
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
@@ -221,8 +221,8 @@ def test_aabb_iou_no_overlap():
 
 
 def test_aabb_iou_partial():
-    from chitin.stages.decompose import aabb_iou
     from chitin.result import Hull
+    from chitin.stages.decompose import aabb_iou
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [2, 2, 2]], dtype=np.float32), indices=idx)
@@ -232,8 +232,8 @@ def test_aabb_iou_partial():
 
 
 def test_dedup_removes_duplicate():
-    from chitin.stages.decompose import dedup_overlapping_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import dedup_overlapping_hulls
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
@@ -246,8 +246,8 @@ def test_dedup_removes_duplicate():
 
 
 def test_dedup_keeps_distinct():
-    from chitin.stages.decompose import dedup_overlapping_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import dedup_overlapping_hulls
 
     idx = np.array([0, 1, 0], dtype=np.uint32)
     a = Hull(vertices=np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32), indices=idx)
@@ -294,8 +294,8 @@ def test_sphere_coverage_floor(sphere_points):
 
 
 def test_cull_removes_contained_hull():
-    from chitin.stages.decompose import cull_contained_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import cull_contained_hulls
 
     outer_v = np.array([[0, 0, 0], [2, 0, 0], [0, 2, 0], [0, 0, 2]], dtype=np.float32)
     outer_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
@@ -312,8 +312,8 @@ def test_cull_removes_contained_hull():
 
 
 def test_cull_keeps_non_contained():
-    from chitin.stages.decompose import cull_contained_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import cull_contained_hulls
 
     a_v = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
     a_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
@@ -326,8 +326,8 @@ def test_cull_keeps_non_contained():
 
 
 def test_consolidate_absorbs_shallow_protrusion():
-    from chitin.stages.decompose import consolidate_near_contained_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import consolidate_near_contained_hulls
 
     outer_v = np.array(
         [[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32
@@ -346,8 +346,8 @@ def test_consolidate_absorbs_shallow_protrusion():
 
 
 def test_consolidate_keeps_significant_protrusion():
-    from chitin.stages.decompose import consolidate_near_contained_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import consolidate_near_contained_hulls
 
     outer_v = np.array(
         [[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32
@@ -364,8 +364,8 @@ def test_consolidate_keeps_significant_protrusion():
 
 
 def test_consolidate_ignores_large_hulls():
-    from chitin.stages.decompose import consolidate_near_contained_hulls
     from chitin.result import Hull
+    from chitin.stages.decompose import consolidate_near_contained_hulls
 
     a_v = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0], [0, 0, 10]], dtype=np.float32)
     a_i = np.array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3], dtype=np.uint32)
@@ -531,7 +531,7 @@ def _flip_half_quats(rots, rng):
 def test_flip_half_quats_flips_covariance_normals():
     from chitin.stages.splat import normals_from_covariance
 
-    pts, scales, rots = _sphere_with_covariance(200)
+    _pts, scales, rots = _sphere_with_covariance(200)
     rng = np.random.default_rng(11)
     flipped_rots, mask = _flip_half_quats(rots, rng)
 

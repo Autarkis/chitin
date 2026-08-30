@@ -92,9 +92,9 @@ def _write_manifest(
     verdict: Verdict | None,
 ) -> None:
     # Written last so it can hash every other file the bundle emitted.
+    from chitin import provenance
     from chitin.acceptance import report_metrics
     from chitin.manifest import MANIFEST_FILENAME, quality_warnings, write_manifest
-    from chitin import provenance
     from chitin.report import build_compilation_report, select_primary_artifact
 
     output_files = sorted(

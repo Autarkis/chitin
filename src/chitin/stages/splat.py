@@ -411,8 +411,8 @@ def extract_spatial(
     pre_dedup = len(all_hulls)
     all_hulls = dedup_overlapping_hulls(all_hulls)
     plan.detected["dedup_removed"] = pre_dedup - len(all_hulls)
-    for tier_idx in lod_buckets:
-        lod_buckets[tier_idx] = dedup_overlapping_hulls(lod_buckets[tier_idx])
+    for tier_idx, tier_hulls in lod_buckets.items():
+        lod_buckets[tier_idx] = dedup_overlapping_hulls(tier_hulls)
 
     from chitin.stages.decompose import (
         consolidate_near_contained_hulls,
@@ -430,8 +430,8 @@ def extract_spatial(
 
     all_hulls, occlusion_culled = cull_occluded_hulls(all_hulls, positions)
     plan.detected["occlusion_culled"] = occlusion_culled
-    for tier_idx in lod_buckets:
-        lod_buckets[tier_idx], _ = cull_occluded_hulls(lod_buckets[tier_idx], positions)
+    for tier_idx, tier_hulls in lod_buckets.items():
+        lod_buckets[tier_idx], _ = cull_occluded_hulls(tier_hulls, positions)
 
     if config.snug_fit:
         from chitin.stages.snugfit import refine_hulls
@@ -439,9 +439,9 @@ def extract_spatial(
         all_hulls, snug_stats = refine_hulls(all_hulls, positions)
         plan.detected.update(snug_stats)
         plan.step("snugfit")
-    for tier_idx in lod_buckets:
-        lod_buckets[tier_idx] = cull_contained_hulls(lod_buckets[tier_idx])
-        lod_buckets[tier_idx] = consolidate_near_contained_hulls(lod_buckets[tier_idx])
+    for tier_idx, tier_hulls in lod_buckets.items():
+        tier_hulls = cull_contained_hulls(tier_hulls)
+        lod_buckets[tier_idx] = consolidate_near_contained_hulls(tier_hulls)
 
     plan.step("spatial_reconcile")
     plan.detected["reconciled_hulls"] = len(all_hulls)

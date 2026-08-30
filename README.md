@@ -168,14 +168,14 @@ from chitin import extract, Config
 config = Config(concavity=0.05, opacity_threshold=0.5)
 result = extract("scene.ply", config)
 
-result.to_phys("colliders.phys")   # primary output
-result.to_json("colliders.json")   # debug companion
-result.to_usd("colliders.usda")    # USD Physics (Isaac Sim, Omniverse)
+result.to_phys("colliders.phys")  # primary output
+result.to_json("colliders.json")  # debug companion
+result.to_usd("colliders.usda")  # USD Physics (Isaac Sim, Omniverse)
 
 # multi-LOD output (v3 .phys with tiered collision hulls)
 config = Config(concavity=0.05, lod_concavities=[0.1, 0.3, 0.5])
 result = extract("model.obj", config)
-result.to_phys("colliders.phys")   # LOD 0 at 0.05, then tiers at 0.1, 0.3, 0.5
+result.to_phys("colliders.phys")  # LOD 0 at 0.05, then tiers at 0.1, 0.3, 0.5
 ```
 
 ### From numpy arrays
@@ -194,7 +194,7 @@ result = extract_from_arrays(positions, config=Config())
 from chitin import read_phys, validate_phys
 
 phys = read_phys("colliders.phys")
-for hull in phys.hulls:              # LOD 0 (highest detail)
+for hull in phys.hulls:  # LOD 0 (highest detail)
     print(hull.vertices.shape, hull.indices.shape)
 
 # LOD tiers (if present)

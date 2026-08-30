@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # Diagnostics an acceptance policy gates on. A build that subdivides its input
 # -- per source-mesh component, bone, octree cell, or seam-repair group --
 # decomposes each piece

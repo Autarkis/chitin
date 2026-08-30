@@ -23,7 +23,7 @@ def test_warns_when_over_threshold_and_open3d_unavailable(monkeypatch, caplog):
     verts = np.zeros((10, 3), dtype=np.float64)
     faces = np.zeros((4, 3), dtype=np.int32)
     with caplog.at_level(logging.WARNING, logger="chitin"):
-        out_v, out_f = maybe_decimate(verts, faces, max_vertices=5)
+        out_v, _out_f = maybe_decimate(verts, faces, max_vertices=5)
 
     # Over the threshold but Open3D absent: mesh unchanged AND a warning emitted.
     assert len(out_v) == 10

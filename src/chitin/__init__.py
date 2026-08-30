@@ -47,8 +47,8 @@ def __getattr__(name):
 
 
 __all__ = [
-    "__version__",
     "PROFILES",
+    "REPORT_VERSION",
     "AcceptancePolicy",
     "BoneInfo",
     "BuildPlan",
@@ -61,16 +61,16 @@ __all__ = [
     "PhysFile",
     "PhysHull",
     "Profile",
-    "REPORT_VERSION",
     "ReportMetric",
     "ReportWarning",
     "ResolvedConfig",
     "Verdict",
+    "__version__",
     "analyze_arrays",
     "analyze_input",
     "apply_profile",
-    "build_manifest",
     "build_compilation_report",
+    "build_manifest",
     "evaluate",
     "extract",
     "extract_from_arrays",
@@ -79,8 +79,8 @@ __all__ = [
     "get_profile",
     "read_phys",
     "resolve_config",
-    "validate_phys",
     "validate_compilation_report",
+    "validate_phys",
     "verify_bundle",
     "write_manifest",
 ]

@@ -75,6 +75,7 @@ def run_chitin_extract(input_path, output_dir, concavity=0.05):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     build_time = time.monotonic() - t0
 
@@ -92,6 +93,7 @@ def run_chitin_extract(input_path, output_dir, concavity=0.05):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     return {
@@ -111,6 +113,7 @@ def run_chitin_inspect(phys_path):
         ["chitin", "inspect", str(phys_path)],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.stdout + result.stderr
 
@@ -120,6 +123,7 @@ def run_chitin_validate(phys_path):
         ["chitin", "validate", str(phys_path)],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.stdout + result.stderr, result.returncode
 
