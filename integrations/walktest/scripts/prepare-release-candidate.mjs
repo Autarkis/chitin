@@ -22,7 +22,7 @@ if (!npmCli) {
 
 const wasmLite = join(repo, "integrations", "wasm-lite");
 const web = join(repo, "integrations", "web");
-const coacdPackage = join(repo, "integrations", "chitin-wasm");
+const wasmPackage = join(repo, "integrations", "chitin-wasm");
 const wasmDist = join(repo, "integrations", "wasm", "dist");
 const candidate = join(walktest, ".release-candidate");
 const tarballs = join(candidate, "tarballs");
@@ -62,27 +62,26 @@ function ensureBuildDependencies(packageDir) {
   if (!existsSync(tsc)) runNpm(["ci"], packageDir);
 }
 
-// Build the exact JS that will enter the tarballs. The CoACD binary itself is
-// produced by integrations/wasm/build.sh and is deliberately not rebuilt here.
+// Build the exact JS that will enter the tarballs. The native WASM artifacts
+// are produced by integrations/wasm/build.sh and are deliberately not rebuilt here.
 ensureBuildDependencies(wasmLite);
 ensureBuildDependencies(web);
 runNpm(["run", "build"], wasmLite);
 runNpm(["run", "build"], web);
 
-const coacdMjs = join(wasmDist, "coacd.mjs");
-const coacdWasm = join(wasmDist, "coacd.wasm");
-requireFile(coacdMjs, "run integrations/wasm/build.sh first");
-requireFile(coacdWasm, "run integrations/wasm/build.sh first");
-
 // The release package intentionally keeps generated binaries out of git. Stage
 // them exactly as the release workflow does, then let its prepack check inspect
 // them while creating the local tarball.
-copyFileSync(coacdMjs, join(coacdPackage, "coacd.mjs"));
-copyFileSync(coacdWasm, join(coacdPackage, "coacd.wasm"));
+const nativeArtifacts = ["coacd.mjs", "coacd.wasm", "poisson.mjs", "poisson.wasm"];
+for (const artifact of nativeArtifacts) {
+  const source = join(wasmDist, artifact);
+  requireFile(source, "run integrations/wasm/build.sh first");
+  copyFileSync(source, join(wasmPackage, artifact));
+}
 
 rmSync(candidate, { recursive: true, force: true });
 mkdirSync(tarballs, { recursive: true });
-for (const packageDir of [wasmLite, web, coacdPackage]) {
+for (const packageDir of [wasmLite, web, wasmPackage]) {
   runNpm(["pack", "--pack-destination", tarballs], packageDir);
 }
 
