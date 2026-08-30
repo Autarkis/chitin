@@ -36,8 +36,8 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
 
   expect(browserErrors).toEqual([]);
   expect(Object.keys(result.packages).sort()).toEqual([
-    "@autarkis/chitin-wasm",
     "@autarkis/chitin-lite",
+    "@autarkis/chitin-wasm",
     "@autarkis/chitin-web",
   ]);
   expect(result.packages["@autarkis/chitin-lite"]).toMatch(/^\d+\.\d+\.\d+/);
