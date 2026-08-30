@@ -136,7 +136,7 @@ jobs:
           emcc --version
           cmake --version
 
-      - name: Build CoACD WASM
+      - name: Build native WASM modules
         working-directory: integrations/wasm
         env:
           COACD_SRC: ${{ runner.temp }}/coacd-src
