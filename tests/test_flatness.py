@@ -9,36 +9,36 @@ from chitin.verify.convex import outward_face_planes, points_inside
 
 
 def _resolved_config(**overrides):
-    defaults = dict(
-        concavity=0.05,
-        opacity_threshold=0.5,
-        poisson_depth=6,
-        min_hull_vertices=4,
-        max_hulls=2048,
-        opacity_is_logit=False,
-        coacd_preprocess_mode="auto",
-        coacd_preprocess_resolution=50,
-        coacd_adaptive_preprocess=True,
-        coacd_deterministic=True,
-        coacd_timeout=300.0,
-        max_decompose_vertices=200_000,
-        lod_concavities=None,
-        splat_scale_is_log=True,
-        splat_surface_ratio=0.2,
-        spatial_split_threshold=50_000,
-        poisson_density_quantile=0.1,
-        surface_proximity_filter=0.0,
-        thin_shell=False,
-        thin_shell_thickness=0.0,
-        flatness_threshold=0.9,
-        auto_environment=True,
-        force_environment=True,
-        seam_repair=True,
-        snug_fit=False,
-        use_spatial_split=False,
-        use_seam_repair=False,
-        pipeline_path="mesh",
-    )
+    defaults = {
+        "concavity": 0.05,
+        "opacity_threshold": 0.5,
+        "poisson_depth": 6,
+        "min_hull_vertices": 4,
+        "max_hulls": 2048,
+        "opacity_is_logit": False,
+        "coacd_preprocess_mode": "auto",
+        "coacd_preprocess_resolution": 50,
+        "coacd_adaptive_preprocess": True,
+        "coacd_deterministic": True,
+        "coacd_timeout": 300.0,
+        "max_decompose_vertices": 200_000,
+        "lod_concavities": None,
+        "splat_scale_is_log": True,
+        "splat_surface_ratio": 0.2,
+        "spatial_split_threshold": 50_000,
+        "poisson_density_quantile": 0.1,
+        "surface_proximity_filter": 0.0,
+        "thin_shell": False,
+        "thin_shell_thickness": 0.0,
+        "flatness_threshold": 0.9,
+        "auto_environment": True,
+        "force_environment": True,
+        "seam_repair": True,
+        "snug_fit": False,
+        "use_spatial_split": False,
+        "use_seam_repair": False,
+        "pipeline_path": "mesh",
+    }
     defaults.update(overrides)
     return ResolvedConfig(**defaults)
 
@@ -109,7 +109,7 @@ def test_make_planar_box_contains_all_vertices():
 
 def test_make_planar_box_has_minimum_thickness():
     vertices, faces = _grid_mesh()  # exactly planar: zero natural thickness
-    flat, normal = is_flat_mesh(vertices, faces, threshold=0.9)
+    _flat, normal = is_flat_mesh(vertices, faces, threshold=0.9)
     hull = make_planar_box(vertices, normal)
     extents = hull.vertices.max(axis=0) - hull.vertices.min(axis=0)
     assert extents.min() > 0.0

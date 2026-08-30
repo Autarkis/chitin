@@ -170,8 +170,8 @@ def _manifest_entry(name: str, description: str) -> dict:
         "totalTriangles": pf.total_triangles,
         "hulls": [
             {
-                "vertexCount": int(len(h.vertices)),
-                "indexCount": int(len(h.indices)),
+                "vertexCount": len(h.vertices),
+                "indexCount": len(h.indices),
                 "aabbMin": [round(float(x), 6) for x in h.aabb_min],
                 "aabbMax": [round(float(x), 6) for x in h.aabb_max],
                 "boneIndex": h.bone_index,

@@ -44,7 +44,7 @@ def main() -> None:
         sys.exit(f"{pkg.name} has no node_modules; run `npm ci` in {pkg}")
 
     for label, args in STEPS:
-        result = subprocess.run([npm, *args], cwd=pkg)
+        result = subprocess.run([npm, *args], cwd=pkg, check=False)
         if result.returncode != 0:
             sys.exit(f"{pkg.name}: npm {label} failed")
 

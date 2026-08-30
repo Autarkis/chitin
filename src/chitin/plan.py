@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # Diagnostics an acceptance policy gates on. A build that subdivides its input
 # -- per bone, per octree cell, per seam-repair group -- decomposes each piece
 # under a throwaway plan so the pieces' pipeline steps don't flood the asset's,

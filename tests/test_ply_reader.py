@@ -60,8 +60,9 @@ def _write_binary_splat(path, endian="<"):
     )
     with open(path, "wb") as f:
         f.write(header.encode())
-        for v in _SPLAT_VERTS:
-            f.write(struct.pack(endian + "f" * len(_SPLAT_PROPS), *v))
+        f.writelines(
+            struct.pack(endian + "f" * len(_SPLAT_PROPS), *v) for v in _SPLAT_VERTS
+        )
 
 
 def _write_binary_mesh(path, vertices, faces, endian="<"):
@@ -77,8 +78,7 @@ def _write_binary_mesh(path, vertices, faces, endian="<"):
     )
     with open(path, "wb") as f:
         f.write(header.encode())
-        for v in vertices:
-            f.write(struct.pack(endian + "fff", *v))
+        f.writelines(struct.pack(endian + "fff", *v) for v in vertices)
         for face in faces:
             f.write(struct.pack(endian + "B", len(face)))
             f.write(struct.pack(endian + "i" * len(face), *face))
@@ -129,8 +129,10 @@ def test_skips_trailing_face_element(tmp_path):
     )
     with open(p, "wb") as f:
         f.write(header.encode())
-        for v in [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]:
-            f.write(struct.pack("<fff", *v))
+        f.writelines(
+            struct.pack("<fff", *v)
+            for v in [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+        )
         f.write(struct.pack("<B", 3) + struct.pack("<iii", 0, 1, 2))
     ve = read_ply_vertex(p)
     assert len(ve) == 3

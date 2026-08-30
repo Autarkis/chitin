@@ -46,8 +46,7 @@ def _write_point_ply(path, positions):
     )
     with open(path, "wb") as f:
         f.write(header.encode())
-        for x, y, z in positions:
-            f.write(struct.pack("<fff", x, y, z))
+        f.writelines(struct.pack("<fff", x, y, z) for x, y, z in positions)
 
 
 def test_hollow_shell_hint_does_not_recommend_proximity_filter(tmp_path):

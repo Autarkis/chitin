@@ -115,6 +115,7 @@ def poisson_reconstruct(
                 ],
                 capture_output=True,
                 timeout=300,
+                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise PoissonWorkerError("worker timeout after 300s") from exc

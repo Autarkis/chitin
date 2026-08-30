@@ -91,7 +91,7 @@ def run_job(store: Store, job: Job) -> Job:
             )
         store.update_job(job)
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         tb = traceback.format_exc()
         job.error = f"{type(exc).__name__}: {exc}"
 

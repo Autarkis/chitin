@@ -10,7 +10,7 @@ def main() -> None:
     data = np.load(in_path)
 
     positions = data["positions"]
-    normals = data["normals"] if "normals" in data else None
+    normals = data.get("normals", None)
     depth = int(data["depth"][0])
     density_quantile = (
         float(data["density_quantile"][0]) if "density_quantile" in data else 0.1

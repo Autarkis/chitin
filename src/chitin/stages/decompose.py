@@ -111,6 +111,7 @@ def run_coacd_bounded(
                 capture_output=True,
                 timeout=timeout,
                 env=env,
+                check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise CoACDTimeoutError(f"coacd timeout after {timeout}s") from exc
@@ -209,7 +210,7 @@ def adaptive_preprocess_resolution(face_count: int, configured: int) -> int:
         return configured
     span = ADAPTIVE_HIGH_FACES - ADAPTIVE_LOW_FACES
     frac = (face_count - ADAPTIVE_LOW_FACES) / span
-    return int(round(floor + (configured - floor) * frac))
+    return round(floor + (configured - floor) * frac)
 
 
 def aabb_overlaps_bounds(
@@ -435,7 +436,7 @@ def extract_walkable_hulls(
     tm = trimesh.Trimesh(vertices=vertices, faces=walkable_faces, process=False)
     try:
         components = trimesh.graph.connected_components(tm.face_adjacency)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return [], faces
 
     hulls = []

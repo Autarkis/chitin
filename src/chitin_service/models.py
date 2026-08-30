@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from chitin.provenance import compiler_version
 
@@ -110,7 +110,7 @@ class Job:
     config_hash: str | None = None
     compiler_version: str = field(default_factory=compiler_version)
     error: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     events: list[JobEvent] = field(default_factory=list)
 
     def transition(self, new_status: JobStatus, message: str | None = None) -> None:
@@ -122,7 +122,7 @@ class Job:
         self.status = new_status
         self.events.append(
             JobEvent(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 status=new_status,
                 message=message,
             )

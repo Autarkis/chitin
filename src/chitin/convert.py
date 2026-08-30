@@ -66,6 +66,7 @@ def convert_fbx_to_glb(input_path: str | Path, output_path: str | Path) -> None:
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
         if result.returncode != 0:
             raise RuntimeError(f"blender FBX->GLB conversion failed:\n{result.stderr}")

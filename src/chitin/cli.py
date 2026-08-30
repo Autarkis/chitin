@@ -10,7 +10,6 @@ from chitin.core import extract
 from chitin.hooks import get_post_process_command, run_post_process
 from chitin.preflight import check as preflight_check
 
-
 # Config fields an acceptance profile can preset, mapped to the argparse dest
 # of the flag that sets each one. Used to tell a typed flag from an omitted
 # one, so the profile never overwrites a value the caller chose -- including a
@@ -62,7 +61,7 @@ def _supplied_dests(argv: list[str] | None) -> set[str] | None:
         return set(vars(mirror.parse_args(argv)))
     except SystemExit:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 

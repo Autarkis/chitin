@@ -54,11 +54,11 @@ def main() -> None:
     print(f"{'':<{label_w}}" + "".join(f"{n:>{width}}" for n in names))
     for row in ROWS:
         vals = [d.get(row, "-") for d in detected]
-        print(f"{row:<{label_w}}" + "".join(f"{str(v):>{width}}" for v in vals))
+        print(f"{row:<{label_w}}" + "".join(f"{v!s:>{width}}" for v in vals))
     print("coverage:")
     for row in COVERAGE_ROWS:
         vals = [d.get("coverage", {}).get(row, "-") for d in detected]
-        print(f"  {row:<{label_w - 2}}" + "".join(f"{str(v):>{width}}" for v in vals))
+        print(f"  {row:<{label_w - 2}}" + "".join(f"{v!s:>{width}}" for v in vals))
     print("worst cells (cell:fraction:samples):")
     for name, d in zip(names, detected):
         cells = d.get("coverage", {}).get("worst_cells", [])[:5]

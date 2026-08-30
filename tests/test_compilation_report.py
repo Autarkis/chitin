@@ -245,8 +245,10 @@ def test_validator_falls_back_to_hand_rolled_checks_without_jsonschema(monkeypat
 
     missing_problems = validate_compilation_report({"report_version": 99})
     assert missing_problems == [
-        "missing fields: status, profile, verdict, input, output, timings_ms, "
-        "warnings, metrics, processing, runtime, reproducibility, config, artifacts"
+        (
+            "missing fields: status, profile, verdict, input, output, timings_ms, "
+            "warnings, metrics, processing, runtime, reproducibility, config, artifacts"
+        )
     ]
 
     report = build_compilation_report(_result()).to_dict()

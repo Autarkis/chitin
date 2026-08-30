@@ -69,7 +69,7 @@ def coverage_report(
 
     report: dict = {
         "input_count": n_input,
-        "sample_count": int(len(pts)),
+        "sample_count": len(pts),
         "tolerance": round(tol, 6),
         SOURCE_SURFACE_COVERAGE: round(float(covered.mean()), 4),
         "uncovered_count": int((~covered).sum()),

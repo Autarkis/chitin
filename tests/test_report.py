@@ -1,13 +1,12 @@
 import hashlib
 
+import pytest
+import trimesh
 from fastapi.testclient import TestClient
 
 from chitin import __version__
 from chitin_service.app import app, set_store
 from chitin_service.store import Store
-
-import pytest
-import trimesh
 
 
 @pytest.fixture

@@ -102,7 +102,7 @@ def test_rigged_merges_per_bone_fallback_counters(two_bone_rig, monkeypatch):
     # Bones decompose under their own plan, so a CoACD timeout inside one used
     # to die with it: the asset reported zero fallbacks and sailed through the
     # robotics gate with a bounding box in it.
-    import chitin.stages.decompose as decompose
+    from chitin.stages import decompose
 
     def boom(*args, **kwargs):
         raise decompose.CoACDTimeoutError("forced")

@@ -149,8 +149,9 @@ def _cmd_status(args: argparse.Namespace) -> None:
 
 
 def _cmd_download(args: argparse.Namespace) -> None:
-    import httpx
     from pathlib import Path
+
+    import httpx
 
     base = f"{args.server}/v1/jobs/{args.job_id}"
     resp = httpx.get(f"{base}/artifacts", timeout=10.0)

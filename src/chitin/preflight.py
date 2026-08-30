@@ -119,7 +119,7 @@ def detect_environment_hints(path: Path) -> list[str] | None:
             return None
 
         return _classify_point_distribution(positions)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 

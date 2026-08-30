@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 _ENV_INNER_DENSITY_MAX = 0.05
 _ENV_AMBIGUOUS_MAX = 0.20
 _MIN_ENV_POINTS = 1000
@@ -309,9 +308,9 @@ def _analyze_mesh(path: Path) -> InputAnalysis:
 
 
 def _analyze_gltf(path: Path) -> InputAnalysis:
-    from chitin.gltf_skin import parse_skin
-
     import trimesh
+
+    from chitin.gltf_skin import parse_skin
 
     skin_data = parse_skin(path)
     loaded = trimesh.load(str(path))
