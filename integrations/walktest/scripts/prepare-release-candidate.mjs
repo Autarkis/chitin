@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -92,6 +92,55 @@ if (packed.length !== 3) {
   throw new Error(`expected 3 packed Chitin packages, found ${packed.length}`);
 }
 
+// Each tarball must actually contain the build outputs the consumer imports at
+// runtime; a silent packaging gap (missing "files" entry, a build that didn't
+// run) would otherwise only surface as a runtime import failure downstream.
+const requiredTarballFiles = {
+  "autarkis-chitin-wasm": [
+    "package/coacd.mjs",
+    "package/coacd.wasm",
+    "package/poisson.mjs",
+    "package/poisson.wasm",
+  ],
+  "autarkis-chitin-lite": [
+    "package/dist/index.js",
+    "package/dist/index.d.ts",
+    "package/dist/worker.js",
+  ],
+  "autarkis-chitin-web": [
+    "package/dist/index.js",
+    "package/dist/index.d.ts",
+    "package/dist/rapier.js",
+    "package/dist/rapier.d.ts",
+  ],
+};
+
+for (const tarball of packed) {
+  const tarballName = basename(tarball);
+  const prefix = Object.keys(requiredTarballFiles).find((name) =>
+    tarballName.startsWith(name),
+  );
+  if (!prefix) {
+    throw new Error(`tarball ${tarballName} does not match any known Chitin package prefix`);
+  }
+  const listing = spawnSync("tar", ["tzf", tarball], { encoding: "utf8" });
+  if (listing.error) throw listing.error;
+  if (listing.status !== 0) {
+    throw new Error(`tar tzf ${tarballName} failed with exit code ${listing.status}`);
+  }
+  const entries = new Set(
+    listing.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  for (const requiredFile of requiredTarballFiles[prefix]) {
+    if (!entries.has(requiredFile)) {
+      throw new Error(`tarball ${tarballName} missing: ${requiredFile}`);
+    }
+  }
+}
+
 // walktest is the isolated consumer application. --no-save and
 // --package-lock=false ensure preparing a candidate never rewrites its manifest
 // or lockfile; imports below resolve only from the installed tarball contents.
@@ -100,8 +149,40 @@ runNpm(
   walktest,
 );
 
-rmSync(publicPackages, { recursive: true, force: true });
 const installedScope = join(walktest, "node_modules", "@autarkis");
+
+// Cross-package exports validation: each installed package's `exports` map
+// must resolve to files that actually exist in the tarball contents, so a
+// stale or misconfigured `exports` field is caught here rather than as a
+// downstream import failure in the consumer app.
+function collectExportTargets(value) {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(collectExportTargets);
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap(collectExportTargets);
+  }
+  return [];
+}
+
+const exportsCheckedAt = new Date().toISOString();
+for (const name of ["chitin-lite", "chitin-web", "chitin-wasm"]) {
+  const packageDir = join(installedScope, name);
+  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
+  if (!manifest.exports) continue;
+  for (const [exportKey, exportValue] of Object.entries(manifest.exports)) {
+    for (const target of collectExportTargets(exportValue)) {
+      const resolvedPath = join(packageDir, target);
+      if (!existsSync(resolvedPath)) {
+        throw new Error(
+          `package @autarkis/${name} export "${exportKey}" points to missing file: ${target}`,
+        );
+      }
+    }
+  }
+}
+const exportsVerified = true;
+
+rmSync(publicPackages, { recursive: true, force: true });
 const installedLite = join(installedScope, "chitin-lite");
 const installedWasm = join(installedScope, "chitin-wasm");
 
@@ -129,7 +210,14 @@ const versions = Object.fromEntries(
 );
 writeFileSync(
   join(publicPackages, "candidate.json"),
-  `${JSON.stringify({ packages: versions }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      packages: versions,
+      compatibility: { exportsVerified, checkedAt: exportsCheckedAt },
+    },
+    null,
+    2,
+  )}\n`,
 );
 
 console.log(`release candidate staged from ${packed.length} tarballs`);

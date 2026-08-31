@@ -309,6 +309,9 @@ jobs:
             integrations/wasm-lite/src/report-schema-constants.ts \
             integrations/wasm-lite/src/shared-constants.ts
 
+      - name: Package metadata consistency
+        run: node scripts/check-package-versions.mjs
+
       - name: PR title is scoped
         if: >-
           github.event_name == 'pull_request' &&

@@ -32,6 +32,7 @@ interface ReleaseCandidateResult {
   reportHash: string | null;
   reportDeterministic: boolean | null;
   reportProblems: string[];
+  exportsResolved: string[];
 }
 
 interface ReleaseCandidateAPI {
@@ -144,6 +145,11 @@ async function run(): Promise<ReleaseCandidateResult> {
     for (let i = 0; i < 240; i++) world.step();
     const fallingBodyY = fallingBody.translation().y;
 
+    const exportsResolved: string[] = [];
+    if (typeof ChitinCompiler === "function") exportsResolved.push("@autarkis/chitin-lite");
+    if (typeof parsePhys === "function") exportsResolved.push("@autarkis/chitin-web");
+    if (typeof addToWorld === "function") exportsResolved.push("@autarkis/chitin-web/rapier");
+
     const result: ReleaseCandidateResult = {
       packages: candidate.packages,
       hashes,
@@ -162,6 +168,7 @@ async function run(): Promise<ReleaseCandidateResult> {
       reportHash: compilationReport.reproducibility.artifact_sha256,
       reportDeterministic: compilationReport.reproducibility.deterministic,
       reportProblems: validateCompilationReport(compilationReport),
+      exportsResolved,
     };
     status.textContent = JSON.stringify(result, null, 2);
     return result;
