@@ -22,9 +22,6 @@ from chitin._metric_names import (
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
-    COLLIDER_VOLUME_PRECISION,
-    FALSE_FILL_FRACTION,
-    DEEP_FALSE_FILL_FRACTION,
 )
 
 _PACKAGED_SCHEMA = importlib.resources.files("chitin").joinpath(
@@ -140,21 +137,18 @@ def _verdict_dict(profile: str | None, verdict) -> dict:
             "reasons": [],
             "checks": [],
         }
-    checks_list = []
-    for check in verdict.checks:
-        entry = {
-            "code": check.name,
-            "status": "pass" if check.passed else "fail",
-            "message": check.detail,
-        }
-        if check.suggestion is not None:
-            entry["suggestion"] = check.suggestion
-        checks_list.append(entry)
     return {
         "profile": verdict.profile,
         "status": "pass" if verdict.passed else "fail",
         "reasons": verdict.reasons,
-        "checks": checks_list,
+        "checks": [
+            {
+                "code": check.name,
+                "status": "pass" if check.passed else "fail",
+                "message": check.detail,
+            }
+            for check in verdict.checks
+        ],
     }
 
 
@@ -305,13 +299,6 @@ def build_compilation_report(
         ),
         WORST_DECILE_SURFACE_COVERAGE: _metric(
             flat_metrics[WORST_DECILE_SURFACE_COVERAGE], "ratio"
-        ),
-        FALSE_FILL_FRACTION: _metric(flat_metrics.get(FALSE_FILL_FRACTION), "ratio"),
-        DEEP_FALSE_FILL_FRACTION: _metric(
-            flat_metrics.get(DEEP_FALSE_FILL_FRACTION), "ratio"
-        ),
-        COLLIDER_VOLUME_PRECISION: _metric(
-            flat_metrics.get(COLLIDER_VOLUME_PRECISION), "ratio"
         ),
         "fallback_hulls": _metric(flat_metrics["fallback_hulls"], "count"),
         "coacd_timeouts": _metric(flat_metrics["coacd_timeouts"], "count"),

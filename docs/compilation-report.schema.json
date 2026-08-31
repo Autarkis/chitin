@@ -41,11 +41,7 @@
             "properties": {
               "code": { "type": "string" },
               "status": { "enum": ["pass", "fail", "not_evaluated"] },
-              "message": { "type": "string" },
-              "suggestion": {
-                "type": "string",
-                "description": "Actionable hint for resolving a failed check"
-              }
+              "message": { "type": "string" }
             }
           }
         }

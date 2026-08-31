@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from chitin.phys import PhysHull, read_phys
+from chitin.phys import read_phys
 from chitin.verify.raycast import ray_hits_any
 
 
@@ -70,17 +70,14 @@ def _cluster_gaps(gap_positions: np.ndarray, capsule_radius: float) -> int:
     return clusters
 
 
-def _probe_pf_hulls(
-    hulls: list[PhysHull],
-    grid_resolution: int,
-    capsule_radius: float,
+def probe(
+    phys_path: str | Path,
+    grid_resolution: int = 64,
+    capsule_radius: float = 0.3,
 ) -> ProbeResult:
-    """Shared ray-casting core for :func:`probe` and :func:`probe_from_hulls`.
+    pf = read_phys(phys_path)
 
-    ``hulls`` must already carry ``aabb_min``/``aabb_max`` (i.e. be
-    :class:`~chitin.phys.PhysHull`, or duck-typed equivalents).
-    """
-    if not hulls:
+    if not pf.hulls:
         return ProbeResult(
             grid_resolution=grid_resolution,
             total_rays=0,
@@ -94,8 +91,8 @@ def _probe_pf_hulls(
             gap_clusters=0,
         )
 
-    all_mins = np.array([h.aabb_min for h in hulls])
-    all_maxs = np.array([h.aabb_max for h in hulls])
+    all_mins = np.array([h.aabb_min for h in pf.hulls])
+    all_maxs = np.array([h.aabb_max for h in pf.hulls])
     scene_min = all_mins.min(axis=0)
     scene_max = all_maxs.max(axis=0)
 
@@ -110,7 +107,7 @@ def _probe_pf_hulls(
     origins = np.stack([ray_x, ray_y, ray_z], axis=1).astype(np.float32)
     direction = np.array([0.0, -1.0, 0.0], dtype=np.float32)
 
-    hits = ray_hits_any(origins, direction, hulls)
+    hits = ray_hits_any(origins, direction, pf.hulls)
 
     hit_count = int(hits.sum())
     miss_count = len(hits) - hit_count
@@ -131,37 +128,3 @@ def _probe_pf_hulls(
         capsule_radius=capsule_radius,
         gap_clusters=gap_clusters,
     )
-
-
-def probe(
-    phys_path: str | Path,
-    grid_resolution: int = 64,
-    capsule_radius: float = 0.3,
-) -> ProbeResult:
-    pf = read_phys(phys_path)
-    return _probe_pf_hulls(pf.hulls, grid_resolution, capsule_radius)
-
-
-def probe_from_hulls(
-    hulls: list,
-    grid_resolution: int = 32,
-    capsule_radius: float = 0.3,
-) -> ProbeResult:
-    """Like :func:`probe` but operates on in-memory hulls instead of a .phys file.
-
-    ``hulls`` are :class:`~chitin.result.Hull` (or any object exposing
-    ``vertices``/``indices``) rather than :class:`~chitin.phys.PhysHull`, so
-    they lack the precomputed ``aabb_min``/``aabb_max`` the ray caster needs;
-    those are derived here from ``vertices`` before casting.
-    """
-    pf_hulls = [
-        PhysHull(
-            vertices=h.vertices,
-            indices=h.indices,
-            aabb_min=h.vertices.min(axis=0),
-            aabb_max=h.vertices.max(axis=0),
-        )
-        for h in hulls
-        if len(h.vertices) > 0
-    ]
-    return _probe_pf_hulls(pf_hulls, grid_resolution, capsule_radius)

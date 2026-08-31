@@ -4,9 +4,6 @@ from chitin._metric_names import (
     HULL_COUNT,
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
-    FALSE_FILL_FRACTION,
-    DEEP_FALSE_FILL_FRACTION,
-    COLLIDER_VOLUME_PRECISION,
 )
 from chitin.acceptance import (
     PROFILES,
@@ -14,7 +11,6 @@ from chitin.acceptance import (
     apply_profile,
     evaluate,
     get_profile,
-    report_metrics,
 )
 from chitin.config import Config
 
@@ -23,15 +19,8 @@ CLEAN = {
     HULL_COUNT: 6,
     SOURCE_SURFACE_COVERAGE: 0.99,
     WORST_COMPONENT_SURFACE_COVERAGE: None,
-    FALSE_FILL_FRACTION: 0.05,
-    DEEP_FALSE_FILL_FRACTION: 0.02,
-    COLLIDER_VOLUME_PRECISION: 0.95,
     "fallback_hulls": 0,
     "coacd_deterministic": True,
-    "probe_coverage": None,
-    "probe_gap_clusters": None,
-    "total_hull_vertices": 1000,
-    "compile_ms": None,
 }
 
 
@@ -126,151 +115,6 @@ def test_verdict_to_dict_shape():
     assert d["passed"] is False
     assert isinstance(d["reasons"], list) and d["reasons"]
     assert all({"check", "passed", "detail"} <= c.keys() for c in d["checks"])
-
-
-# --- volume metrics: false fill -----------------------------------------
-
-
-def test_robotics_rejects_high_false_fill():
-    """A robotics collider with >30% phantom volume is rejected."""
-    policy = get_profile("robotics").policy
-    verdict = evaluate(policy, _with(**{FALSE_FILL_FRACTION: 0.50}))
-    assert not verdict.passed
-    assert any("false_fill" in c.name for c in verdict.checks if not c.passed)
-
-
-def test_robotics_passes_low_false_fill():
-    policy = get_profile("robotics").policy
-    verdict = evaluate(policy, _with(**{FALSE_FILL_FRACTION: 0.15}))
-    assert verdict.passed
-
-
-def test_robotics_rejects_high_deep_false_fill():
-    policy = get_profile("robotics").policy
-    verdict = evaluate(policy, _with(**{DEEP_FALSE_FILL_FRACTION: 0.35}))
-    assert not verdict.passed
-
-
-def test_walkable_rejects_high_false_fill():
-    """Walkable tolerates more but still rejects >50%."""
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(**{FALSE_FILL_FRACTION: 0.60}))
-    assert not verdict.passed
-
-
-def test_walkable_passes_moderate_false_fill():
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(**{FALSE_FILL_FRACTION: 0.40}))
-    assert verdict.passed
-
-
-def test_volume_metrics_none_passes_gate():
-    """When volume metrics are None (unmeasured), gates pass."""
-    policy = get_profile("robotics").policy
-    verdict = evaluate(
-        policy, _with(**{FALSE_FILL_FRACTION: None, DEEP_FALSE_FILL_FRACTION: None})
-    )
-    assert verdict.passed
-
-
-# --- walkable probe -------------------------------------------------------
-
-
-def test_walkable_probe_rejects_low_coverage():
-    """An obstructed walkable fixture with low probe coverage fails."""
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.40, probe_gap_clusters=2))
-    assert not verdict.passed
-    assert any("probe_coverage" in c.name for c in verdict.checks if not c.passed)
-
-
-def test_walkable_probe_rejects_many_gaps():
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.90, probe_gap_clusters=10))
-    assert not verdict.passed
-    assert any("probe_gap_clusters" in c.name for c in verdict.checks if not c.passed)
-
-
-def test_walkable_probe_passes_good_floor():
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.85, probe_gap_clusters=2))
-    assert verdict.passed
-
-
-def test_walkable_probe_absent_passes():
-    """When probe data is absent (non-walkable build), probe checks don't fire."""
-    policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=None, probe_gap_clusters=None))
-    assert verdict.passed
-
-
-# --- suggestions ------------------------------------------------------------
-
-
-def test_failed_check_has_suggestion():
-    """Every failed check carries an actionable suggestion."""
-    policy = get_profile("robotics").policy
-    verdict = evaluate(policy, _with(fallback_hulls=3))
-    failed = [c for c in verdict.checks if not c.passed]
-    assert len(failed) > 0
-    for c in failed:
-        assert c.suggestion is not None
-        assert len(c.suggestion) > 10
-
-
-def test_passing_check_has_no_suggestion():
-    policy = get_profile("robotics").policy
-    verdict = evaluate(policy, _with())
-    for c in verdict.checks:
-        assert c.passed
-        assert c.suggestion is None
-
-
-# --- optional gates: hull vertex count, compile latency ---------------------
-
-
-def test_hull_vertex_count_gate():
-    """Custom policy with max_hull_vertices gates total vertex count."""
-    policy = AcceptancePolicy("test", max_hull_vertices=500)
-    verdict = evaluate(policy, _with(total_hull_vertices=1000))
-    assert not verdict.passed
-    assert any("hull_vertex_count" in c.name for c in verdict.checks if not c.passed)
-
-
-def test_compile_latency_gate():
-    policy = AcceptancePolicy("test", max_compile_ms=5000.0)
-    verdict = evaluate(policy, _with(compile_ms=8000.0))
-    assert not verdict.passed
-    verdict_ok = evaluate(policy, _with(compile_ms=3000.0))
-    assert verdict_ok.passed
-
-
-def test_planar_vs_fallback_visible():
-    """Planar substitutes and failure fallbacks are independently visible in report_metrics."""
-    from chitin.result import ExtractionResult, Hull
-    from chitin.plan import BuildPlan
-    import numpy as np
-
-    plan = BuildPlan(input_kind="mesh")
-    plan.detected["fallback_hulls"] = 2
-    plan.detected["planar_substitute_hulls"] = 3
-    plan.detected["coverage"] = {}
-    plan.detected["coacd_deterministic"] = True
-
-    hull = Hull(
-        vertices=np.zeros((4, 3), dtype=np.float32),
-        indices=np.array([0, 1, 2, 0, 2, 3], dtype=np.int32),
-    )
-    result = ExtractionResult(
-        hulls=[hull],
-        source_vertex_count=100,
-        mesh_vertex_count=100,
-        build_plan=plan,
-    )
-    metrics = report_metrics(result)
-    assert metrics["fallback_hulls"] == 2
-    # planar_substitute_hulls is tracked separately (in processing.fallbacks)
-    # but not in the acceptance metrics -- it's visible in the report.
 
 
 # --- apply_profile: config precedence -----------------------------------
