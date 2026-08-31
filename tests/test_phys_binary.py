@@ -14,7 +14,7 @@ from chitin.phys import (
 from chitin.result import ExtractionResult, Hull
 
 try:
-    from chitin import Config, extract_from_mesh, extract_from_rigged_mesh
+    from chitin import Config, extract_from_mesh
 
     HAS_CORE = True
 except ImportError:
@@ -51,8 +51,8 @@ def test_round_trip_static(box_mesh, tmp_path):
 
 
 @needs_core
-def test_round_trip_rigged(two_bone_rig, tmp_path):
-    result = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_round_trip_rigged(rigged_result, tmp_path):
+    result = rigged_result
     path = tmp_path / "rigged.phys"
     result.to_phys(path)
 
@@ -86,8 +86,8 @@ def test_validate_clean(box_mesh, tmp_path):
 
 
 @needs_core
-def test_validate_rigged_clean(two_bone_rig, tmp_path):
-    result = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_validate_rigged_clean(rigged_result, tmp_path):
+    result = rigged_result
     path = tmp_path / "rigged_clean.phys"
     result.to_phys(path)
 
@@ -189,8 +189,8 @@ def test_header_layout(box_mesh, tmp_path):
 
 
 @needs_core
-def test_rigged_flags_layout(two_bone_rig, tmp_path):
-    result = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_rigged_flags_layout(rigged_result, tmp_path):
+    result = rigged_result
     path = tmp_path / "flags.phys"
     result.to_phys(path)
 

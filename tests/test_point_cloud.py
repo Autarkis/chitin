@@ -627,7 +627,7 @@ def test_covariance_with_lod():
 
 
 @requires_open3d
-def test_spatial_split_triggered():
+def test_spatial_split_records_plan_and_coverage():
     rng = np.random.default_rng(42)
     pts, scales, rots = _sphere_with_covariance(600, rng=rng)
     pts = pts * 5.0
@@ -646,22 +646,6 @@ def test_spatial_split_triggered():
     assert r.build_plan.detected.get("fallback_hulls", 0) == 0
     assert r.build_plan.detected.get("cell_count", 0) > 1
     assert "reconciled_hulls" in r.build_plan.detected
-
-
-@requires_open3d
-def test_spatial_plan_records_stage_deltas_and_coverage():
-    rng = np.random.default_rng(42)
-    pts, scales, rots = _sphere_with_covariance(600, rng=rng)
-    pts = pts * 5.0
-
-    # Same eight cells as the split test above, sized so the decomposition is
-    # real rather than a budget-truncated bounding box.
-    r = extract_from_arrays(
-        pts,
-        scales=scales,
-        rots=rots,
-        config=Config(concavity=0.8, spatial_split_threshold=200),
-    )
     detected = r.build_plan.detected
     for key in (
         "dedup_removed",

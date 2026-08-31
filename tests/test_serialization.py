@@ -3,7 +3,7 @@ import struct
 
 import pytest
 
-from chitin import Config, extract_from_mesh, extract_from_rigged_mesh
+from chitin import Config, extract_from_mesh
 
 
 def test_json_round_trip(box_mesh, tmp_path):
@@ -19,8 +19,8 @@ def test_json_round_trip(box_mesh, tmp_path):
     assert "bones" not in data["meta"]
 
 
-def test_json_rigged(two_bone_rig, tmp_path):
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_json_rigged(rigged_result, tmp_path):
+    r = rigged_result
     out = tmp_path / "rigged.json"
     r.to_json(out)
 
@@ -53,8 +53,8 @@ def test_phys_header(box_mesh, tmp_path):
         assert hull_count == len(r.hulls)
 
 
-def test_phys_rigged_flags(two_bone_rig, tmp_path):
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_phys_rigged_flags(rigged_result, tmp_path):
+    r = rigged_result
     out = tmp_path / "rigged.phys"
     r.to_phys(out)
 
@@ -84,13 +84,13 @@ def test_usd_output(box_mesh, tmp_path):
         assert UsdPhysics.CollisionAPI(m)
 
 
-def test_usd_rigged_bone_xforms(two_bone_rig, tmp_path):
+def test_usd_rigged_bone_xforms(rigged_result, tmp_path):
     try:
         from pxr import Usd, UsdGeom
     except ImportError:
         pytest.skip("usd-core not installed")
 
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+    r = rigged_result
     out = tmp_path / "rigged.usda"
     r.to_usd(out)
 

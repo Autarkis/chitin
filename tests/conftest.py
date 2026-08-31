@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -58,7 +60,7 @@ def sphere_points():
     return (pts / np.linalg.norm(pts, axis=1, keepdims=True)).astype(np.float64)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def two_bone_rig():
     left = trimesh.creation.box(
         extents=[1, 1, 1],
@@ -99,3 +101,35 @@ def two_bone_rig():
         "bone_names": ["left_arm", "right_arm"],
         "inverse_bind_matrices": inverse_bind_matrices,
     }
+
+
+@pytest.fixture(scope="session")
+def _rigged_result_cache(two_bone_rig):
+    from chitin import Config, extract_from_rigged_mesh
+
+    return extract_from_rigged_mesh(
+        **two_bone_rig,
+        config=Config(concavity=0.5),
+    )
+
+
+@pytest.fixture
+def rigged_result(_rigged_result_cache):
+    """Fresh copy of the shared standard rig extraction."""
+    return copy.deepcopy(_rigged_result_cache)
+
+
+@pytest.fixture(scope="session")
+def _rigged_lod_result_cache(two_bone_rig):
+    from chitin import Config, extract_from_rigged_mesh
+
+    return extract_from_rigged_mesh(
+        **two_bone_rig,
+        config=Config(concavity=0.2, lod_concavities=[0.3, 0.7]),
+    )
+
+
+@pytest.fixture
+def rigged_lod_result(_rigged_lod_result_cache):
+    """Fresh copy of the shared rig extraction with LOD tiers."""
+    return copy.deepcopy(_rigged_lod_result_cache)

@@ -5,7 +5,6 @@ from chitin import (
     Config,
     extract_from_arrays,
     extract_from_mesh,
-    extract_from_rigged_mesh,
 )
 
 try:
@@ -59,8 +58,8 @@ def test_point_cloud_normal_estimation_plan(sphere_points):
     assert "normal_estimation" in r.build_plan.pipeline
 
 
-def test_rigged_plan(two_bone_rig):
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+def test_rigged_plan(rigged_result):
+    r = rigged_result
     assert r.build_plan is not None
     assert r.build_plan.collider_kind == "rigged"
     assert "segment_by_bone" in r.build_plan.pipeline
