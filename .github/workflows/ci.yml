@@ -39,7 +39,7 @@ jobs:
             exit 0
           fi
           if git diff --name-only "$BASE"...HEAD | grep -qE \
-            '(^|/)[^/]+\.py$|^(src/|tests/|pyproject\.toml$|docs/(compilation-report\.schema\.json|shared-constants\.json|metric-vocabulary\.json)$|scripts/gen-[^/]+\.mjs$|\.github/workflows/(ci|release-python)\.yml$)'; then
+            '(^|/)[^/]+\.py$|^(src/|tests/|pyproject\.toml$|uv\.lock$|docs/(compilation-report\.schema\.json|shared-constants\.json|metric-vocabulary\.json)$|scripts/gen-[^/]+\.mjs$|\.github/workflows/(ci|release-python)\.yml$)'; then
             echo "python=true" >> "$GITHUB_OUTPUT"
           else
             echo "python=false" >> "$GITHUB_OUTPUT"
@@ -80,24 +80,27 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pyproject.toml
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.19"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --locked --extra dev
 
       - name: Lint
         if: matrix.os == 'ubuntu-latest' && matrix.shard.name == 'core'
-        run: ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: Format check
         if: matrix.os == 'ubuntu-latest' && matrix.shard.name == 'core'
-        run: ruff format --check .
+        run: uv run --no-sync ruff format --check .
 
       - name: Test
-        run: pytest -v --durations=25 ${{ matrix.shard.args }}
+        run: uv run --no-sync pytest -v --durations=25 ${{ matrix.shard.args }}
 
   web:
     runs-on: ubuntu-latest
@@ -148,17 +151,8 @@ jobs:
           cache-dependency-path: |
             integrations/wasm-lite/package-lock.json
             integrations/web/package-lock.json
-
-      - name: Set up Emscripten
-        uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16.0.0
-        with:
-          version: ${{ env.EMSDK_VERSION }}
-          actions-cache-folder: emsdk-cache
-
-      - name: Verify toolchain
-        run: |
-          emcc --version
-          cmake --version
+            integrations/walktest/package-lock.json
+            examples/quickstart/package-lock.json
 
       - name: Restore native WASM modules
         id: native-wasm-cache
@@ -166,6 +160,19 @@ jobs:
         with:
           path: integrations/wasm/dist
           key: native-wasm-${{ runner.os }}-${{ env.EMSDK_VERSION }}-${{ env.COACD_REF }}-${{ hashFiles('integrations/wasm/build.sh', 'integrations/wasm/src/**') }}
+
+      - name: Set up Emscripten
+        if: steps.native-wasm-cache.outputs.cache-hit != 'true'
+        uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16.0.0
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify toolchain
+        if: steps.native-wasm-cache.outputs.cache-hit != 'true'
+        run: |
+          emcc --version
+          cmake --version
 
       - name: Build native WASM modules
         if: steps.native-wasm-cache.outputs.cache-hit != 'true'
@@ -177,12 +184,6 @@ jobs:
       - name: Functional test (native binding under Node)
         working-directory: integrations/wasm
         run: node test/decompose.test.mjs
-
-      - name: Build TS wrappers + end-to-end gate (lite -> wasm -> writePhys -> web)
-        run: |
-          ( cd integrations/wasm-lite && npm ci && npm run build )
-          ( cd integrations/web && npm ci && npm run build )
-          node integrations/wasm/test/wrapper.test.mjs
 
       - name: Size-band gate
         working-directory: integrations/wasm
@@ -199,15 +200,29 @@ jobs:
           test -s dist/poisson.mjs
           test -s dist/poisson.wasm
 
-      - name: Upload build artifact
+      - name: Prepare packed release browser tests
+        working-directory: integrations/walktest
+        run: |
+          npm ci
+          npm run prepare:release-candidate
+          npm run build:release-candidate
+
+      - name: End-to-end wrapper gate (lite -> wasm -> writePhys -> web)
+        run: node integrations/wasm/test/wrapper.test.mjs
+
+      - name: Build Collider Lab
+        working-directory: examples/quickstart
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload browser test artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: chitin-wasm
+          name: chitin-browser-tests
           path: |
-            integrations/wasm/dist/coacd.mjs
-            integrations/wasm/dist/coacd.wasm
-            integrations/wasm/dist/poisson.mjs
-            integrations/wasm/dist/poisson.wasm
+            integrations/walktest/harness/dist
+            examples/quickstart/dist
           if-no-files-found: error
 
   browser-gate:
@@ -237,32 +252,19 @@ jobs:
           node-version: "22.x"
           cache: npm
           cache-dependency-path: |
-            integrations/wasm-lite/package-lock.json
-            integrations/web/package-lock.json
             integrations/walktest/package-lock.json
             examples/quickstart/package-lock.json
 
-      - name: Download native WASM modules
+      - name: Install browser test dependencies
+        run: |
+          ( cd integrations/walktest && npm ci )
+          ( cd examples/quickstart && npm ci )
+
+      - name: Download prepared browser tests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: chitin-wasm
-          path: integrations/wasm/dist
-
-      - name: Install release-candidate browser harness
-        working-directory: integrations/walktest
-        run: npm ci
-
-      - name: Stage packed release candidate
-        working-directory: integrations/walktest
-        run: |
-          npm run prepare:release-candidate
-          npm run build:release-candidate
-
-      - name: Build Collider Lab
-        working-directory: examples/quickstart
-        run: |
-          npm ci
-          npm run build
+          name: chitin-browser-tests
+          path: .
 
       - name: Install browser
         working-directory: integrations/walktest
