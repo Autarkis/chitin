@@ -104,6 +104,14 @@ describe("geometryToMesh", () => {
     });
     expect(() => geometryToMesh(geometry)).toThrow(ChitinError);
   });
+
+  it("throws INVALID_MESH for an out-of-range index", () => {
+    const geometry = mockGeometry({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1, 3],
+    });
+    expect(() => geometryToMesh(geometry)).toThrow(ChitinError);
+  });
 });
 
 describe("collectMeshes", () => {
@@ -163,5 +171,18 @@ describe("collectMeshes", () => {
     const root = mockRoot([nonMesh, mockMesh(geom)]);
     const result = collectMeshes(root);
     expect(result.vertices.length).toBe(9); // only 1 mesh's vertices
+  });
+
+  it("rejects malformed topology before merging meshes", () => {
+    const malformed = mockGeometry({
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+      indices: [0, 1],
+    });
+    const second = mockGeometry({
+      positions: [2, 0, 0, 3, 0, 0, 2, 1, 0],
+      indices: [0],
+    });
+    const root = mockRoot([mockMesh(malformed), mockMesh(second)]);
+    expect(() => collectMeshes(root)).toThrow(ChitinError);
   });
 });

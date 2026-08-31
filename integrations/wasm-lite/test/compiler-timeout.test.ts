@@ -82,6 +82,17 @@ describe("timeout", () => {
     await expect(promise).rejects.toMatchObject({ code: "CANCELLED" });
     compiler.terminate();
   });
+
+  it("preserves CANCELLED when terminate aborts a timed compilation", async () => {
+    const compiler = compilerWith(() => new HoldingWorker());
+    const promise = compiler.compileGlb(makeGlb(), {
+      timeout: 5000,
+      checkManifold: false,
+      componentPolicy: { enabled: false },
+    });
+    compiler.terminate();
+    await expect(promise).rejects.toMatchObject({ code: "CANCELLED" });
+  });
 });
 
 describe("compileMesh", () => {

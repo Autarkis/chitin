@@ -568,8 +568,13 @@ export class ChitinCompiler {
     const merged = mergeSignals(signal, lifecycle.signal);
     const localAbort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
     if (timeout !== undefined && timeout > 0) {
-      timer = setTimeout(() => lifecycle.abort(), timeout);
+      timer = setTimeout(() => {
+        if (merged.signal.aborted) return;
+        timedOut = true;
+        lifecycle.abort();
+      }, timeout);
     }
     const abortLocal = () => localAbort.abort();
     merged.signal.addEventListener("abort", abortLocal, { once: true });
@@ -577,10 +582,9 @@ export class ChitinCompiler {
       return await work(merged.signal, localAbort);
     } catch (err) {
       if (
-        timer !== undefined &&
+        timedOut &&
         err instanceof ChitinError &&
-        err.code === "CANCELLED" &&
-        !signal?.aborted
+        err.code === "CANCELLED"
       ) {
         throw new ChitinError("TIMEOUT", `Compilation timed out after ${timeout}ms`, {
           stage: err.stage,

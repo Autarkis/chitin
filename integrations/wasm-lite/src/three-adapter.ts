@@ -37,7 +37,18 @@ export function geometryToMesh(geometry: BufferGeometry): ExtractedMesh {
     faceCount = index.count / 3;
     faces = new Int32Array(index.count);
     for (let i = 0; i < index.count; i++) {
-      faces[i] = index.getX(i);
+      const vertexIndex = index.getX(i);
+      if (!Number.isInteger(vertexIndex) || vertexIndex < 0 || vertexIndex >= vertexCount) {
+        throw new ChitinError(
+          "INVALID_MESH",
+          `Index ${vertexIndex} at offset ${i} is outside the vertex range [0, ${vertexCount})`,
+          {
+            stage: "parsing-input",
+            suggestion: "Provide geometry whose indices reference existing vertices.",
+          },
+        );
+      }
+      faces[i] = vertexIndex;
     }
   } else {
     if (vertexCount % 3 !== 0) {
@@ -84,14 +95,15 @@ export function collectMeshes(root: Object3D): ExtractedMesh {
     const geometry = mesh.geometry;
     const position = geometry.getAttribute("position");
     if (!position) return;
+    const extracted = geometryToMesh(geometry);
 
     const matrix = mesh.matrixWorld;
-    const vertexCount = position.count;
+    const vertexCount = extracted.vertices.length / 3;
 
     for (let i = 0; i < vertexCount; i++) {
-      let x = position.getX(i);
-      let y = position.getY(i);
-      let z = position.getZ(i);
+      const x = extracted.vertices[i * 3];
+      const y = extracted.vertices[i * 3 + 1];
+      const z = extracted.vertices[i * 3 + 2];
 
       const e = matrix.elements;
       const tx = e[0] * x + e[4] * y + e[8] * z + e[12];
@@ -101,15 +113,8 @@ export function collectMeshes(root: Object3D): ExtractedMesh {
       allVertices.push(tx, ty, tz);
     }
 
-    const index = geometry.getIndex();
-    if (index) {
-      for (let i = 0; i < index.count; i++) {
-        allFaces.push(index.getX(i) + vertexOffset);
-      }
-    } else {
-      for (let i = 0; i < vertexCount; i++) {
-        allFaces.push(i + vertexOffset);
-      }
+    for (const face of extracted.faces) {
+      allFaces.push(face + vertexOffset);
     }
 
     vertexOffset += vertexCount;
