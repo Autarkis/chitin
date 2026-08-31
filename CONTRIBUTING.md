@@ -23,12 +23,18 @@ Chitin is one repo spanning several languages. Know which part you're touching:
 Requires **Python 3.12** (open3d has no 3.13 wheel yet).
 
 ```bash
-python -m pip install -e ".[dev]"   # installs open3d, coacd, trimesh, ruff, pytest, ...
-pre-commit install                  # install the git hook (do this once)
-pytest                              # full suite
-ruff check .                        # lint (the enforced linter)
-ruff format .                       # format
+uv sync --locked --extra dev       # installs the exact CI dependency set
+uv run pre-commit install           # install the git hook (do this once)
+uv run pytest                       # full suite
+uv run ruff check .                 # lint (the enforced linter)
+uv run ruff format .                # format
 ```
+
+CI pins `uv` and restores its content-addressed package cache using `uv.lock`.
+When dependencies change, update and commit the lockfile with `uv lock`; CI uses
+`uv sync --locked --extra dev`, so an out-of-date lockfile fails instead of
+silently resolving a different environment. A pip editable install remains
+supported for development, but it does not reproduce CI's exact resolution.
 
 `pre-commit install` wires `ruff check --fix`, `ruff format`, and a few
 whitespace/YAML hygiene hooks into `git commit`, so the two cheap CI gates fail
@@ -106,20 +112,24 @@ pytest --ignore=tests/test_point_cloud.py  # core shard
 pytest tests/test_point_cloud.py           # Open3D/Poisson shard
 ```
 
-Both shards install the same `.[dev]` environment so a missing optional native
-dependency cannot turn tests into skips. CI reports the slowest tests with
-`--durations=25`; keep real native-path coverage, but do not repeat an identical
-extraction merely to assert another part of its result. Shared expensive test
-results must be copied before each consumer so tests cannot leak mutations.
+Both shards sync the same locked `dev` environment so a missing optional native
+dependency cannot turn tests into skips. The `uv` package cache avoids resolving,
+redownloading, and repeatedly unpacking packages through pip on every disposable
+runner. CI reports the slowest tests with `--durations=25`; keep real native-path
+coverage, but do not repeat an identical extraction merely to assert another part
+of its result. Shared expensive test results must be copied before each consumer
+so tests cannot leak mutations.
 
 The browser gate builds and functionally tests the native CoACD and Poisson WASM
 modules once. An exact cache key covers the Emscripten version, native dependency
-reference, build script, and binding sources. The four generated files are then
-uploaded as one artifact and consumed by separate `chrome`, `firefox`, and
-`safari` Playwright jobs. Those project names map to Playwright's `chromium`,
-`firefox`, and `webkit` browser installers respectively. Each browser job keeps
-one Playwright worker because CoACD is CPU- and memory-intensive; parallelism is
-provided by the job matrix instead.
+reference, build script, and binding sources; a cache hit also skips Emscripten
+setup. The build job packs and validates the release candidate, builds the
+browser harness and Collider Lab once, and uploads those ready-to-test outputs
+as one artifact. Separate `chrome`, `firefox`, and `safari` Playwright jobs only
+install their test dependencies and browser before consuming it. Those project
+names map to Playwright's `chromium`, `firefox`, and `webkit` browser installers
+respectively. Each browser job keeps one Playwright worker because CoACD is CPU-
+and memory-intensive; parallelism is provided by the job matrix instead.
 
 When changing path filters, keep them conservative: a false positive costs a CI
 run, while a false negative can merge untested code. Generated Python contract
