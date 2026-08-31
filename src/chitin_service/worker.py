@@ -12,6 +12,7 @@ from chitin.acceptance import (
     apply_profile,
     evaluate,
     get_profile,
+    record_artifact_checks,
     report_metrics,
 )
 from chitin.manifest import MANIFEST_FILENAME, write_manifest
@@ -41,6 +42,7 @@ def run_job(store: Store, job: Job) -> Job:
         profile = get_profile(job.profile)
         config = apply_profile(job.config.to_core_config(), profile)
         result = chitin.extract(input_path, config=config)
+        record_artifact_checks(result, profile.policy)
 
         job.transition(JobStatus.EXPORTING)
         store.update_job(job)

@@ -68,11 +68,14 @@ def test_rigged_lod_tiers_are_populated(rigged_lod_result):
         assert all(h.bone_name in {"left_arm", "right_arm"} for h in tier.hulls)
 
 
-def test_rigged_build_reports_coverage(rigged_result):
+def test_rigged_build_reports_coverage(two_bone_rig):
     # The rigged path recorded no coverage at all, so `source_surface_coverage`
     # came back None and every strict profile rejected rigged assets outright.
     # The measurement is taken bind-posed, against the model-space input.
-    r = rigged_result
+    r = extract_from_rigged_mesh(
+        **two_bone_rig,
+        config=Config(concavity=0.5, snug_fit=True),
+    )
     coverage = r.build_plan.detected.get("coverage")
     assert coverage is not None
     assert coverage[SOURCE_SURFACE_COVERAGE] > 0.9

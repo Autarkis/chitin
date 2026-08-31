@@ -18,11 +18,23 @@ from typing import Any
 
 from chitin import provenance
 from chitin._metric_names import (
+    CLEARANCE_BLOCKED_FRACTION,
     COLLIDER_VOLUME_PRECISION,
     DEEP_FALSE_FILL_FRACTION,
+    FALLBACK_RATIO,
     FALSE_FILL_FRACTION,
     HULL_COUNT,
+    HULL_TRIANGLE_COUNT,
+    HULL_VERTEX_COUNT,
+    PLANAR_SUBSTITUTE_HULLS,
+    PROBE_COVERAGE,
+    PROBE_GAP_CLUSTERS,
+    RADIUS_BLOCKED_FRACTION,
+    SEAM_SNAG_COUNT,
+    SNUG_FIT_STATUS,
     SOURCE_SURFACE_COVERAGE,
+    STANDABLE_FRACTION,
+    SWEEP_TRAVERSABILITY,
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
 )
@@ -313,6 +325,24 @@ def build_compilation_report(
         COLLIDER_VOLUME_PRECISION: _metric(
             flat_metrics.get(COLLIDER_VOLUME_PRECISION), "ratio"
         ),
+        FALLBACK_RATIO: _metric(flat_metrics.get(FALLBACK_RATIO), "ratio"),
+        PLANAR_SUBSTITUTE_HULLS: _metric(
+            flat_metrics.get(PLANAR_SUBSTITUTE_HULLS), "count"
+        ),
+        HULL_VERTEX_COUNT: _metric(flat_metrics.get(HULL_VERTEX_COUNT), "count"),
+        HULL_TRIANGLE_COUNT: _metric(flat_metrics.get(HULL_TRIANGLE_COUNT), "count"),
+        PROBE_COVERAGE: _metric(flat_metrics.get(PROBE_COVERAGE), "ratio"),
+        PROBE_GAP_CLUSTERS: _metric(flat_metrics.get(PROBE_GAP_CLUSTERS), "count"),
+        SWEEP_TRAVERSABILITY: _metric(flat_metrics.get(SWEEP_TRAVERSABILITY), "ratio"),
+        STANDABLE_FRACTION: _metric(flat_metrics.get(STANDABLE_FRACTION), "ratio"),
+        CLEARANCE_BLOCKED_FRACTION: _metric(
+            flat_metrics.get(CLEARANCE_BLOCKED_FRACTION), "ratio"
+        ),
+        RADIUS_BLOCKED_FRACTION: _metric(
+            flat_metrics.get(RADIUS_BLOCKED_FRACTION), "ratio"
+        ),
+        SEAM_SNAG_COUNT: _metric(flat_metrics.get(SEAM_SNAG_COUNT), "count"),
+        SNUG_FIT_STATUS: _metric(flat_metrics.get(SNUG_FIT_STATUS), "status"),
         "fallback_hulls": _metric(flat_metrics["fallback_hulls"], "count"),
         "coacd_timeouts": _metric(flat_metrics["coacd_timeouts"], "count"),
         "coacd_deterministic": _metric(
