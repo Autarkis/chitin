@@ -91,6 +91,8 @@ export interface CompileGlbOptions {
   /** Opt-in sampled artifact-fit measurements. Disabled by default because they add verification work. */
   quality?: boolean | ColliderQualityOptions;
   onProgress?: (progress: CompilationProgress) => void;
+  /** Abort the compilation if it has not finished within this many milliseconds. */
+  timeout?: number;
 }
 
 export interface CompileGlbResult {
@@ -353,7 +355,42 @@ export class ChitinCompiler {
       timings.prepare = elapsed(started);
 
       return this.compileMeshInternal(prepared, mergedCompileOptions, emit, timings, started, localAbort);
-    });
+    }, options.timeout);
+  }
+
+  async compileMesh(
+    vertices: Float64Array,
+    faces: Int32Array,
+    options: CompileGlbOptions = {},
+  ): Promise<CompileGlbResult> {
+    const started = now();
+    const timings: Record<string, number> = {};
+    const emit: EmitFn = (stage, message, stageStarted = started, detail = {}) => {
+      options.onProgress?.({ stage, message, elapsed_ms: elapsed(stageStarted), ...detail });
+    };
+
+    return this.runCompilation(options.signal, async (mergedSignal, localAbort) => {
+      const mergedOptions = { ...options, signal: mergedSignal };
+      emit("parsing-input", "Preparing triangle mesh", started);
+      const processed = canonicalizeMesh(vertices, faces);
+      const components = splitMeshComponents(processed.vertices, processed.faces);
+      const summary: CompileGlbResult["source"] = {
+        mesh_count: 1,
+        primitive_count: 1,
+        node_count: 1,
+        vertex_count: vertices.length / 3,
+        triangle_count: faces.length / 3,
+      };
+      const prepared: PreparedGeometry = {
+        source: null,
+        summary,
+        processed,
+        components,
+        componentCache: new ComponentResultCache(),
+      };
+      timings.parse_input = elapsed(started);
+      return this.compileMeshInternal(prepared, mergedOptions, emit, timings, started, localAbort);
+    }, options.timeout);
   }
 
   private async readAndParseGlb(
@@ -516,6 +553,7 @@ export class ChitinCompiler {
   private async runCompilation<T>(
     signal: AbortSignal | undefined,
     work: (mergedSignal: AbortSignal, localAbort: AbortController) => Promise<T>,
+    timeout?: number,
   ): Promise<T> {
     if (this.active) {
       throw new ChitinError("COMPILER_BUSY", "A compilation is already in progress.", {
@@ -529,11 +567,30 @@ export class ChitinCompiler {
     this.activeAbort = lifecycle;
     const merged = mergeSignals(signal, lifecycle.signal);
     const localAbort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeout !== undefined && timeout > 0) {
+      timer = setTimeout(() => lifecycle.abort(), timeout);
+    }
     const abortLocal = () => localAbort.abort();
     merged.signal.addEventListener("abort", abortLocal, { once: true });
     try {
       return await work(merged.signal, localAbort);
+    } catch (err) {
+      if (
+        timer !== undefined &&
+        err instanceof ChitinError &&
+        err.code === "CANCELLED" &&
+        !signal?.aborted
+      ) {
+        throw new ChitinError("TIMEOUT", `Compilation timed out after ${timeout}ms`, {
+          stage: err.stage,
+          suggestion: "Increase the timeout or simplify the input geometry.",
+          retryable: true,
+        });
+      }
+      throw err;
     } finally {
+      if (timer !== undefined) clearTimeout(timer);
       merged.signal.removeEventListener("abort", abortLocal);
       merged.cleanup();
       this.active = false;
@@ -640,7 +697,7 @@ export class ChitinCompiler {
       const mergedOptions = { ...options, signal: mergedSignal };
       const { prepared, cachedBlob } = await this.readAndParseGlb(input, mergedOptions, emit, timings);
       return this.compileMeshInternal(prepared, mergedOptions, emit, timings, started, localAbort, cachedBlob);
-    });
+    }, options.timeout);
   }
 
   /** Release the worker and cancel any in-flight compilation. */
@@ -667,6 +724,19 @@ export async function compileGaussianField(
   const compiler = new ChitinCompiler(options);
   try {
     return await compiler.compileGaussianField(input, options);
+  } finally {
+    compiler.terminate();
+  }
+}
+
+export async function compileMesh(
+  vertices: Float64Array,
+  faces: Int32Array,
+  options: OneShotCompileGlbOptions,
+): Promise<CompileGlbResult> {
+  const compiler = new ChitinCompiler(options);
+  try {
+    return await compiler.compileMesh(vertices, faces, options);
   } finally {
     compiler.terminate();
   }

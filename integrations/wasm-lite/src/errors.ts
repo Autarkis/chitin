@@ -10,6 +10,7 @@ export type ChitinErrorCode =
   | "NON_MANIFOLD" // input mesh is open, non-manifold, or degenerate
   | "OUT_OF_MEMORY" // the WASM heap could not grow during decomposition
   | "CANCELLED" // aborted by the caller; the worker was terminated
+  | "TIMEOUT" // the compilation exceeded the caller-supplied timeout
   | "WORKER_ERROR"; // the worker failed unexpectedly (load or runtime fault)
 
 export interface ChitinErrorOptions {

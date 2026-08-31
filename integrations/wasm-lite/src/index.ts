@@ -42,7 +42,7 @@ export { ChitinError } from "./errors.js";
 export type { ChitinErrorCode, ChitinErrorOptions } from "./errors.js";
 export { parseGlb } from "./glb.js";
 export type { ParsedGlbMesh } from "./glb.js";
-export { ChitinCompiler, compileGlb, compileGaussianField } from "./compiler.js";
+export { ChitinCompiler, compileGlb, compileGaussianField, compileMesh } from "./compiler.js";
 export type {
   ChitinCompilerOptions,
   CompileGaussianFieldOptions,
