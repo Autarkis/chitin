@@ -10,6 +10,7 @@ import coacdWasmUrl from "@autarkis/chitin-wasm/coacd.wasm?url";
 
 import type { ChitinDemoApi } from "./demo-api";
 import { NullPreviewController, PreviewController, type PreviewApi } from "./preview-controller";
+import { SimulationController } from "./simulation-controller";
 import {
   appliedThresholdCopy,
   hasQualityDiagnostics,
@@ -79,6 +80,10 @@ const showSource = $("#show-source") as HTMLInputElement;
 const showColliders = $("#show-colliders") as HTMLInputElement;
 const explodeColliders = $("#explode-colliders") as HTMLInputElement;
 const explodeDistance = $("#explode-distance") as HTMLInputElement;
+const simulateButton = $("#simulate-button") as HTMLButtonElement;
+const simulateStatus = $("#simulate-status") as HTMLParagraphElement;
+const showSimulation = $("#show-simulation") as HTMLInputElement;
+const profileSelector = $("#profile-selector");
 
 let previewController: PreviewApi;
 let previewAvailable = true;
@@ -90,12 +95,15 @@ try {
     showColliders,
     explodeColliders,
     explodeDistance,
+    onTick: (time) => simulationController.tick(time),
   });
 } catch {
   previewController = new NullPreviewController();
   canvas.hidden = true;
   previewAvailable = false;
 }
+
+const simulationController = new SimulationController();
 
 const compiler = new ChitinCompiler({
   wasm: {
@@ -133,6 +141,7 @@ let activeCompile: Promise<void> | null = null;
 let requestNumber = 0;
 let downloadUrl: string | null = null;
 let thresholdTimer: number | null = null;
+let simulationRequest = 0;
 
 function phaseArtifact(): AppliedArtifact | null {
   if (phase.kind === "ready" || phase.kind === "quality-failed") return phase;
@@ -300,6 +309,7 @@ function updatePresetState(): void {
 }
 
 function resetOutput(): void {
+  simulationRequest++;
   errorCard.hidden = true;
   if (phase.kind === "failed" && phase.error.code === "NON_MANIFOLD") showColliders.checked = true;
   retryButton.textContent = "Try again";
@@ -311,6 +321,13 @@ function resetOutput(): void {
   if (downloadUrl) URL.revokeObjectURL(downloadUrl);
   downloadUrl = null;
   previewController.clearColliders();
+  simulationController.stop();
+  previewController.setSimulationActive(false);
+  simulateButton.textContent = "Test in Rapier";
+  simulateButton.disabled = !previewAvailable;
+  simulateStatus.hidden = true;
+  showSimulation.checked = false;
+  showSimulation.disabled = true;
 }
 
 function showError(error: unknown): void {
@@ -686,6 +703,45 @@ reportButton.addEventListener("click", () => {
   reportButton.setAttribute("aria-expanded", String(opening));
   reportButton.textContent = opening ? "Hide report" : "View report";
 });
+simulateButton.addEventListener("click", async () => {
+  const artifact = phaseArtifact();
+  const scene = previewController.getScene();
+  if (!artifact || !scene) return;
+  const ownRequest = ++simulationRequest;
+  simulateButton.disabled = true;
+  simulateButton.textContent = "Initializing Rapier…";
+  simulateStatus.hidden = false;
+  simulateStatus.textContent = "Loading physics engine";
+  try {
+    await simulationController.start(artifact.result.phys, scene);
+    if (ownRequest !== simulationRequest || phaseArtifact() !== artifact) {
+      simulationController.stop();
+      return;
+    }
+    previewController.setSimulationActive(true);
+    simulateButton.textContent = "Restart simulation";
+    simulateButton.disabled = false;
+    simulateStatus.textContent = "Sphere dropped — watch the viewport";
+    showSimulation.checked = true;
+    showSimulation.disabled = false;
+  } catch (error) {
+    if (ownRequest !== simulationRequest) return;
+    simulateButton.textContent = "Test in Rapier";
+    simulateButton.disabled = false;
+    simulateStatus.textContent = `Simulation failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+});
+showSimulation.addEventListener("change", () => {
+  const group = previewController.getScene()?.getObjectByName("simulation_objects");
+  if (group) group.visible = showSimulation.checked;
+});
+profileSelector.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-profile]");
+  if (!button || button.disabled) return;
+  for (const btn of profileSelector.querySelectorAll<HTMLButtonElement>("button[data-profile]")) {
+    btn.setAttribute("aria-pressed", String(btn === button));
+  }
+});
 
 let dragDepth = 0;
 window.addEventListener("dragenter", (event) => {
@@ -711,6 +767,7 @@ window.addEventListener("pagehide", (event) => {
   if (phase.kind === "compiling") phase.controller.abort();
   compiler.terminate();
   previewController.dispose();
+  simulationController.dispose();
   if (downloadUrl) URL.revokeObjectURL(downloadUrl);
 });
 
@@ -737,6 +794,8 @@ window.__chitinDemo = {
       appliedThreshold: artifact?.threshold ?? null,
       qualityMeasured: result ? hasQualityDiagnostics(result) : false,
       reusedComponents: result?.reuse.component_results ?? 0,
+      simulationActive: simulationController.isRunning(),
+      simulationHeight: simulationController.height(),
     };
   },
 };

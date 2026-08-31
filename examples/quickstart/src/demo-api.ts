@@ -8,6 +8,8 @@ export interface ChitinDemoState extends PreviewState {
   appliedThreshold: number | null;
   qualityMeasured: boolean;
   reusedComponents: number;
+  simulationActive: boolean;
+  simulationHeight: number | null;
 }
 
 export interface ChitinDemoApi {

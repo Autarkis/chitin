@@ -543,3 +543,72 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .sample-grid { grid-template-columns: 1fr; }
   .sample-grid button { min-height: 48px; }
 }
+
+/* Profile selector */
+.profile-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.profile-selector button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #303630;
+  border-radius: 10px;
+  background: #141814;
+  color: #858d85;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, transform 0.1s;
+}
+
+.profile-selector button strong {
+  color: #d7dbd4;
+  font-size: 13px;
+}
+
+.profile-selector button small {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.profile-selector button:hover:not(:disabled) {
+  border-color: #505850;
+  color: #b4bdb4;
+}
+
+.profile-selector button[aria-pressed="true"] {
+  border-color: #d7ff43;
+  color: #d7ff43;
+  background: rgba(215, 255, 67, 0.06);
+}
+
+.profile-selector button[aria-pressed="true"] strong {
+  color: #d7ff43;
+}
+
+.profile-selector button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.profile-selector button:disabled:hover {
+  border-color: #303630;
+  color: #858d85;
+  transform: none;
+}
+
+/* Simulation */
+.simulate-button {
+  margin-top: 8px;
+}
+
+#simulate-status {
+  margin-top: 4px;
+  text-align: center;
+}

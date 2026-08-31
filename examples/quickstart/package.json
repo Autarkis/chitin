@@ -16,7 +16,8 @@
     "@autarkis/chitin-wasm": "file:../../integrations/chitin-wasm",
     "@autarkis/chitin-lite": "file:../../integrations/wasm-lite",
     "@autarkis/chitin-web": "file:../../integrations/web",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "@dimforge/rapier3d-compat": "^0.20.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

@@ -312,6 +312,58 @@ test("coarse requests expose the hollow-shell guard instead of silently filling 
   await expect(page.locator("#report-output")).toContainText('"hollow_shell_threshold": 0.05');
 });
 
+test("profile selector identifies the browser profile and full-compiler profiles", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+
+  const interactive = page.locator('[data-profile="interactive"]');
+  const walkable = page.locator('[data-profile="walkable"]');
+  const robotics = page.locator('[data-profile="robotics"]');
+
+  await expect(interactive).toHaveAttribute("aria-pressed", "true");
+  await expect(interactive).toBeEnabled();
+  await expect(walkable).toBeDisabled();
+  await expect(robotics).toBeDisabled();
+  await expect(walkable).toHaveAttribute("title", "Full compiler only — unavailable in this browser demo");
+  await expect(robotics).toHaveAttribute("title", "Full compiler only — unavailable in this browser demo");
+});
+
+test("rapier simulation runs after compilation", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    let frameTime = 0;
+    window.requestAnimationFrame = (callback) => window.setTimeout(() => callback(frameTime += 8), 8);
+    window.cancelAnimationFrame = (handle) => window.clearTimeout(handle);
+  });
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+
+  const simButton = page.locator("#simulate-button");
+  await expect(simButton).toBeVisible();
+  await simButton.click();
+
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationActive,
+    { timeout: 30_000 },
+  ).toBe(true);
+
+  const initialHeight = (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight;
+  expect(initialHeight).not.toBeNull();
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight ?? Infinity,
+  ).toBeLessThan(initialHeight! - 0.001);
+
+  await expect(page.locator("#show-simulation")).toBeChecked();
+  await expect(page.locator("#simulate-status")).toContainText("Sphere dropped");
+  await expect(simButton).toHaveText("Restart simulation");
+
+  expect(errors).toEqual([]);
+});
+
 declare global {
   interface Window {
     __chitinDemo: ChitinDemoApi;

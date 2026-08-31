@@ -22,6 +22,7 @@ export type PreviewState = {
   colliderRevealCount: number;
   exploded: boolean;
   explosionAmount: number;
+  simulationActive: boolean;
 };
 
 export interface PreviewApi {
@@ -31,6 +32,8 @@ export interface PreviewApi {
   clearColliders(): void;
   updateLayers(): void;
   updateExplosionControls(): void;
+  getScene(): THREE.Scene | null;
+  setSimulationActive(active: boolean): void;
   state(): PreviewState;
   dispose(): void;
 }
@@ -42,6 +45,7 @@ type PreviewControls = {
   showColliders: HTMLInputElement;
   explodeColliders: HTMLInputElement;
   explodeDistance: HTMLInputElement;
+  onTick?: (time: number) => void;
 };
 
 function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
@@ -80,6 +84,7 @@ export class PreviewController implements PreviewApi {
   private readonly showColliders: HTMLInputElement;
   private readonly explodeColliders: HTMLInputElement;
   private readonly explodeDistance: HTMLInputElement;
+  private readonly onTick?: (time: number) => void;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(42, 1, 0.01, 10_000);
@@ -96,11 +101,13 @@ export class PreviewController implements PreviewApi {
   private colliderRevealCount = 0;
   private animationFrame: number | null = null;
   private disposed = false;
+  private simulationActive = false;
   private readonly animate = (time: number): void => {
     if (this.disposed) return;
     this.controls.update();
     this.updateColliderReveal(time);
     this.updateColliderExplosion();
+    this.onTick?.(time);
     this.renderer.render(this.scene, this.camera);
     this.animationFrame = requestAnimationFrame(this.animate);
   };
@@ -112,12 +119,14 @@ export class PreviewController implements PreviewApi {
     showColliders,
     explodeColliders,
     explodeDistance,
+    onTick,
   }: PreviewControls) {
     this.viewportPanel = viewportPanel;
     this.showSource = showSource;
     this.showColliders = showColliders;
     this.explodeColliders = explodeColliders;
     this.explodeDistance = explodeDistance;
+    this.onTick = onTick;
 
     this.renderer = createRenderer(canvas);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -157,6 +166,14 @@ export class PreviewController implements PreviewApi {
 
   hasSource(): boolean {
     return this.sourceRoot.children.length > 0;
+  }
+
+  getScene(): THREE.Scene {
+    return this.scene;
+  }
+
+  setSimulationActive(active: boolean): void {
+    this.simulationActive = active;
   }
 
   async showSourcePreview(file: File): Promise<void> {
@@ -350,6 +367,7 @@ export class PreviewController implements PreviewApi {
       colliderRevealCount: this.colliderRevealCount,
       exploded: this.colliderExplosionCurrent > 0.001,
       explosionAmount: this.colliderExplosionCurrent,
+      simulationActive: this.simulationActive,
     };
   }
 
@@ -466,6 +484,12 @@ export class NullPreviewController implements PreviewApi {
 
   updateExplosionControls(): void {}
 
+  getScene(): null {
+    return null;
+  }
+
+  setSimulationActive(): void {}
+
   state(): PreviewState {
     return {
       sourceVisible: false,
@@ -476,6 +500,7 @@ export class NullPreviewController implements PreviewApi {
       colliderRevealCount: 0,
       exploded: false,
       explosionAmount: 0,
+      simulationActive: false,
     };
   }
 
