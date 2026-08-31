@@ -320,6 +320,14 @@ def extract_from_mesh(
         vertices, faces, len(vertices), _resolved, _plan=_plan
     )
 
+    if _resolved.snug_fit:
+        from chitin.stages.snugfit import refine_hulls
+
+        result.hulls, snug_stats = refine_hulls(result.hulls, vertices)
+        _plan.detected.update(snug_stats)
+        if snug_stats:
+            _plan.step("snugfit")
+
     from chitin.verify.coverage import coverage_report
 
     _plan.step("coverage")
@@ -401,6 +409,11 @@ def extract_from_rigged_mesh(
     lod_by_concavity: dict[float, list[Hull]] = {}
     total_mesh_verts = 0
     bones_skipped = 0
+    snug_totals = {
+        "snugfit_refined": 0,
+        "snugfit_rejected": 0,
+        "snugfit_skipped": 0,
+    }
     for bone_idx, (seg_verts, seg_faces) in segments.items():
         if len(seg_verts) < _resolved.min_hull_vertices:
             bones_skipped += 1
@@ -428,6 +441,12 @@ def extract_from_rigged_mesh(
             _resolved,
             _plan=bone_plan,
         )
+        if _resolved.snug_fit:
+            from chitin.stages.snugfit import refine_hulls
+
+            result.hulls, snug_stats = refine_hulls(result.hulls, seg_verts)
+            for key in snug_totals:
+                snug_totals[key] += int(snug_stats.get(key, 0))
         _plan.merge_signals(bone_plan.child_signals())
         for hull in result.hulls:
             hull.bone_name = name
@@ -444,6 +463,9 @@ def extract_from_rigged_mesh(
                 bucket.append(hull)
 
     _plan.step("per_bone_decompose")
+    if _resolved.snug_fit and any(snug_totals.values()):
+        _plan.detected.update(snug_totals)
+        _plan.step("snugfit")
     _plan.detected["bones_skipped"] = bones_skipped
     _plan.processed_vertices = total_mesh_verts
 

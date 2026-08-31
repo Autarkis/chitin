@@ -66,6 +66,13 @@ directly as `result.report`.
   and per-component tolerances. Component metrics retain hull ownership and
   geometry/planning diagnostics. These are measured estimates;
   enabling them does not change `verdict.status` from `not_evaluated`.
+- Python walkable-profile reports include downward-probe coverage and gap
+  clusters plus capsule-sweep traversability, standable fraction,
+  clearance-blocked fraction, radius-blocked fraction, and seam-snag count.
+  Missing required probe or sweep measurements fail the strict verdict.
+- Python reports expose decomposition-failure fallback ratio separately from
+  intentional planar-substitute count, along with aggregate hull vertex and
+  triangle counts used by configurable complexity budgets.
 
 ## Compatibility
 

@@ -18,11 +18,23 @@ from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 from chitin._metric_names import (
+    CLEARANCE_BLOCKED_FRACTION,
     COLLIDER_VOLUME_PRECISION,
     DEEP_FALSE_FILL_FRACTION,
+    FALLBACK_RATIO,
     FALSE_FILL_FRACTION,
     HULL_COUNT,
+    HULL_TRIANGLE_COUNT,
+    HULL_VERTEX_COUNT,
+    PLANAR_SUBSTITUTE_HULLS,
+    PROBE_COVERAGE,
+    PROBE_GAP_CLUSTERS,
+    RADIUS_BLOCKED_FRACTION,
+    SEAM_SNAG_COUNT,
+    SNUG_FIT_STATUS,
     SOURCE_SURFACE_COVERAGE,
+    STANDABLE_FRACTION,
+    SWEEP_TRAVERSABILITY,
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
 )
@@ -44,16 +56,24 @@ class AcceptancePolicy:
     require_hulls: bool = False
     allow_fallback_hulls: bool = True
     require_deterministic: bool = False
+    require_snug_fit: bool = False
     min_covered_fraction: float | None = None
     min_worst_cell_fraction: float | None = None
     max_false_fill_fraction: float | None = None
     max_deep_false_fill_fraction: float | None = None
+    max_fallback_ratio: float | None = None
     require_walkable_probe: bool = False
     min_probe_coverage: float | None = None
     max_probe_gap_clusters: int | None = None
+    require_walkable_sweep: bool = False
+    min_sweep_traversability: float | None = None
+    min_standable_fraction: float | None = None
+    max_clearance_blocked_fraction: float | None = None
     max_compile_ms: float | None = None
     max_output_bytes: int | None = None
+    max_hull_count: int | None = None
     max_hull_vertices: int | None = None
+    max_hull_triangles: int | None = None
 
 
 @dataclass(frozen=True)
@@ -124,11 +144,16 @@ PROFILES: dict[str, Profile] = {
             mode="strict",
             require_hulls=True,
             allow_fallback_hulls=True,
+            max_fallback_ratio=0.25,
             min_covered_fraction=0.85,
             max_false_fill_fraction=0.50,
             require_walkable_probe=True,
             min_probe_coverage=0.70,
             max_probe_gap_clusters=5,
+            require_walkable_sweep=True,
+            min_sweep_traversability=0.80,
+            min_standable_fraction=0.70,
+            max_clearance_blocked_fraction=0.20,
         ),
     ),
     # Robotics colliders: bounded decomposition and snug fit. Concavity 0.01
@@ -147,10 +172,14 @@ PROFILES: dict[str, Profile] = {
             require_hulls=True,
             allow_fallback_hulls=False,
             require_deterministic=True,
+            require_snug_fit=True,
             min_covered_fraction=0.90,
             min_worst_cell_fraction=0.70,
             max_false_fill_fraction=0.30,
             max_deep_false_fill_fraction=0.20,
+            max_hull_count=2048,
+            max_hull_vertices=131_072,
+            max_hull_triangles=262_144,
         ),
     ),
 }
@@ -200,14 +229,84 @@ def apply_profile(
     return replace(config, **overrides) if overrides else config
 
 
+def record_artifact_checks(result, policy: AcceptancePolicy) -> None:
+    """Run the in-memory artifact checks required by ``policy``.
+
+    Results are stored on the build plan so the verdict, canonical report, and
+    provenance manifest all consume the same measurements. Required checks are
+    deliberately left absent when there is no plan or no hull artifact; strict
+    evaluation then reports that missing processing as a failed check.
+    """
+    plan = result.build_plan
+    if plan is None or not result.hulls:
+        return
+
+    if policy.require_walkable_probe:
+        from chitin.verify.probe import probe_from_hulls
+
+        probe = probe_from_hulls(result.hulls, grid_resolution=32)
+        plan.detected["probe"] = {
+            "coverage": probe.coverage,
+            "gap_clusters": probe.gap_clusters,
+            "hits": probe.hits,
+            "misses": probe.misses,
+            "total_rays": probe.total_rays,
+            "confidence": probe.confidence,
+        }
+
+    if policy.require_walkable_sweep:
+        from chitin.verify.sweep import sweep_hulls
+
+        sweep = sweep_hulls(result.hulls, grid_resolution=32)
+        denominator = sweep.ground_cells
+        plan.detected["sweep"] = {
+            "traversability": sweep.traversability,
+            "standable_fraction": (
+                sweep.standable_cells / denominator if denominator else 0.0
+            ),
+            "clearance_blocked_fraction": (
+                sweep.clearance_blocked / denominator if denominator else 0.0
+            ),
+            "radius_blocked_fraction": (
+                sweep.radius_blocked / denominator if denominator else 0.0
+            ),
+            "ground_cells": sweep.ground_cells,
+            "standable_cells": sweep.standable_cells,
+            "clearance_blocked": sweep.clearance_blocked,
+            "radius_blocked": sweep.radius_blocked,
+            "connected_components": sweep.connected_components,
+            "largest_component": sweep.largest_component,
+            "seam_snags": sweep.seam_snags,
+            "capsule_radius": sweep.capsule_radius,
+            "capsule_height": sweep.capsule_height,
+            "step_height": sweep.step_height,
+        }
+
+
 def report_metrics(result) -> dict:
     """Flatten the quality signals :func:`evaluate` reads out of a result."""
     plan = result.build_plan
     detected = plan.detected if plan is not None else {}
     coverage = detected.get("coverage") or {}
     probe = detected.get("probe") or {}
+    sweep = detected.get("sweep") or {}
+    hull_count = len(result.hulls)
+    fallback_hulls = int(detected.get("fallback_hulls", 0))
+    snug_fit_requested = getattr(result.resolved, "snug_fit", None)
+    snug_fit_stats_present = any(
+        key in detected
+        for key in ("snugfit_refined", "snugfit_rejected", "snugfit_skipped")
+    )
+    if snug_fit_requested is False:
+        snug_fit_status = "not_requested"
+    elif snug_fit_stats_present:
+        snug_fit_status = "applied"
+    elif snug_fit_requested is True:
+        snug_fit_status = "skipped"
+    else:
+        snug_fit_status = "unknown"
     return {
-        HULL_COUNT: len(result.hulls),
+        HULL_COUNT: hull_count,
         SOURCE_SURFACE_COVERAGE: coverage.get(SOURCE_SURFACE_COVERAGE),
         WORST_COMPONENT_SURFACE_COVERAGE: coverage.get(
             WORST_COMPONENT_SURFACE_COVERAGE
@@ -216,12 +315,25 @@ def report_metrics(result) -> dict:
         FALSE_FILL_FRACTION: coverage.get(FALSE_FILL_FRACTION),
         DEEP_FALSE_FILL_FRACTION: coverage.get(DEEP_FALSE_FILL_FRACTION),
         COLLIDER_VOLUME_PRECISION: coverage.get(COLLIDER_VOLUME_PRECISION),
-        "fallback_hulls": int(detected.get("fallback_hulls", 0)),
+        "fallback_hulls": fallback_hulls,
+        FALLBACK_RATIO: fallback_hulls / hull_count if hull_count else 0.0,
+        PLANAR_SUBSTITUTE_HULLS: int(detected.get("planar_substitute_hulls", 0)),
         "coacd_timeouts": int(detected.get("coacd_timeouts", 0)),
         "coacd_deterministic": detected.get("coacd_deterministic"),
-        "probe_coverage": probe.get("coverage") if probe else None,
-        "probe_gap_clusters": probe.get("gap_clusters") if probe else None,
-        "total_hull_vertices": sum(len(h.vertices) for h in result.hulls),
+        SNUG_FIT_STATUS: snug_fit_status,
+        PROBE_COVERAGE: probe.get("coverage") if probe else None,
+        PROBE_GAP_CLUSTERS: probe.get("gap_clusters") if probe else None,
+        SWEEP_TRAVERSABILITY: sweep.get("traversability") if sweep else None,
+        STANDABLE_FRACTION: sweep.get("standable_fraction") if sweep else None,
+        CLEARANCE_BLOCKED_FRACTION: (
+            sweep.get("clearance_blocked_fraction") if sweep else None
+        ),
+        RADIUS_BLOCKED_FRACTION: (
+            sweep.get("radius_blocked_fraction") if sweep else None
+        ),
+        SEAM_SNAG_COUNT: len(sweep.get("seam_snags", ())) if sweep else None,
+        HULL_VERTEX_COUNT: sum(len(h.vertices) for h in result.hulls),
+        HULL_TRIANGLE_COUNT: sum(len(h.indices) // 3 for h in result.hulls),
     }
 
 
@@ -267,6 +379,24 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
             )
         )
 
+    if policy.max_fallback_ratio is not None:
+        ratio = metrics.get(FALLBACK_RATIO)
+        ok = ratio is not None and ratio <= policy.max_fallback_ratio
+        checks.append(
+            Check(
+                "fallback_ratio",
+                ok,
+                f"fallback_ratio {_fmt(ratio)} "
+                f"{'<=' if ok else '>'} max {policy.max_fallback_ratio}"
+                if ratio is not None
+                else "fallback ratio not measured",
+                suggestion=None
+                if ok
+                else "Increase the CoACD timeout or simplify the mesh to avoid "
+                "decomposition-failure bounding boxes",
+            )
+        )
+
     if policy.require_deterministic:
         flag = metrics.get("coacd_deterministic")
         # Absent means no CoACD ran at all (a planar box, an all-environment
@@ -281,6 +411,23 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 else "CoACD ran multithreaded (--fast): hulls vary run to run "
                 "and cannot be reproduced from this manifest",
                 suggestion=None if ok else "Remove --fast flag for reproducible builds",
+            )
+        )
+
+    if policy.require_snug_fit:
+        status = metrics.get(SNUG_FIT_STATUS)
+        ok = status == "applied"
+        checks.append(
+            Check(
+                "snug_fit_applied",
+                ok,
+                "snug-fit refinement applied"
+                if ok
+                else f"snug-fit refinement {status or 'not measured'}",
+                suggestion=None
+                if ok
+                else "Install the snug-fit dependencies and rerun without skipping "
+                "the requested refinement",
             )
         )
 
@@ -321,7 +468,7 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
 
     if policy.max_false_fill_fraction is not None:
         ff = metrics.get(FALSE_FILL_FRACTION)
-        ok = ff is None or ff <= policy.max_false_fill_fraction
+        ok = ff is not None and ff <= policy.max_false_fill_fraction
         checks.append(
             Check(
                 "false_fill",
@@ -329,15 +476,20 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 f"false_fill_fraction {_fmt(ff)} {'<=' if ok else '>'} max {policy.max_false_fill_fraction}"
                 if ff is not None
                 else "volume metrics not measured",
-                suggestion=None
-                if ok
-                else "Lower concavity threshold or enable snug_fit to tighten hull boundaries",
+                suggestion=(
+                    None
+                    if ok
+                    else "Run volume verification before evaluating this profile"
+                    if ff is None
+                    else "Lower concavity threshold or enable snug_fit to tighten "
+                    "hull boundaries"
+                ),
             )
         )
 
     if policy.max_deep_false_fill_fraction is not None:
         dff = metrics.get(DEEP_FALSE_FILL_FRACTION)
-        ok = dff is None or dff <= policy.max_deep_false_fill_fraction
+        ok = dff is not None and dff <= policy.max_deep_false_fill_fraction
         checks.append(
             Check(
                 "deep_false_fill",
@@ -345,89 +497,211 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 f"deep_false_fill_fraction {_fmt(dff)} {'<=' if ok else '>'} max {policy.max_deep_false_fill_fraction}"
                 if dff is not None
                 else "deep volume metrics not measured",
-                suggestion=None
-                if ok
-                else "Lower concavity threshold; deep false fill means hull boundaries are far from source geometry",
+                suggestion=(
+                    None
+                    if ok
+                    else "Run volume verification before evaluating this profile"
+                    if dff is None
+                    else "Lower concavity threshold; deep false fill means hull "
+                    "boundaries are far from source geometry"
+                ),
             )
         )
 
     if policy.require_walkable_probe:
-        probe_cov = metrics.get("probe_coverage")
-        probe_gaps = metrics.get("probe_gap_clusters")
+        probe_cov = metrics.get(PROBE_COVERAGE)
+        probe_gaps = metrics.get(PROBE_GAP_CLUSTERS)
 
-        if probe_cov is not None and policy.min_probe_coverage is not None:
-            ok = probe_cov >= policy.min_probe_coverage
+        if policy.min_probe_coverage is not None:
+            ok = probe_cov is not None and probe_cov >= policy.min_probe_coverage
             checks.append(
                 Check(
                     "probe_coverage",
                     ok,
                     f"probe coverage {_fmt(probe_cov)} {'>=' if ok else '<'} required {policy.min_probe_coverage}",
-                    suggestion=None
-                    if ok
-                    else "Check for gaps in floor geometry or lower concavity for better coverage",
+                    suggestion=(
+                        None
+                        if ok
+                        else "Run the walkable artifact probe before evaluating this profile"
+                        if probe_cov is None
+                        else "Check for gaps in floor geometry or lower concavity for "
+                        "better coverage"
+                    ),
                 )
             )
 
-        if probe_gaps is not None and policy.max_probe_gap_clusters is not None:
-            ok = probe_gaps <= policy.max_probe_gap_clusters
+        if policy.max_probe_gap_clusters is not None:
+            ok = probe_gaps is not None and probe_gaps <= policy.max_probe_gap_clusters
             checks.append(
                 Check(
                     "probe_gap_clusters",
                     ok,
-                    f"{probe_gaps} gap cluster(s) {'<=' if ok else '>'} max {policy.max_probe_gap_clusters}",
-                    suggestion=None
-                    if ok
-                    else "Fill gaps in floor collider geometry to ensure continuous walkable surface",
+                    f"{probe_gaps} gap cluster(s) "
+                    f"{'<=' if ok else '>'} max {policy.max_probe_gap_clusters}"
+                    if probe_gaps is not None
+                    else "probe gap clusters not measured",
+                    suggestion=(
+                        None
+                        if ok
+                        else "Run the walkable artifact probe before evaluating this profile"
+                        if probe_gaps is None
+                        else "Fill gaps in floor collider geometry to ensure a "
+                        "continuous walkable surface"
+                    ),
+                )
+            )
+
+    if policy.require_walkable_sweep:
+        traversability = metrics.get(SWEEP_TRAVERSABILITY)
+        standable = metrics.get(STANDABLE_FRACTION)
+        clearance = metrics.get(CLEARANCE_BLOCKED_FRACTION)
+
+        if policy.min_sweep_traversability is not None:
+            ok = (
+                traversability is not None
+                and traversability >= policy.min_sweep_traversability
+            )
+            checks.append(
+                Check(
+                    "capsule_traversability",
+                    ok,
+                    f"capsule traversability {_fmt(traversability)} "
+                    f"{'>=' if ok else '<'} required "
+                    f"{policy.min_sweep_traversability}",
+                    suggestion=(
+                        None
+                        if ok
+                        else "Run the capsule sweep before evaluating this profile"
+                        if traversability is None
+                        else "Repair disconnected floor islands or step-height seam snags"
+                    ),
+                )
+            )
+
+        if policy.min_standable_fraction is not None:
+            ok = standable is not None and standable >= policy.min_standable_fraction
+            checks.append(
+                Check(
+                    "capsule_standable_fraction",
+                    ok,
+                    f"standable fraction {_fmt(standable)} "
+                    f"{'>=' if ok else '<'} required {policy.min_standable_fraction}",
+                    suggestion=(
+                        None
+                        if ok
+                        else "Run the capsule sweep before evaluating this profile"
+                        if standable is None
+                        else "Widen narrow passages or remove lateral collider overfill"
+                    ),
+                )
+            )
+
+        if policy.max_clearance_blocked_fraction is not None:
+            ok = (
+                clearance is not None
+                and clearance <= policy.max_clearance_blocked_fraction
+            )
+            checks.append(
+                Check(
+                    "capsule_clearance",
+                    ok,
+                    f"clearance-blocked fraction {_fmt(clearance)} "
+                    f"{'<=' if ok else '>'} max "
+                    f"{policy.max_clearance_blocked_fraction}",
+                    suggestion=(
+                        None
+                        if ok
+                        else "Run the capsule sweep before evaluating this profile"
+                        if clearance is None
+                        else "Increase headroom or remove collider geometry above the floor"
+                    ),
                 )
             )
 
     if policy.max_compile_ms is not None:
         ms = metrics.get("compile_ms")
-        if ms is not None:
-            ok = ms <= policy.max_compile_ms
-            checks.append(
-                Check(
-                    "compile_latency",
-                    ok,
-                    f"compile took {ms:.0f} ms {'<=' if ok else '>'} "
-                    f"max {policy.max_compile_ms:.0f} ms",
-                    suggestion=None
-                    if ok
-                    else "Reduce mesh complexity or raise max_compile_ms threshold",
-                )
+        ok = ms is not None and ms <= policy.max_compile_ms
+        checks.append(
+            Check(
+                "compile_latency",
+                ok,
+                f"compile took {ms:.0f} ms {'<=' if ok else '>'} "
+                f"max {policy.max_compile_ms:.0f} ms"
+                if ms is not None
+                else "compile latency not measured",
+                suggestion=None
+                if ok
+                else "Measure compile latency, reduce mesh complexity, or raise "
+                "the configured threshold",
             )
+        )
 
     if policy.max_output_bytes is not None:
         size = metrics.get("output_bytes")
-        if size is not None:
-            ok = size <= policy.max_output_bytes
-            checks.append(
-                Check(
-                    "output_size",
-                    ok,
-                    f"output {size:,} bytes {'<=' if ok else '>'} "
-                    f"max {policy.max_output_bytes:,} bytes",
-                    suggestion=None
-                    if ok
-                    else "Raise concavity or reduce max_hulls to shrink output",
-                )
+        ok = size is not None and size <= policy.max_output_bytes
+        checks.append(
+            Check(
+                "output_size",
+                ok,
+                f"output {size:,} bytes {'<=' if ok else '>'} "
+                f"max {policy.max_output_bytes:,} bytes"
+                if size is not None
+                else "output size not measured",
+                suggestion=None
+                if ok
+                else "Measure the artifact size, raise concavity, or reduce max_hulls",
             )
+        )
+
+    if policy.max_hull_count is not None:
+        hulls = metrics.get(HULL_COUNT)
+        ok = hulls is not None and hulls <= policy.max_hull_count
+        checks.append(
+            Check(
+                "hull_count",
+                ok,
+                f"{hulls:,} hulls {'<=' if ok else '>'} max {policy.max_hull_count:,}"
+                if hulls is not None
+                else "hull count not measured",
+                suggestion=None
+                if ok
+                else "Raise concavity or reduce max_hulls to lower collider complexity",
+            )
+        )
 
     if policy.max_hull_vertices is not None:
-        verts = metrics.get("total_hull_vertices")
-        if verts is not None:
-            ok = verts <= policy.max_hull_vertices
-            checks.append(
-                Check(
-                    "hull_vertex_count",
-                    ok,
-                    f"{verts:,} hull vertices {'<=' if ok else '>'} "
-                    f"max {policy.max_hull_vertices:,}",
-                    suggestion=None
-                    if ok
-                    else "Lower max_hull_vertices in config or raise concavity",
-                )
+        verts = metrics.get(HULL_VERTEX_COUNT)
+        ok = verts is not None and verts <= policy.max_hull_vertices
+        checks.append(
+            Check(
+                "hull_vertex_count",
+                ok,
+                f"{verts:,} hull vertices {'<=' if ok else '>'} "
+                f"max {policy.max_hull_vertices:,}"
+                if verts is not None
+                else "hull vertex count not measured",
+                suggestion=None
+                if ok
+                else "Lower per-hull vertex detail or raise concavity",
             )
+        )
+
+    if policy.max_hull_triangles is not None:
+        triangles = metrics.get(HULL_TRIANGLE_COUNT)
+        ok = triangles is not None and triangles <= policy.max_hull_triangles
+        checks.append(
+            Check(
+                "hull_triangle_count",
+                ok,
+                f"{triangles:,} hull triangles {'<=' if ok else '>'} "
+                f"max {policy.max_hull_triangles:,}"
+                if triangles is not None
+                else "hull triangle count not measured",
+                suggestion=None
+                if ok
+                else "Lower per-hull vertex detail or raise concavity",
+            )
+        )
 
     passed = all(c.passed for c in checks)
     return Verdict(profile=policy.name, passed=passed, checks=tuple(checks))

@@ -47,3 +47,18 @@ The test verifies:
 
 Same-runtime hashes are the determinism contract tested here. Matching hashes
 between Python and WASM, or among different browser engines, are not required.
+
+### Recorded determinism result
+
+The packaged release-candidate gate on 2026-08-31 compiled its fixed L-prism
+fixture twice in each browser with `@autarkis/chitin-lite` 0.2.0,
+`@autarkis/chitin-wasm` 0.3.0, and `@autarkis/chitin-web` 0.1.2. Both runs
+produced SHA-256
+`b0ac832370ad5138ba7c1777bb0a3d595ccdf5728600f7c06d783a9306ab7068`
+within Chromium, Firefox, and WebKit. The three same-runtime comparisons all
+reported `deterministic: true` in
+[GitHub Actions run 33428211957](https://github.com/Autarkis/chitin/actions/runs/33428211957).
+
+The identical value across those three engines is recorded evidence from that
+run, not a cross-browser parity guarantee. The enforced contract remains two
+matching compilations within one supported runtime/toolchain.

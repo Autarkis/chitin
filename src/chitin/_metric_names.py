@@ -20,6 +20,20 @@ DEEP_FALSE_FILL_FRACTION = "deep_false_fill_fraction"
 
 # --- decomposition ---
 HULL_COUNT = "hull_count"
+HULL_VERTEX_COUNT = "hull_vertex_count"
+HULL_TRIANGLE_COUNT = "hull_triangle_count"
+FALLBACK_RATIO = "fallback_ratio"
+PLANAR_SUBSTITUTE_HULLS = "planar_substitute_hulls"
+SNUG_FIT_STATUS = "snug_fit_status"
+
+# --- walkability ---
+PROBE_COVERAGE = "probe_coverage"
+PROBE_GAP_CLUSTERS = "probe_gap_clusters"
+SWEEP_TRAVERSABILITY = "sweep_traversability"
+STANDABLE_FRACTION = "standable_fraction"
+CLEARANCE_BLOCKED_FRACTION = "clearance_blocked_fraction"
+RADIUS_BLOCKED_FRACTION = "radius_blocked_fraction"
+SEAM_SNAG_COUNT = "seam_snag_count"
 
 # --- quality_meta ---
 QUALITY_METHOD = "quality_method"

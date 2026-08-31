@@ -25,6 +25,18 @@ def test_mesh_plan(box_mesh):
     assert r.build_plan.source_vertices == len(verts)
 
 
+def test_mesh_records_requested_snug_fit(box_mesh):
+    verts, faces = box_mesh
+    r = extract_from_mesh(
+        verts,
+        faces,
+        config=Config(concavity=0.5, snug_fit=True),
+    )
+
+    assert "snugfit" in r.build_plan.pipeline
+    assert "snugfit_skipped" in r.build_plan.detected
+
+
 @requires_open3d
 def test_point_cloud_plan(sphere_points):
     r = extract_from_arrays(

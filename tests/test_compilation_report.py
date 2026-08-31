@@ -6,7 +6,20 @@ import numpy as np
 import pytest
 
 import chitin.report as report_module
-from chitin._metric_names import SOURCE_SURFACE_COVERAGE
+from chitin._metric_names import (
+    CLEARANCE_BLOCKED_FRACTION,
+    DEEP_FALSE_FILL_FRACTION,
+    FALLBACK_RATIO,
+    FALSE_FILL_FRACTION,
+    HULL_TRIANGLE_COUNT,
+    HULL_VERTEX_COUNT,
+    PLANAR_SUBSTITUTE_HULLS,
+    RADIUS_BLOCKED_FRACTION,
+    SEAM_SNAG_COUNT,
+    SOURCE_SURFACE_COVERAGE,
+    STANDABLE_FRACTION,
+    SWEEP_TRAVERSABILITY,
+)
 from chitin.acceptance import Check, Verdict, evaluate, get_profile, report_metrics
 from chitin.plan import BuildPlan
 from chitin.report import (
@@ -43,10 +56,13 @@ def _result(*, fallback_hulls=0):
                 SOURCE_SURFACE_COVERAGE: 0.99,
                 "worst_component_surface_coverage": None,
                 "worst_decile_surface_coverage": None,
+                FALSE_FILL_FRACTION: 0.01,
+                DEEP_FALSE_FILL_FRACTION: 0.0,
             },
             "fallback_hulls": fallback_hulls,
             "coacd_timeouts": fallback_hulls,
             "coacd_deterministic": True,
+            "snugfit_refined": 1,
         },
     )
     return ExtractionResult(
@@ -86,8 +102,9 @@ def test_python_report_matches_v1_contract():
         "unit": "ratio",
         "status": "measured",
     }
-    # Requested snug-fit with no execution stats is surfaced, not called done.
-    assert report["processing"]["refinements"]["snug_fit"]["status"] == "skipped"
+    assert report["metrics"][HULL_VERTEX_COUNT]["value"] == 4
+    assert report["metrics"][HULL_TRIANGLE_COUNT]["value"] == 4
+    assert report["processing"]["refinements"]["snug_fit"]["status"] == "applied"
     assert report["reproducibility"] == {
         "scope": "same_runtime_toolchain",
         "deterministic": True,
@@ -107,14 +124,47 @@ def test_unevaluated_report_does_not_imply_pass():
     }
 
 
+def test_requested_snug_fit_without_execution_stats_is_skipped():
+    result = _result()
+    result.build_plan.detected.pop("snugfit_refined")
+
+    report = build_compilation_report(
+        result,
+        effective_config={"snug_fit": True},
+    ).to_dict()
+
+    assert report["processing"]["refinements"]["snug_fit"]["status"] == "skipped"
+
+
 def test_fallback_warning_is_typed_and_separate_from_planar_substitute():
-    report = build_compilation_report(_result(fallback_hulls=2)).to_dict()
+    report = build_compilation_report(_result(fallback_hulls=1)).to_dict()
     assert report["warnings"][0]["code"] == "COACD_TIMEOUT_FALLBACK"
-    assert report["warnings"][0]["context"] == {"hull_count": 2}
+    assert report["warnings"][0]["context"] == {"hull_count": 1}
     assert report["processing"]["fallbacks"] == {
-        "decomposition_failure_hulls": 2,
+        "decomposition_failure_hulls": 1,
         "planar_substitute_hulls": 0,
     }
+    assert report["metrics"][FALLBACK_RATIO]["value"] == 1.0
+    assert report["metrics"][PLANAR_SUBSTITUTE_HULLS]["value"] == 0
+
+
+def test_walkable_sweep_metrics_are_present_in_canonical_report():
+    result = _result()
+    result.build_plan.detected["sweep"] = {
+        "traversability": 0.75,
+        "standable_fraction": 0.80,
+        "clearance_blocked_fraction": 0.10,
+        "radius_blocked_fraction": 0.20,
+        "seam_snags": [(0.0, 0.2, 0.0), (1.0, 0.4, 1.0)],
+    }
+
+    metrics = build_compilation_report(result, profile="walkable").to_dict()["metrics"]
+
+    assert metrics[SWEEP_TRAVERSABILITY]["value"] == 0.75
+    assert metrics[STANDABLE_FRACTION]["value"] == 0.80
+    assert metrics[CLEARANCE_BLOCKED_FRACTION]["value"] == 0.10
+    assert metrics[RADIUS_BLOCKED_FRACTION]["value"] == 0.20
+    assert metrics[SEAM_SNAG_COUNT]["value"] == 2
 
 
 def test_schema_and_python_require_the_same_top_level_fields():

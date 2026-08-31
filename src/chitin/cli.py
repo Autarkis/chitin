@@ -348,7 +348,13 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         coacd_timeout=args.coacd_timeout,
     )
 
-    from chitin.acceptance import apply_profile, evaluate, get_profile, report_metrics
+    from chitin.acceptance import (
+        apply_profile,
+        evaluate,
+        get_profile,
+        record_artifact_checks,
+        report_metrics,
+    )
 
     profile = get_profile(args.profile)
     explicit = None
@@ -365,21 +371,9 @@ def _cmd_extract(args: argparse.Namespace) -> None:
     result = extract(args.input, config)
     dt = time.monotonic() - t0
 
-    # Run the walkable probe before the verdict so a deliberately obstructed
-    # floor fails acceptance instead of only being reported after the fact.
-    if profile.policy.require_walkable_probe and result.hulls:
-        from chitin.verify.probe import probe_from_hulls
-
-        pr = probe_from_hulls(result.hulls, grid_resolution=32)
-        if result.build_plan is not None:
-            result.build_plan.detected["probe"] = {
-                "coverage": pr.coverage,
-                "gap_clusters": pr.gap_clusters,
-                "hits": pr.hits,
-                "misses": pr.misses,
-                "total_rays": pr.total_rays,
-                "confidence": pr.confidence,
-            }
+    # Outcome profiles evaluate the completed in-memory artifact. This runs
+    # both the coverage probe and capsule sweep required by the walkable gate.
+    record_artifact_checks(result, profile.policy)
 
     metrics = report_metrics(result)
     metrics["compile_ms"] = dt * 1000.0

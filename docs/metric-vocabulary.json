@@ -36,6 +36,56 @@
       "hull_count": {
         "unit": "count",
         "description": "Number of convex hulls in the collider"
+      },
+      "hull_vertex_count": {
+        "unit": "count",
+        "description": "Total number of vertices across collider hulls"
+      },
+      "hull_triangle_count": {
+        "unit": "count",
+        "description": "Total number of triangles across collider hulls"
+      },
+      "fallback_ratio": {
+        "unit": "ratio",
+        "description": "Fraction of collider hulls created as decomposition-failure fallbacks"
+      },
+      "planar_substitute_hulls": {
+        "unit": "count",
+        "description": "Number of intentional planar substitute hulls"
+      },
+      "snug_fit_status": {
+        "unit": "status",
+        "description": "Whether requested snug-fit refinement was applied, skipped, not requested, or unknown"
+      }
+    },
+    "walkability": {
+      "probe_coverage": {
+        "unit": "ratio",
+        "description": "Fraction of downward artifact-probe rays that hit collider geometry"
+      },
+      "probe_gap_clusters": {
+        "unit": "count",
+        "description": "Number of spatially distinct gaps found by the artifact probe"
+      },
+      "sweep_traversability": {
+        "unit": "ratio",
+        "description": "Fraction of standable cells connected to the largest capsule-traversable island"
+      },
+      "standable_fraction": {
+        "unit": "ratio",
+        "description": "Fraction of grounded cells in which the configured capsule fits"
+      },
+      "clearance_blocked_fraction": {
+        "unit": "ratio",
+        "description": "Fraction of grounded cells displaced by insufficient capsule headroom"
+      },
+      "radius_blocked_fraction": {
+        "unit": "ratio",
+        "description": "Fraction of grounded cells rejected by lateral capsule contact"
+      },
+      "seam_snag_count": {
+        "unit": "count",
+        "description": "Number of deduplicated step-height discontinuities found by the capsule sweep"
       }
     },
     "quality_meta": {

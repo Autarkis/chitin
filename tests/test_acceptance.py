@@ -1,11 +1,23 @@
 import pytest
 
 from chitin._metric_names import (
+    CLEARANCE_BLOCKED_FRACTION,
     COLLIDER_VOLUME_PRECISION,
     DEEP_FALSE_FILL_FRACTION,
+    FALLBACK_RATIO,
     FALSE_FILL_FRACTION,
     HULL_COUNT,
+    HULL_TRIANGLE_COUNT,
+    HULL_VERTEX_COUNT,
+    PLANAR_SUBSTITUTE_HULLS,
+    PROBE_COVERAGE,
+    PROBE_GAP_CLUSTERS,
+    RADIUS_BLOCKED_FRACTION,
+    SEAM_SNAG_COUNT,
+    SNUG_FIT_STATUS,
     SOURCE_SURFACE_COVERAGE,
+    STANDABLE_FRACTION,
+    SWEEP_TRAVERSABILITY,
     WORST_COMPONENT_SURFACE_COVERAGE,
 )
 from chitin.acceptance import (
@@ -14,6 +26,7 @@ from chitin.acceptance import (
     apply_profile,
     evaluate,
     get_profile,
+    record_artifact_checks,
     report_metrics,
 )
 from chitin.config import Config
@@ -27,10 +40,19 @@ CLEAN = {
     DEEP_FALSE_FILL_FRACTION: 0.02,
     COLLIDER_VOLUME_PRECISION: 0.95,
     "fallback_hulls": 0,
+    FALLBACK_RATIO: 0.0,
+    PLANAR_SUBSTITUTE_HULLS: 0,
     "coacd_deterministic": True,
-    "probe_coverage": None,
-    "probe_gap_clusters": None,
-    "total_hull_vertices": 1000,
+    SNUG_FIT_STATUS: "applied",
+    PROBE_COVERAGE: 0.95,
+    PROBE_GAP_CLUSTERS: 0,
+    SWEEP_TRAVERSABILITY: 0.95,
+    STANDABLE_FRACTION: 0.95,
+    CLEARANCE_BLOCKED_FRACTION: 0.05,
+    RADIUS_BLOCKED_FRACTION: 0.05,
+    SEAM_SNAG_COUNT: 0,
+    HULL_VERTEX_COUNT: 1000,
+    HULL_TRIANGLE_COUNT: 2000,
     "compile_ms": None,
 }
 
@@ -64,6 +86,14 @@ def test_robotics_rejects_nondeterministic_build():
     verdict = evaluate(policy, _with(coacd_deterministic=False))
     assert not verdict.passed
     assert any("reproduce" in r for r in verdict.reasons)
+
+
+def test_robotics_rejects_skipped_snug_fit():
+    policy = get_profile("robotics").policy
+    verdict = evaluate(policy, _with(**{SNUG_FIT_STATUS: "skipped"}))
+    assert not verdict.passed
+    check = next(check for check in verdict.checks if check.name == "snug_fit_applied")
+    assert check.suggestion
 
 
 def test_robotics_accepts_a_build_with_no_coacd_run():
@@ -101,9 +131,12 @@ def test_walkable_coverage_gate():
     assert any(SOURCE_SURFACE_COVERAGE in r for r in low.reasons)
 
 
-def test_walkable_allows_fallback():
-    # A bounding-box fallback is acceptable for a walkable surface.
-    assert evaluate(get_profile("walkable").policy, _with(fallback_hulls=2)).passed
+def test_walkable_bounds_fallback_ratio():
+    policy = get_profile("walkable").policy
+    assert evaluate(policy, _with(fallback_hulls=1, **{FALLBACK_RATIO: 1 / 6})).passed
+    verdict = evaluate(policy, _with(fallback_hulls=2, **{FALLBACK_RATIO: 2 / 6}))
+    assert not verdict.passed
+    assert any(check.name == "fallback_ratio" for check in verdict.checks)
 
 
 def test_worst_cell_gate_absent_passes_but_low_fails():
@@ -164,13 +197,15 @@ def test_walkable_passes_moderate_false_fill():
     assert verdict.passed
 
 
-def test_volume_metrics_none_passes_gate():
-    """When volume metrics are None (unmeasured), gates pass."""
+def test_missing_required_volume_metrics_fail_gate():
     policy = get_profile("robotics").policy
     verdict = evaluate(
         policy, _with(**{FALSE_FILL_FRACTION: None, DEEP_FALSE_FILL_FRACTION: None})
     )
-    assert verdict.passed
+    assert not verdict.passed
+    failed = [check for check in verdict.checks if not check.passed]
+    assert {check.name for check in failed} >= {"false_fill", "deep_false_fill"}
+    assert all(check.suggestion for check in failed)
 
 
 # --- walkable probe -------------------------------------------------------
@@ -179,29 +214,101 @@ def test_volume_metrics_none_passes_gate():
 def test_walkable_probe_rejects_low_coverage():
     """An obstructed walkable fixture with low probe coverage fails."""
     policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.40, probe_gap_clusters=2))
+    verdict = evaluate(policy, _with(**{PROBE_COVERAGE: 0.40, PROBE_GAP_CLUSTERS: 2}))
     assert not verdict.passed
     assert any("probe_coverage" in c.name for c in verdict.checks if not c.passed)
 
 
 def test_walkable_probe_rejects_many_gaps():
     policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.90, probe_gap_clusters=10))
+    verdict = evaluate(policy, _with(**{PROBE_COVERAGE: 0.90, PROBE_GAP_CLUSTERS: 10}))
     assert not verdict.passed
     assert any("probe_gap_clusters" in c.name for c in verdict.checks if not c.passed)
 
 
 def test_walkable_probe_passes_good_floor():
     policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=0.85, probe_gap_clusters=2))
+    verdict = evaluate(policy, _with(**{PROBE_COVERAGE: 0.85, PROBE_GAP_CLUSTERS: 2}))
     assert verdict.passed
 
 
-def test_walkable_probe_absent_passes():
-    """When probe data is absent (non-walkable build), probe checks don't fire."""
+def test_walkable_probe_absent_fails():
     policy = get_profile("walkable").policy
-    verdict = evaluate(policy, _with(probe_coverage=None, probe_gap_clusters=None))
-    assert verdict.passed
+    verdict = evaluate(
+        policy, _with(**{PROBE_COVERAGE: None, PROBE_GAP_CLUSTERS: None})
+    )
+    assert not verdict.passed
+    assert all(check.suggestion for check in verdict.checks if not check.passed)
+
+
+# --- walkable capsule sweep -----------------------------------------------
+
+
+def test_walkable_sweep_rejects_disconnected_or_blocked_floor():
+    policy = get_profile("walkable").policy
+    verdict = evaluate(
+        policy,
+        _with(
+            **{
+                SWEEP_TRAVERSABILITY: 0.45,
+                STANDABLE_FRACTION: 0.60,
+                CLEARANCE_BLOCKED_FRACTION: 0.35,
+            }
+        ),
+    )
+    assert not verdict.passed
+    failed = {check.name for check in verdict.checks if not check.passed}
+    assert failed >= {
+        "capsule_traversability",
+        "capsule_standable_fraction",
+        "capsule_clearance",
+    }
+
+
+def test_walkable_sweep_absent_fails():
+    policy = get_profile("walkable").policy
+    verdict = evaluate(
+        policy,
+        _with(
+            **{
+                SWEEP_TRAVERSABILITY: None,
+                STANDABLE_FRACTION: None,
+                CLEARANCE_BLOCKED_FRACTION: None,
+            }
+        ),
+    )
+    assert not verdict.passed
+    assert all(check.suggestion for check in verdict.checks if not check.passed)
+
+
+def test_obstructed_walkable_fixture_fails_capsule_gate(box_hull):
+    from chitin.plan import BuildPlan
+    from chitin.result import ExtractionResult
+
+    floor = box_hull(center=(0.0, -0.05, 0.0), half=(2.0, 0.05, 2.0))
+    wall = box_hull(center=(0.0, 1.0, 0.0), half=(0.05, 1.0, 2.0))
+    plan = BuildPlan(input_kind="mesh")
+    plan.detected["coverage"] = {
+        SOURCE_SURFACE_COVERAGE: 0.99,
+        FALSE_FILL_FRACTION: 0.05,
+        DEEP_FALSE_FILL_FRACTION: 0.01,
+    }
+    result = ExtractionResult(
+        hulls=[floor, wall],
+        source_vertex_count=16,
+        mesh_vertex_count=16,
+        build_plan=plan,
+    )
+
+    policy = get_profile("walkable").policy
+    record_artifact_checks(result, policy)
+    metrics = report_metrics(result)
+    verdict = evaluate(policy, metrics)
+
+    assert metrics[RADIUS_BLOCKED_FRACTION] > 0
+    assert metrics[SWEEP_TRAVERSABILITY] < policy.min_sweep_traversability
+    assert not verdict.passed
+    assert any(check.name == "capsule_traversability" for check in verdict.checks)
 
 
 # --- suggestions ------------------------------------------------------------
@@ -232,9 +339,16 @@ def test_passing_check_has_no_suggestion():
 def test_hull_vertex_count_gate():
     """Custom policy with max_hull_vertices gates total vertex count."""
     policy = AcceptancePolicy("test", max_hull_vertices=500)
-    verdict = evaluate(policy, _with(total_hull_vertices=1000))
+    verdict = evaluate(policy, _with(**{HULL_VERTEX_COUNT: 1000}))
     assert not verdict.passed
     assert any("hull_vertex_count" in c.name for c in verdict.checks if not c.passed)
+
+
+def test_hull_triangle_count_gate():
+    policy = AcceptancePolicy("test", max_hull_triangles=500)
+    verdict = evaluate(policy, _with(**{HULL_TRIANGLE_COUNT: 1000}))
+    assert not verdict.passed
+    assert any("hull_triangle_count" in c.name for c in verdict.checks if not c.passed)
 
 
 def test_compile_latency_gate():
@@ -253,7 +367,7 @@ def test_planar_vs_fallback_visible():
     from chitin.result import ExtractionResult, Hull
 
     plan = BuildPlan(input_kind="mesh")
-    plan.detected["fallback_hulls"] = 2
+    plan.detected["fallback_hulls"] = 1
     plan.detected["planar_substitute_hulls"] = 3
     plan.detected["coverage"] = {}
     plan.detected["coacd_deterministic"] = True
@@ -269,9 +383,9 @@ def test_planar_vs_fallback_visible():
         build_plan=plan,
     )
     metrics = report_metrics(result)
-    assert metrics["fallback_hulls"] == 2
-    # planar_substitute_hulls is tracked separately (in processing.fallbacks)
-    # but not in the acceptance metrics -- it's visible in the report.
+    assert metrics["fallback_hulls"] == 1
+    assert metrics[FALLBACK_RATIO] == 1.0
+    assert metrics[PLANAR_SUBSTITUTE_HULLS] == 3
 
 
 # --- apply_profile: config precedence -----------------------------------
