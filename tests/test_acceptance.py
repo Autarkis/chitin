@@ -1,12 +1,12 @@
 import pytest
 
 from chitin._metric_names import (
+    COLLIDER_VOLUME_PRECISION,
+    DEEP_FALSE_FILL_FRACTION,
+    FALSE_FILL_FRACTION,
     HULL_COUNT,
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
-    FALSE_FILL_FRACTION,
-    DEEP_FALSE_FILL_FRACTION,
-    COLLIDER_VOLUME_PRECISION,
 )
 from chitin.acceptance import (
     PROFILES,
@@ -247,9 +247,10 @@ def test_compile_latency_gate():
 
 def test_planar_vs_fallback_visible():
     """Planar substitutes and failure fallbacks are independently visible in report_metrics."""
-    from chitin.result import ExtractionResult, Hull
-    from chitin.plan import BuildPlan
     import numpy as np
+
+    from chitin.plan import BuildPlan
+    from chitin.result import ExtractionResult, Hull
 
     plan = BuildPlan(input_kind="mesh")
     plan.detected["fallback_hulls"] = 2

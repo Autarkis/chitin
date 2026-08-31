@@ -18,13 +18,13 @@ from typing import Any
 
 from chitin import provenance
 from chitin._metric_names import (
+    COLLIDER_VOLUME_PRECISION,
+    DEEP_FALSE_FILL_FRACTION,
+    FALSE_FILL_FRACTION,
     HULL_COUNT,
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
-    COLLIDER_VOLUME_PRECISION,
-    FALSE_FILL_FRACTION,
-    DEEP_FALSE_FILL_FRACTION,
 )
 
 _PACKAGED_SCHEMA = importlib.resources.files("chitin").joinpath(

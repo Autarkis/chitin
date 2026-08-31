@@ -18,13 +18,13 @@ from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 from chitin._metric_names import (
+    COLLIDER_VOLUME_PRECISION,
+    DEEP_FALSE_FILL_FRACTION,
+    FALSE_FILL_FRACTION,
     HULL_COUNT,
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
-    COLLIDER_VOLUME_PRECISION,
-    FALSE_FILL_FRACTION,
-    DEEP_FALSE_FILL_FRACTION,
 )
 from chitin._shared_constants import PROFILE_NAMES
 from chitin.config import Config

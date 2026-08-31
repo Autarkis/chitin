@@ -95,15 +95,20 @@ def _icosphere(
         cache: dict[tuple[int, int], int] = {}
         new_faces = []
 
-        def midpoint(i: int, j: int) -> int:
+        def midpoint(
+            i: int,
+            j: int,
+            *,
+            _cache: dict[tuple[int, int], int] = cache,
+        ) -> int:
             key = (min(i, j), max(i, j))
-            if key in cache:
-                return cache[key]
+            if key in _cache:
+                return _cache[key]
             nonlocal verts
             m = (verts[i] + verts[j]) / 2.0
             verts = np.vstack([verts, m])
             idx = len(verts) - 1
-            cache[key] = idx
+            _cache[key] = idx
             return idx
 
         for face in faces:
