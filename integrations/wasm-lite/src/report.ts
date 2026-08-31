@@ -76,6 +76,7 @@ export interface CompilationCheck {
   code: string;
   status: "pass" | "fail" | "not_evaluated";
   message: string;
+  suggestion?: string | null;
 }
 
 export interface CompilationVerdict {
