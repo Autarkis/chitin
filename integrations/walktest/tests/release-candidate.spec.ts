@@ -18,6 +18,7 @@ interface ReleaseCandidateResult {
   reportHash: string | null;
   reportDeterministic: boolean | null;
   reportProblems: string[];
+  exportsResolved: string[];
 }
 
 test("packed packages complete the real Worker/WASM/Rapier path", async ({
@@ -65,6 +66,12 @@ test("packed packages complete the real Worker/WASM/Rapier path", async ({
   // performs the separate two-run check below.
   expect(result.reportDeterministic).toBeNull();
   expect(result.reportProblems).toEqual([]);
+
+  expect(result.exportsResolved.sort()).toEqual([
+    "@autarkis/chitin-lite",
+    "@autarkis/chitin-web",
+    "@autarkis/chitin-web/rapier",
+  ]);
 
   // Determinism is asserted within this browser/runtime. No Python↔WASM or
   // cross-browser byte-parity claim is implied by this check.
