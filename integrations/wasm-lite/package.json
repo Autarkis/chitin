@@ -31,7 +31,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./worker": "./dist/worker.js"
+    "./worker": "./dist/worker.js",
+    "./three": {
+      "types": "./dist/three-adapter.d.ts",
+      "import": "./dist/three-adapter.js"
+    }
+  },
+  "peerDependencies": {
+    "three": ">=0.160"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    }
   },
   "files": [
     "dist"
@@ -42,6 +54,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/three": "^0.185.4",
     "ajv": "^8.20.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.6"
