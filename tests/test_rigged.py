@@ -5,31 +5,22 @@ from chitin._metric_names import SOURCE_SURFACE_COVERAGE
 from chitin.acceptance import evaluate, get_profile, report_metrics
 
 
-def test_per_bone_hulls(two_bone_rig):
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.5),
-    )
+def test_per_bone_hulls(rigged_result):
+    r = rigged_result
     assert len(r.hulls) == 2
     bone_names = {h.bone_name for h in r.hulls}
     assert bone_names == {"left_arm", "right_arm"}
 
 
-def test_hulls_in_bone_local_space(two_bone_rig):
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.5),
-    )
+def test_hulls_in_bone_local_space(rigged_result):
+    r = rigged_result
     for hull in r.hulls:
         center = hull.vertices.mean(axis=0)
         assert abs(center[0]) < 1.0, f"{hull.bone_name} not centered: {center}"
 
 
-def test_bind_transform_reconstructs_world(two_bone_rig):
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.5),
-    )
+def test_bind_transform_reconstructs_world(rigged_result):
+    r = rigged_result
     for hull in r.hulls:
         bind = r.bones[hull.bone_index].bind_transform
         local_pts = hull.vertices.astype(np.float64)
@@ -40,11 +31,8 @@ def test_bind_transform_reconstructs_world(two_bone_rig):
         assert abs(world_center[0] - expected_x) < 1.0
 
 
-def test_bones_metadata(two_bone_rig):
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.5),
-    )
+def test_bones_metadata(rigged_result):
+    r = rigged_result
     assert r.bones is not None
     assert len(r.bones) == 2
     assert r.bones[0].name == "left_arm"
@@ -69,13 +57,10 @@ def test_no_ibm_skips_transform(two_bone_rig):
         assert abs(center[0]) > 0.5, "should still be in world space"
 
 
-def test_rigged_lod_tiers_are_populated(two_bone_rig):
+def test_rigged_lod_tiers_are_populated(rigged_lod_result):
     # LOD tiers were computed per bone and then discarded; they must now survive
     # and carry hulls from every bone, tagged bone-local.
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.2, lod_concavities=[0.3, 0.7]),
-    )
+    r = rigged_lod_result
     assert r.lod_tiers is not None
     assert [round(t.concavity, 3) for t in r.lod_tiers] == [0.3, 0.7]
     for tier in r.lod_tiers:
@@ -83,11 +68,11 @@ def test_rigged_lod_tiers_are_populated(two_bone_rig):
         assert all(h.bone_name in {"left_arm", "right_arm"} for h in tier.hulls)
 
 
-def test_rigged_build_reports_coverage(two_bone_rig):
+def test_rigged_build_reports_coverage(rigged_result):
     # The rigged path recorded no coverage at all, so `source_surface_coverage`
     # came back None and every strict profile rejected rigged assets outright.
     # The measurement is taken bind-posed, against the model-space input.
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+    r = rigged_result
     coverage = r.build_plan.detected.get("coverage")
     assert coverage is not None
     assert coverage[SOURCE_SURFACE_COVERAGE] > 0.9
@@ -120,11 +105,8 @@ def test_rigged_merges_per_bone_fallback_counters(two_bone_rig, monkeypatch):
     assert any(c.name == "no_fallback_hulls" and not c.passed for c in verdict.checks)
 
 
-def test_rigged_lod_roundtrips_through_phys(two_bone_rig, tmp_path):
-    r = extract_from_rigged_mesh(
-        **two_bone_rig,
-        config=Config(concavity=0.2, lod_concavities=[0.3, 0.7]),
-    )
+def test_rigged_lod_roundtrips_through_phys(rigged_lod_result, tmp_path):
+    r = rigged_lod_result
     out = tmp_path / "rigged_lod.phys"
     r.to_phys(out)
 

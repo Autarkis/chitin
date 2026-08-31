@@ -91,6 +91,41 @@ Only needed if you work on `@autarkis/chitin-lite`'s decomposition. See
 [`integrations/wasm/README.md`](integrations/wasm/README.md): it needs Emscripten
 and the CoACD source, then `./build.sh`.
 
+## CI checks
+
+The required `gate` job summarizes the jobs in `.github/workflows/ci.yml` and is
+the stable branch-protection target. Pull requests run the expensive Python and
+native WASM paths only when their inputs change; pushes to `main` and manual
+runs always exercise both paths. Changes to the CI workflow itself exercise
+everything.
+
+Python validation runs on Linux, macOS, and Windows in two parallel shards:
+
+```bash
+pytest --ignore=tests/test_point_cloud.py  # core shard
+pytest tests/test_point_cloud.py           # Open3D/Poisson shard
+```
+
+Both shards install the same `.[dev]` environment so a missing optional native
+dependency cannot turn tests into skips. CI reports the slowest tests with
+`--durations=25`; keep real native-path coverage, but do not repeat an identical
+extraction merely to assert another part of its result. Shared expensive test
+results must be copied before each consumer so tests cannot leak mutations.
+
+The browser gate builds and functionally tests the native CoACD and Poisson WASM
+modules once. An exact cache key covers the Emscripten version, native dependency
+reference, build script, and binding sources. The four generated files are then
+uploaded as one artifact and consumed by separate `chrome`, `firefox`, and
+`safari` Playwright jobs. Those project names map to Playwright's `chromium`,
+`firefox`, and `webkit` browser installers respectively. Each browser job keeps
+one Playwright worker because CoACD is CPU- and memory-intensive; parallelism is
+provided by the job matrix instead.
+
+When changing path filters, keep them conservative: a false positive costs a CI
+run, while a false negative can merge untested code. Generated Python contract
+inputs and generators belong to the Python path even when the changed file is
+JSON or JavaScript.
+
 ## Pull requests
 
 - Keep the change focused; match the style of the surrounding code.
