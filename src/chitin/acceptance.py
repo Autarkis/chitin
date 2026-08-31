@@ -18,6 +18,9 @@ from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 from chitin._metric_names import (
+    COLLIDER_VOLUME_PRECISION,
+    DEEP_FALSE_FILL_FRACTION,
+    FALSE_FILL_FRACTION,
     HULL_COUNT,
     SOURCE_SURFACE_COVERAGE,
     WORST_COMPONENT_SURFACE_COVERAGE,
@@ -43,6 +46,14 @@ class AcceptancePolicy:
     require_deterministic: bool = False
     min_covered_fraction: float | None = None
     min_worst_cell_fraction: float | None = None
+    max_false_fill_fraction: float | None = None
+    max_deep_false_fill_fraction: float | None = None
+    require_walkable_probe: bool = False
+    min_probe_coverage: float | None = None
+    max_probe_gap_clusters: int | None = None
+    max_compile_ms: float | None = None
+    max_output_bytes: int | None = None
+    max_hull_vertices: int | None = None
 
 
 @dataclass(frozen=True)
@@ -50,9 +61,13 @@ class Check:
     name: str
     passed: bool
     detail: str
+    suggestion: str | None = None
 
     def to_dict(self) -> dict:
-        return {"check": self.name, "passed": self.passed, "detail": self.detail}
+        d = {"check": self.name, "passed": self.passed, "detail": self.detail}
+        if self.suggestion is not None:
+            d["suggestion"] = self.suggestion
+        return d
 
 
 @dataclass(frozen=True)
@@ -110,6 +125,10 @@ PROFILES: dict[str, Profile] = {
             require_hulls=True,
             allow_fallback_hulls=True,
             min_covered_fraction=0.85,
+            max_false_fill_fraction=0.50,
+            require_walkable_probe=True,
+            min_probe_coverage=0.70,
+            max_probe_gap_clusters=5,
         ),
     ),
     # Robotics colliders: bounded decomposition and snug fit. Concavity 0.01
@@ -130,6 +149,8 @@ PROFILES: dict[str, Profile] = {
             require_deterministic=True,
             min_covered_fraction=0.90,
             min_worst_cell_fraction=0.70,
+            max_false_fill_fraction=0.30,
+            max_deep_false_fill_fraction=0.20,
         ),
     ),
 }
@@ -184,6 +205,7 @@ def report_metrics(result) -> dict:
     plan = result.build_plan
     detected = plan.detected if plan is not None else {}
     coverage = detected.get("coverage") or {}
+    probe = detected.get("probe") or {}
     return {
         HULL_COUNT: len(result.hulls),
         SOURCE_SURFACE_COVERAGE: coverage.get(SOURCE_SURFACE_COVERAGE),
@@ -191,9 +213,15 @@ def report_metrics(result) -> dict:
             WORST_COMPONENT_SURFACE_COVERAGE
         ),
         WORST_DECILE_SURFACE_COVERAGE: coverage.get(WORST_DECILE_SURFACE_COVERAGE),
+        FALSE_FILL_FRACTION: coverage.get(FALSE_FILL_FRACTION),
+        DEEP_FALSE_FILL_FRACTION: coverage.get(DEEP_FALSE_FILL_FRACTION),
+        COLLIDER_VOLUME_PRECISION: coverage.get(COLLIDER_VOLUME_PRECISION),
         "fallback_hulls": int(detected.get("fallback_hulls", 0)),
         "coacd_timeouts": int(detected.get("coacd_timeouts", 0)),
         "coacd_deterministic": detected.get("coacd_deterministic"),
+        "probe_coverage": probe.get("coverage") if probe else None,
+        "probe_gap_clusters": probe.get("gap_clusters") if probe else None,
+        "total_hull_vertices": sum(len(h.vertices) for h in result.hulls),
     }
 
 
@@ -211,23 +239,31 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
 
     if policy.require_hulls:
         n = int(metrics.get(HULL_COUNT) or 0)
+        ok = n >= 1
         checks.append(
             Check(
                 "has_hulls",
-                n >= 1,
-                f"{n} hull(s) generated" if n >= 1 else "no hulls generated",
+                ok,
+                f"{n} hull(s) generated" if ok else "no hulls generated",
+                suggestion=None
+                if ok
+                else "Check that input geometry contains valid mesh data",
             )
         )
 
     if not policy.allow_fallback_hulls:
         fallback = int(metrics.get("fallback_hulls") or 0)
+        ok = fallback == 0
         checks.append(
             Check(
                 "no_fallback_hulls",
-                fallback == 0,
+                ok,
                 "no CoACD-timeout fallback hulls"
-                if fallback == 0
+                if ok
                 else f"{fallback} AABB fallback hull(s) from CoACD timeout",
+                suggestion=None
+                if ok
+                else "Increase coacd_timeout or simplify the mesh before compiling",
             )
         )
 
@@ -244,6 +280,7 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 if ok
                 else "CoACD ran multithreaded (--fast): hulls vary run to run "
                 "and cannot be reproduced from this manifest",
+                suggestion=None if ok else "Remove --fast flag for reproducible builds",
             )
         )
 
@@ -256,6 +293,10 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
                 ok,
                 f"{SOURCE_SURFACE_COVERAGE} {_fmt(covered)} "
                 f"{'>=' if ok else '<'} required {policy.min_covered_fraction}",
+                suggestion=None
+                if ok
+                else "Try lowering concavity for finer hulls, or check for "
+                "floating geometry",
             )
         )
 
@@ -270,7 +311,123 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
             else f"{WORST_COMPONENT_SURFACE_COVERAGE} {_fmt(worst)} "
             f"{'>=' if ok else '<'} required {policy.min_worst_cell_fraction}"
         )
-        checks.append(Check("worst_cell_coverage", ok, detail))
+        suggestion = (
+            None
+            if ok or worst is None
+            else "Lower concavity or check the component with the worst "
+            "coverage for disconnected geometry"
+        )
+        checks.append(Check("worst_cell_coverage", ok, detail, suggestion=suggestion))
+
+    if policy.max_false_fill_fraction is not None:
+        ff = metrics.get(FALSE_FILL_FRACTION)
+        ok = ff is None or ff <= policy.max_false_fill_fraction
+        checks.append(
+            Check(
+                "false_fill",
+                ok,
+                f"false_fill_fraction {_fmt(ff)} {'<=' if ok else '>'} max {policy.max_false_fill_fraction}"
+                if ff is not None
+                else "volume metrics not measured",
+                suggestion=None
+                if ok
+                else "Lower concavity threshold or enable snug_fit to tighten hull boundaries",
+            )
+        )
+
+    if policy.max_deep_false_fill_fraction is not None:
+        dff = metrics.get(DEEP_FALSE_FILL_FRACTION)
+        ok = dff is None or dff <= policy.max_deep_false_fill_fraction
+        checks.append(
+            Check(
+                "deep_false_fill",
+                ok,
+                f"deep_false_fill_fraction {_fmt(dff)} {'<=' if ok else '>'} max {policy.max_deep_false_fill_fraction}"
+                if dff is not None
+                else "deep volume metrics not measured",
+                suggestion=None
+                if ok
+                else "Lower concavity threshold; deep false fill means hull boundaries are far from source geometry",
+            )
+        )
+
+    if policy.require_walkable_probe:
+        probe_cov = metrics.get("probe_coverage")
+        probe_gaps = metrics.get("probe_gap_clusters")
+
+        if probe_cov is not None and policy.min_probe_coverage is not None:
+            ok = probe_cov >= policy.min_probe_coverage
+            checks.append(
+                Check(
+                    "probe_coverage",
+                    ok,
+                    f"probe coverage {_fmt(probe_cov)} {'>=' if ok else '<'} required {policy.min_probe_coverage}",
+                    suggestion=None
+                    if ok
+                    else "Check for gaps in floor geometry or lower concavity for better coverage",
+                )
+            )
+
+        if probe_gaps is not None and policy.max_probe_gap_clusters is not None:
+            ok = probe_gaps <= policy.max_probe_gap_clusters
+            checks.append(
+                Check(
+                    "probe_gap_clusters",
+                    ok,
+                    f"{probe_gaps} gap cluster(s) {'<=' if ok else '>'} max {policy.max_probe_gap_clusters}",
+                    suggestion=None
+                    if ok
+                    else "Fill gaps in floor collider geometry to ensure continuous walkable surface",
+                )
+            )
+
+    if policy.max_compile_ms is not None:
+        ms = metrics.get("compile_ms")
+        if ms is not None:
+            ok = ms <= policy.max_compile_ms
+            checks.append(
+                Check(
+                    "compile_latency",
+                    ok,
+                    f"compile took {ms:.0f} ms {'<=' if ok else '>'} "
+                    f"max {policy.max_compile_ms:.0f} ms",
+                    suggestion=None
+                    if ok
+                    else "Reduce mesh complexity or raise max_compile_ms threshold",
+                )
+            )
+
+    if policy.max_output_bytes is not None:
+        size = metrics.get("output_bytes")
+        if size is not None:
+            ok = size <= policy.max_output_bytes
+            checks.append(
+                Check(
+                    "output_size",
+                    ok,
+                    f"output {size:,} bytes {'<=' if ok else '>'} "
+                    f"max {policy.max_output_bytes:,} bytes",
+                    suggestion=None
+                    if ok
+                    else "Raise concavity or reduce max_hulls to shrink output",
+                )
+            )
+
+    if policy.max_hull_vertices is not None:
+        verts = metrics.get("total_hull_vertices")
+        if verts is not None:
+            ok = verts <= policy.max_hull_vertices
+            checks.append(
+                Check(
+                    "hull_vertex_count",
+                    ok,
+                    f"{verts:,} hull vertices {'<=' if ok else '>'} "
+                    f"max {policy.max_hull_vertices:,}",
+                    suggestion=None
+                    if ok
+                    else "Lower max_hull_vertices in config or raise concavity",
+                )
+            )
 
     passed = all(c.passed for c in checks)
     return Verdict(profile=policy.name, passed=passed, checks=tuple(checks))
