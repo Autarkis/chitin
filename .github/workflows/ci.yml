@@ -294,6 +294,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -340,6 +342,51 @@ jobs:
             git ls-files 'docs/plan-*.md' >&2
             exit 1
           fi
+
+      - name: Changeset required for package changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          # PRs that touch npm package source must include a changeset fragment.
+          # Escape hatch: add a "no-changeset" label to the PR.
+          if printf '%s' "$LABELS" | grep -q 'no-changeset'; then
+            echo "no-changeset label present — skipping check"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "$BASE"..HEAD -- \
+            'integrations/chitin-wasm/' \
+            'integrations/wasm-lite/' \
+            'integrations/web/' \
+            | grep -v '__tests__/' \
+            | grep -v '\.test\.' \
+            | grep -v '\.spec\.' \
+            || true)
+
+          if [ -z "$changed" ]; then
+            echo "No package source files changed — no changeset needed"
+            exit 0
+          fi
+
+          echo "Package files changed:"
+          echo "$changed"
+          echo ""
+
+          fragments=$(git diff --name-only "$BASE"..HEAD -- '.changeset/*.md' \
+            | grep -v 'README.md' || true)
+
+          if [ -z "$fragments" ]; then
+            echo "::error::Package source files changed but no changeset fragment found."
+            echo ""
+            echo "Run 'npx changeset' from the repo root to add one."
+            echo "If this change genuinely needs no version bump, add the 'no-changeset' label."
+            exit 1
+          fi
+
+          echo "Changeset fragments found:"
+          echo "$fragments"
 
   # Stable branch-protection target for the jobs above.
   gate:
