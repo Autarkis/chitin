@@ -324,6 +324,11 @@ def extract_from_mesh(
 
     _plan.step("coverage")
     _plan.detected["coverage"] = coverage_report(result.hulls, vertices)
+
+    from chitin.verify.volume import volume_report
+
+    vol = volume_report(result.hulls, vertices, faces)
+    _plan.detected["coverage"].update(vol.to_coverage_dict())
     return result
 
 
@@ -450,6 +455,11 @@ def extract_from_rigged_mesh(
 
     _plan.step("coverage")
     _plan.detected["coverage"] = coverage_report(posed_hulls, vertices)
+
+    from chitin.verify.volume import volume_report
+
+    vol = volume_report(posed_hulls, vertices, faces)
+    _plan.detected["coverage"].update(vol.to_coverage_dict())
 
     lod_tiers = None
     if lod_by_concavity:
