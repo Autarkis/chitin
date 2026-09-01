@@ -638,10 +638,11 @@ export class ChitinCompiler {
     timings.decompose = decomposeMs;
 
     let qualityMetrics: Record<string, CompilationMetric> | undefined;
-    if (options.quality) {
+    const quality = options.quality ?? (profile === "interactive" ? false : true);
+    if (quality) {
       const verifyStarted = now();
       emit("verifying", "Measuring sampled collider fit", verifyStarted);
-      qualityMetrics = evaluateQualityMetrics(processed, hulls, hullsByComponent, options.quality, planning.plans);
+      qualityMetrics = evaluateQualityMetrics(processed, hulls, hullsByComponent, quality, planning.plans);
       timings.verify = elapsed(verifyStarted);
     }
 

@@ -8,7 +8,7 @@
     "native_min_vertices": 4,
     "interactive_min_vertices": 8
   },
-  "browser_profiles": ["interactive"],
+  "browser_profiles": ["interactive", "walkable", "robotics"],
   "profiles": {
     "interactive": {
       "description": "Browser-based real-time compilation with constrained hull budget",

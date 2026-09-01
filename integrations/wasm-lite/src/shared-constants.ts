@@ -6,5 +6,5 @@ export const NATIVE_MIN_HULL_VERTICES = 4;
 export const INTERACTIVE_MIN_HULL_VERTICES = 8;
 export const PROFILE_NAMES = ["interactive", "walkable", "robotics"] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
-export const BROWSER_PROFILE_NAMES = ["interactive"] as const;
+export const BROWSER_PROFILE_NAMES = ["interactive", "walkable", "robotics"] as const;
 export type BrowserProfileName = (typeof BROWSER_PROFILE_NAMES)[number];
