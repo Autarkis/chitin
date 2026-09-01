@@ -33,6 +33,8 @@ from chitin.report import (
 from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult
 from chitin.topology import TopologyAnalysis, analyze_topology
+from chitin.trace import TraceRecorder
+from chitin.trace_replay import ReplayResult, replay_and_diff
 
 
 def __getattr__(name):
@@ -64,10 +66,12 @@ __all__ = [
     "PhysFile",
     "PhysHull",
     "Profile",
+    "ReplayResult",
     "ReportMetric",
     "ReportWarning",
     "ResolvedConfig",
     "TopologyAnalysis",
+    "TraceRecorder",
     "Verdict",
     "__version__",
     "analyze_arrays",
@@ -83,6 +87,7 @@ __all__ = [
     "extract_from_rigged_mesh",
     "get_profile",
     "read_phys",
+    "replay_and_diff",
     "resolve_config",
     "validate_compilation_report",
     "validate_phys",
