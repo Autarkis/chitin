@@ -39,16 +39,18 @@ function hullBudgetCopy(result: CompileGlbResult): string {
 
 export function resultSummaryCopy(result: CompileGlbResult, detail: number): string {
   const budget = hullBudgetCopy(result);
+  const profile = result.report.profile ?? "interactive";
+  const verdict = result.report.verdict.status.replace("_", " ");
   if (hasWarning(result, "INTERACTIVE_HOLLOW_SHELL_GUARD")) {
-    return `Detail ${detail.toFixed(2)} requested${budget} · hollow-shell guard + adaptive hull detail · checks not evaluated`;
+    return `Detail ${detail.toFixed(2)} requested${budget} · hollow-shell guard · ${profile} ${verdict}`;
   }
   if (hasWarning(result, "INTERACTIVE_IMPORTANCE_GUARD")) {
-    return `Detail ${detail.toFixed(2)} requested${budget} · scale-aware body detail + adaptive hull budget · checks not evaluated`;
+    return `Detail ${detail.toFixed(2)} requested${budget} · scale-aware detail · ${profile} ${verdict}`;
   }
   if (hasWarning(result, "INTERACTIVE_HULL_VERTICES_ADAPTED")) {
-    return `Detail ${detail.toFixed(2)} applied${budget} · scene-size + shape-aware hull budget · checks not evaluated`;
+    return `Detail ${detail.toFixed(2)} applied${budget} · adaptive hull budget · ${profile} ${verdict}`;
   }
-  return `Detail ${detail.toFixed(2)} applied${budget} · interactive profile · checks not evaluated`;
+  return `Detail ${detail.toFixed(2)} applied${budget} · ${profile} profile · ${verdict}`;
 }
 
 export function appliedThresholdCopy(result: CompileGlbResult, detail: number): string {

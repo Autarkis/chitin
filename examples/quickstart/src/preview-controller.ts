@@ -23,6 +23,7 @@ export type PreviewState = {
   exploded: boolean;
   explosionAmount: number;
   simulationActive: boolean;
+  visibleHulls: number;
 };
 
 export interface PreviewApi {
@@ -34,6 +35,7 @@ export interface PreviewApi {
   updateExplosionControls(): void;
   getScene(): THREE.Scene | null;
   setSimulationActive(active: boolean): void;
+  setHullVisible(index: number, visible: boolean): void;
   state(): PreviewState;
   dispose(): void;
 }
@@ -174,6 +176,11 @@ export class PreviewController implements PreviewApi {
 
   setSimulationActive(active: boolean): void {
     this.simulationActive = active;
+  }
+
+  setHullVisible(index: number, visible: boolean): void {
+    const part = this.colliderParts[index];
+    if (part) part.group.visible = visible;
   }
 
   async showSourcePreview(file: File): Promise<void> {
@@ -368,6 +375,7 @@ export class PreviewController implements PreviewApi {
       exploded: this.colliderExplosionCurrent > 0.001,
       explosionAmount: this.colliderExplosionCurrent,
       simulationActive: this.simulationActive,
+      visibleHulls: this.colliderParts.filter((part) => part.group.visible).length,
     };
   }
 
@@ -490,6 +498,8 @@ export class NullPreviewController implements PreviewApi {
 
   setSimulationActive(): void {}
 
+  setHullVisible(): void {}
+
   state(): PreviewState {
     return {
       sourceVisible: false,
@@ -501,6 +511,7 @@ export class NullPreviewController implements PreviewApi {
       exploded: false,
       explosionAmount: 0,
       simulationActive: false,
+      visibleHulls: 0,
     };
   }
 

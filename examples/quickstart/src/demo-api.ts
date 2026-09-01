@@ -10,6 +10,7 @@ export interface ChitinDemoState extends PreviewState {
   reusedComponents: number;
   simulationActive: boolean;
   simulationHeight: number | null;
+  profile: string;
 }
 
 export interface ChitinDemoApi {
