@@ -431,6 +431,8 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   font-size: 9px;
   cursor: pointer;
 }
+.progress-time { margin-left: auto; color: #697169; font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.progress-time + .cancel-button { margin-left: 0; }
 .cancel-button:hover { color: var(--error); border-color: rgba(255,121,111,.5); }
 .progress-track { height: 3px; overflow: hidden; border-radius: 2px; background: #292e29; }
 .progress-track span { display: block; width: 8%; height: 100%; background: var(--acid); transition: width .25s ease; }

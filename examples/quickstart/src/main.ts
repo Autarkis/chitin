@@ -48,6 +48,7 @@ const fitPresets = $("#fit-presets");
 const progressSection = $("#progress-section");
 const progressBar = $("#progress-bar");
 const progressCopy = $("#progress-copy");
+const progressTime = $("#progress-time");
 const cancelButton = $("#cancel-button") as HTMLButtonElement;
 const errorCard = $("#error-card");
 const errorCode = $("#error-code");
@@ -151,6 +152,7 @@ let downloadUrl: string | null = null;
 let thresholdTimer: number | null = null;
 let simulationRequest = 0;
 let selectedProfile: BrowserProfileName = "interactive";
+let progressClock: number | null = null;
 
 function phaseArtifact(): AppliedArtifact | null {
   if (phase.kind === "ready" || phase.kind === "quality-failed") return phase;
@@ -192,7 +194,7 @@ function formatBytes(bytes: number): string {
 }
 
 function snippet(): string {
-  return `const result = await compiler.compileGlb(file, {\n  profile: "${selectedProfile}",\n  decompose: { threshold: ${Number(threshold.value).toFixed(2)} },\n});`;
+  return `import { ChitinCompiler } from "@autarkis/chitin-lite";\nimport ChitinWorker from "@autarkis/chitin-lite/worker?worker";\nimport coacdModuleUrl from "@autarkis/chitin-wasm?url";\nimport coacdWasmUrl from "@autarkis/chitin-wasm/coacd.wasm?url";\n\nconst compiler = new ChitinCompiler({\n  wasm: { js: coacdModuleUrl, wasm: coacdWasmUrl },\n  workerFactory: () => new ChitinWorker(),\n});\n\nconst result = await compiler.compileGlb(file, {\n  profile: "${selectedProfile}",\n  decompose: { threshold: ${Number(threshold.value).toFixed(2)} },\n});`;
 }
 
 function updateSnippet(): void {
@@ -484,6 +486,12 @@ async function compileSelected(
   phase = { kind: "compiling", controller, previous };
 
   progressSection.hidden = false;
+  const progressStarted = performance.now();
+  if (progressClock !== null) window.clearInterval(progressClock);
+  progressTime.textContent = "0 ms";
+  progressClock = window.setInterval(() => {
+    progressTime.textContent = `${Math.round(performance.now() - progressStarted)} ms`;
+  }, 100);
   progressBar.style.width = "4%";
   progressCopy.textContent = intent === "quality"
     ? "Preparing quality diagnostics"
@@ -550,6 +558,9 @@ async function compileSelected(
       }
     } finally {
       if (ownRequest === requestNumber) {
+        if (progressClock !== null) window.clearInterval(progressClock);
+        progressClock = null;
+        progressTime.textContent = `${Math.round(performance.now() - progressStarted)} ms`;
         activeCompile = null;
         cancelButton.disabled = true;
         progressSection.hidden = true;

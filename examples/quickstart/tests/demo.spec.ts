@@ -324,12 +324,29 @@ test("profile selector recompiles with walkable and robotics diagnostics", async
   await expect(interactive).toBeEnabled();
   await expect(walkable).toBeEnabled();
   await expect(robotics).toBeEnabled();
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
   await walkable.click();
   await expect(walkable).toHaveAttribute("aria-pressed", "true");
-  expect((await page.evaluate(() => window.__chitinDemo.state())).profile).toBe("walkable");
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).busy,
+    { timeout: 60_000 },
+  ).toBe(false);
+  let state = await page.evaluate(() => window.__chitinDemo.state());
+  expect(state.profile).toBe("walkable");
+  expect(state.qualityMeasured).toBe(true);
+  await expect(page.locator("#report-profile")).toHaveText("Walkable");
   await robotics.click();
   await expect(robotics).toHaveAttribute("aria-pressed", "true");
-  expect((await page.evaluate(() => window.__chitinDemo.state())).profile).toBe("robotics");
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).busy,
+    { timeout: 60_000 },
+  ).toBe(false);
+  state = await page.evaluate(() => window.__chitinDemo.state());
+  expect(state.profile).toBe("robotics");
+  expect(state.qualityMeasured).toBe(true);
+  await expect(page.locator("#report-profile")).toHaveText("Robotics");
+  await expect(page.locator("#report-checks")).toContainText("source_surface_coverage");
 });
 
 test("result exposes output size, per-hull visibility, and matching copyable code", async ({ page }) => {
@@ -380,6 +397,7 @@ test("drag-and-drop compiles while the UI event loop remains responsive", async 
     window.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
   });
   await expect(page.locator("#file-name")).toHaveText("dropped-fish.glb");
+  await expect(page.locator("#progress-time")).not.toHaveText("0 ms");
   await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
   expect(await page.evaluate(() => (window as any).__heartbeat)).toBeGreaterThan(2);
 });

@@ -16,7 +16,6 @@ export class SimulationController implements SimulationApi {
   private rapierReady: Promise<typeof RAPIER> | null = null;
   private world: RAPIER.World | null = null;
   private sphereBody: RAPIER.RigidBody | null = null;
-  private colliderBody: RAPIER.RigidBody | null = null;
   private group: THREE.Group | null = null;
   private sphereMesh: THREE.Mesh | null = null;
   private scene: THREE.Scene | null = null;
@@ -43,7 +42,7 @@ export class SimulationController implements SimulationApi {
     const phys = parsePhys(physBuffer);
 
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-    this.colliderBody = addToWorld(rapier, this.world, phys);
+    addToWorld(rapier, this.world, phys);
 
     const bbox = new THREE.Box3();
     for (const hull of phys.hulls) {
@@ -167,7 +166,6 @@ export class SimulationController implements SimulationApi {
     }
     this.world = null;
     this.sphereBody = null;
-    this.colliderBody = null;
     this.sphereMesh = null;
     this.group = null;
     this.scene = null;
