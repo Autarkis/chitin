@@ -12,10 +12,10 @@ import {
 } from "./glb-fixture.js";
 
 describe("ChitinCompiler component policy", () => {
-  it("rejects unsupported profiles instead of attaching an inert label", async () => {
+  it("rejects unknown profiles instead of attaching an inert label", async () => {
     const compiler = compilerWith(() => new CompletingWorker());
     await expect(
-      compiler.compileGlb(makeGlb(), { profile: "robotics" as any }),
+      compiler.compileGlb(makeGlb(), { profile: "unknown" as any }),
     ).rejects.toMatchObject({ code: "INVALID_CONFIG", stage: "validating-input" });
     compiler.terminate();
   });

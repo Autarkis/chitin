@@ -98,6 +98,7 @@
                 title="Exploded view separation"
                 disabled
               />
+              <label><input id="show-simulation" type="checkbox" disabled /> Simulation</label>
             </div>
           </div>
 
@@ -154,6 +155,17 @@
               <span class="step">02</span>
               <h2 id="settings-heading">Fit</h2>
             </div>
+            <div id="profile-selector" class="profile-selector" aria-label="Compilation profile">
+              <button type="button" data-profile="interactive" aria-pressed="true">
+                <strong>Interactive</strong><small>Game &amp; UI</small>
+              </button>
+              <button type="button" data-profile="walkable" aria-pressed="false">
+                <strong>Walkable</strong><small>Terrain</small>
+              </button>
+              <button type="button" data-profile="robotics" aria-pressed="false">
+                <strong>Robotics</strong><small>Precision</small>
+              </button>
+            </div>
             <div id="fit-presets" class="fit-presets" aria-label="Fit presets">
               <button type="button" data-detail="0.10" aria-pressed="true"><strong>Precise</strong><small>Tightest fit</small></button>
               <button type="button" data-detail="0.25" aria-pressed="false"><strong>Game prop</strong><small>Balanced</small></button>
@@ -173,6 +185,7 @@
             <div class="section-heading">
               <span class="step">03</span>
               <h2>Compile</h2>
+              <span id="progress-time" class="progress-time">0 ms</span>
               <button id="cancel-button" class="cancel-button" type="button">Cancel</button>
             </div>
             <div class="progress-track" role="progressbar" aria-label="Collider compilation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-bar"></span></div>
@@ -191,12 +204,17 @@
               <div><span class="result-check">✓</span><span><strong>Artifact compiled</strong><small id="result-summary">Interactive profile · checks not evaluated</small></span></div>
               <span id="result-time" class="result-time"></span>
             </div>
-            <dl class="metrics">
+            <dl class="metrics result-metrics">
               <div><dt>Source</dt><dd id="source-triangles">—</dd><small>triangles</small></div>
               <div><dt>Collider</dt><dd id="collider-triangles">—</dd><small>triangles</small></div>
               <div><dt>Hulls</dt><dd id="hull-count">—</dd><small>convex parts</small></div>
               <div><dt>Ratio</dt><dd id="triangle-ratio">—</dd><small>collider / source</small></div>
+              <div><dt>Output</dt><dd id="output-size">—</dd><small>.phys bytes</small></div>
             </dl>
+            <section id="hull-controls" class="hull-controls" hidden>
+              <div class="section-heading"><h2>Hull visibility</h2><button id="toggle-hulls" type="button">Hide all</button></div>
+              <div id="hull-list" class="hull-list"></div>
+            </section>
             <dl id="quality-metrics" class="metrics quality-metrics" hidden>
               <div><dt>Coverage</dt><dd id="surface-coverage">—</dd><small>source surface</small></div>
               <div><dt>Precision</dt><dd id="volume-precision">—</dd><small>collider volume</small></div>
@@ -209,6 +227,13 @@
               <button id="download-button" class="primary-button" type="button">Download .phys <span>↓</span></button>
               <button id="report-button" class="secondary-button" type="button" aria-expanded="false">View report</button>
             </div>
+            <button id="simulate-button" class="diagnostics-button" type="button">Test in Rapier</button>
+            <p id="simulate-status" class="setting-status" hidden></p>
+            <section class="snippet-panel" aria-labelledby="snippet-heading">
+              <div class="section-heading"><h2 id="snippet-heading">Use these options</h2><button id="copy-snippet" type="button">Copy</button></div>
+              <pre><code id="code-snippet"></code></pre>
+              <p id="copy-status" class="setting-status" role="status"></p>
+            </section>
             <div id="report-panel" class="report-panel" hidden>
               <dl class="report-overview">
                 <div><dt>Compilation</dt><dd id="report-status">—</dd></div>

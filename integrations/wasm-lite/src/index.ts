@@ -79,3 +79,5 @@ export type {
   DecomposeResult,
   QuantizedHull,
 } from "./types.js";
+export { BROWSER_PROFILE_NAMES, PROFILE_NAMES } from "./shared-constants.js";
+export type { BrowserProfileName, ProfileName } from "./shared-constants.js";

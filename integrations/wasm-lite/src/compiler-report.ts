@@ -21,6 +21,8 @@ import {
   type CompilationWarning,
 } from "./report.js";
 import type { ConvexHull, DecomposeConfig } from "./types.js";
+import { browserProfileVerdict } from "./profile-verdict.js";
+import type { BrowserProfileName } from "./shared-constants.js";
 import { CHITIN_LITE_VERSION } from "./version.js";
 
 function runtime(options: ChitinCompilerOptions): CompilationRuntime {
@@ -45,7 +47,7 @@ export function sourceSummary(mesh: ParsedGlbMesh): CompileGlbResult["source"] {
 }
 
 export interface ReportAssemblyContext {
-  profile: "interactive";
+  profile: BrowserProfileName;
   compilerOptions: ChitinCompilerOptions;
   decomposeConfig: DecomposeConfig | undefined;
   summary: CompileGlbResult["source"];
@@ -283,6 +285,7 @@ export function assembleCompilationResult(
 
   const report = createCompilationReport({
     profile,
+    verdict: browserProfileVerdict(profile, hulls, qualityMetrics),
     input: {
       kind: "glb",
       source_vertices: summary.vertex_count,

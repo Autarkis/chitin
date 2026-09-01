@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { DECOMPOSE_DEFAULTS } from "../src/defaults.js";
 import {
+  ACCEPTANCE_THRESHOLDS,
   BROWSER_PROFILE_NAMES,
   INTERACTIVE_MIN_HULL_VERTICES,
   NATIVE_MIN_HULL_VERTICES,
@@ -21,6 +22,7 @@ describe("shared constants", () => {
     expect(NATIVE_MIN_HULL_VERTICES).toBe(CONTRACT.hull.native_min_vertices);
     expect(INTERACTIVE_MIN_HULL_VERTICES).toBe(CONTRACT.hull.interactive_min_vertices);
     expect(PROFILE_NAMES).toEqual(Object.keys(CONTRACT.profiles));
+    expect(ACCEPTANCE_THRESHOLDS).toEqual(CONTRACT.acceptance_thresholds);
   });
 
   it("exposes exactly the explicitly implemented browser profiles", () => {

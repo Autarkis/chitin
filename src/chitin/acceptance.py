@@ -38,7 +38,7 @@ from chitin._metric_names import (
     WORST_COMPONENT_SURFACE_COVERAGE,
     WORST_DECILE_SURFACE_COVERAGE,
 )
-from chitin._shared_constants import PROFILE_NAMES
+from chitin._shared_constants import ACCEPTANCE_THRESHOLDS, PROFILE_NAMES
 from chitin.config import Config
 
 
@@ -125,6 +125,9 @@ class Profile:
     policy: AcceptancePolicy
 
 
+_WALKABLE_THRESHOLDS = ACCEPTANCE_THRESHOLDS["walkable"]
+_ROBOTICS_THRESHOLDS = ACCEPTANCE_THRESHOLDS["robotics"]
+
 PROFILES: dict[str, Profile] = {
     # Permissive default: geometry unchanged, no acceptance gates. A build that
     # completes today keeps completing.
@@ -144,16 +147,18 @@ PROFILES: dict[str, Profile] = {
             mode="strict",
             require_hulls=True,
             allow_fallback_hulls=True,
-            max_fallback_ratio=0.25,
-            min_covered_fraction=0.85,
-            max_false_fill_fraction=0.50,
+            max_fallback_ratio=_WALKABLE_THRESHOLDS["max_fallback_ratio"],
+            min_covered_fraction=_WALKABLE_THRESHOLDS["min_covered_fraction"],
+            max_false_fill_fraction=_WALKABLE_THRESHOLDS["max_false_fill_fraction"],
             require_walkable_probe=True,
-            min_probe_coverage=0.70,
-            max_probe_gap_clusters=5,
+            min_probe_coverage=_WALKABLE_THRESHOLDS["min_probe_coverage"],
+            max_probe_gap_clusters=_WALKABLE_THRESHOLDS["max_probe_gap_clusters"],
             require_walkable_sweep=True,
-            min_sweep_traversability=0.80,
-            min_standable_fraction=0.70,
-            max_clearance_blocked_fraction=0.20,
+            min_sweep_traversability=_WALKABLE_THRESHOLDS["min_sweep_traversability"],
+            min_standable_fraction=_WALKABLE_THRESHOLDS["min_standable_fraction"],
+            max_clearance_blocked_fraction=_WALKABLE_THRESHOLDS[
+                "max_clearance_blocked_fraction"
+            ],
         ),
     ),
     # Robotics colliders: bounded decomposition and snug fit. Concavity 0.01
@@ -173,13 +178,15 @@ PROFILES: dict[str, Profile] = {
             allow_fallback_hulls=False,
             require_deterministic=True,
             require_snug_fit=True,
-            min_covered_fraction=0.90,
-            min_worst_cell_fraction=0.70,
-            max_false_fill_fraction=0.30,
-            max_deep_false_fill_fraction=0.20,
-            max_hull_count=2048,
-            max_hull_vertices=131_072,
-            max_hull_triangles=262_144,
+            min_covered_fraction=_ROBOTICS_THRESHOLDS["min_covered_fraction"],
+            min_worst_cell_fraction=_ROBOTICS_THRESHOLDS["min_worst_cell_fraction"],
+            max_false_fill_fraction=_ROBOTICS_THRESHOLDS["max_false_fill_fraction"],
+            max_deep_false_fill_fraction=_ROBOTICS_THRESHOLDS[
+                "max_deep_false_fill_fraction"
+            ],
+            max_hull_count=_ROBOTICS_THRESHOLDS["max_hull_count"],
+            max_hull_vertices=_ROBOTICS_THRESHOLDS["max_hull_vertices"],
+            max_hull_triangles=_ROBOTICS_THRESHOLDS["max_hull_triangles"],
         ),
     ),
 }

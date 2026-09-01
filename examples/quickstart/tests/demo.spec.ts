@@ -304,12 +304,169 @@ test("coarse requests expose the hollow-shell guard instead of silently filling 
     { timeout: 60_000 },
   );
   await expect(page.locator("#result-summary")).toContainText(
-    "hollow-shell guard + adaptive hull detail",
+    "hollow-shell guard",
   );
   await page.getByRole("button", { name: "View report" }).click();
   await expect(page.locator("#report-output")).toContainText("INTERACTIVE_HOLLOW_SHELL_GUARD");
   await expect(page.locator("#report-output")).toContainText("INTERACTIVE_HULL_VERTICES_ADAPTED");
   await expect(page.locator("#report-output")).toContainText('"hollow_shell_threshold": 0.05');
+});
+
+test("profile selector recompiles with walkable and robotics diagnostics", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+
+  const interactive = page.locator('[data-profile="interactive"]');
+  const walkable = page.locator('[data-profile="walkable"]');
+  const robotics = page.locator('[data-profile="robotics"]');
+
+  await expect(interactive).toHaveAttribute("aria-pressed", "true");
+  await expect(interactive).toBeEnabled();
+  await expect(walkable).toBeEnabled();
+  await expect(robotics).toBeEnabled();
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  await walkable.click();
+  await expect(walkable).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).busy,
+    { timeout: 60_000 },
+  ).toBe(false);
+  let state = await page.evaluate(() => window.__chitinDemo.state());
+  expect(state.profile).toBe("walkable");
+  expect(state.qualityMeasured).toBe(true);
+  await expect(page.locator("#report-profile")).toHaveText("Walkable");
+  await robotics.click();
+  await expect(robotics).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).busy,
+    { timeout: 60_000 },
+  ).toBe(false);
+  state = await page.evaluate(() => window.__chitinDemo.state());
+  expect(state.profile).toBe("robotics");
+  expect(state.qualityMeasured).toBe(true);
+  await expect(page.locator("#report-profile")).toHaveText("Robotics");
+  await expect(page.locator("#report-checks")).toContainText("source_surface_coverage");
+});
+
+test("result exposes output size, per-hull visibility, and matching copyable code", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.getByTestId("sample-fish").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#output-size")).not.toHaveText("—");
+  const hullToggles = page.locator("#hull-list input");
+  await expect(hullToggles).toHaveCount((await page.evaluate(() => window.__chitinDemo.state())).hulls);
+  await hullToggles.first().uncheck();
+  expect((await page.evaluate(() => window.__chitinDemo.state())).visibleHulls)
+    .toBe((await page.evaluate(() => window.__chitinDemo.state())).hulls - 1);
+  await page.locator('[data-profile="walkable"]').click();
+  await expect(page.locator("#code-snippet")).toContainText('profile: "walkable"');
+  await page.locator("#copy-snippet").click();
+  await expect(page.locator("#copy-status")).toContainText(/Copied|Clipboard unavailable/);
+});
+
+test("invalid input is actionable and a cancelled compile can be replaced", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.locator("#file-input").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("nope") });
+  await expect(page.locator("#error-message")).toContainText("binary glTF");
+  await expect(page.locator("#error-suggestion")).toContainText("GLB 2.0");
+  await page.getByTestId("sample-fish").click();
+  await expect(page.locator("#cancel-button")).toBeEnabled();
+  await page.locator("#cancel-button").click();
+  await expect(page.locator("#progress-copy")).toContainText("Cancelled");
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#file-name")).toHaveText("clearcoat-wicker.glb");
+});
+
+test("drag-and-drop compiles while the UI event loop remains responsive", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  await page.evaluate(() => {
+    (window as any).__heartbeat = 0;
+    window.setInterval(() => (window as any).__heartbeat++, 10);
+  });
+  await page.evaluate(async () => {
+    const response = await fetch("./assets/barramundi-fish.glb");
+    const file = new File([await response.arrayBuffer()], "dropped-fish.glb", { type: "model/gltf-binary" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    window.dispatchEvent(new DragEvent("dragenter", { bubbles: true, dataTransfer: transfer }));
+    window.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
+  });
+  await expect(page.locator("#file-name")).toHaveText("dropped-fish.glb");
+  await expect(page.locator("#progress-time")).not.toHaveText("0 ms");
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+  expect(await page.evaluate(() => (window as any).__heartbeat)).toBeGreaterThan(2);
+});
+
+test("rapier simulation runs after compilation", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    let frameTime = 0;
+    window.requestAnimationFrame = (callback) => window.setTimeout(() => callback(frameTime += 8), 8);
+    window.cancelAnimationFrame = (handle) => window.clearTimeout(handle);
+  });
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+
+  const simButton = page.locator("#simulate-button");
+  await expect(simButton).toBeVisible();
+  await simButton.click();
+
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationActive,
+    { timeout: 30_000 },
+  ).toBe(true);
+
+  const initialHeight = (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight;
+  expect(initialHeight).not.toBeNull();
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight ?? Infinity,
+  ).toBeLessThan(initialHeight! - 0.001);
+
+  await expect(page.locator("#show-simulation")).toBeChecked();
+  await expect(page.locator("#simulate-status")).toContainText("Sphere dropped");
+  await expect(simButton).toHaveText("Restart simulation");
+
+  expect(errors).toEqual([]);
+});
+
+test("collider controls and simulation work without WebGL", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: () => null,
+    });
+  });
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  expect(await page.evaluate(() => window.__chitinDemo.previewAvailable)).toBe(false);
+
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+
+  const hullToggle = page.locator("#hull-list input").first();
+  await hullToggle.uncheck();
+  expect((await page.evaluate(() => window.__chitinDemo.state())).visibleHulls).toBe(0);
+
+  const simButton = page.locator("#simulate-button");
+  await expect(simButton).toBeEnabled();
+  await simButton.click();
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationActive,
+    { timeout: 30_000 },
+  ).toBe(true);
+  const initialHeight = (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight;
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight ?? Infinity,
+  ).toBeLessThan(initialHeight! - 0.001);
 });
 
 declare global {
