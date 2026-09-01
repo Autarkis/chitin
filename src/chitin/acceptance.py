@@ -156,7 +156,9 @@ PROFILES: dict[str, Profile] = {
             require_walkable_sweep=True,
             min_sweep_traversability=_WALKABLE_THRESHOLDS["min_sweep_traversability"],
             min_standable_fraction=_WALKABLE_THRESHOLDS["min_standable_fraction"],
-            max_clearance_blocked_fraction=_WALKABLE_THRESHOLDS["max_clearance_blocked_fraction"],
+            max_clearance_blocked_fraction=_WALKABLE_THRESHOLDS[
+                "max_clearance_blocked_fraction"
+            ],
         ),
     ),
     # Robotics colliders: bounded decomposition and snug fit. Concavity 0.01
@@ -179,7 +181,9 @@ PROFILES: dict[str, Profile] = {
             min_covered_fraction=_ROBOTICS_THRESHOLDS["min_covered_fraction"],
             min_worst_cell_fraction=_ROBOTICS_THRESHOLDS["min_worst_cell_fraction"],
             max_false_fill_fraction=_ROBOTICS_THRESHOLDS["max_false_fill_fraction"],
-            max_deep_false_fill_fraction=_ROBOTICS_THRESHOLDS["max_deep_false_fill_fraction"],
+            max_deep_false_fill_fraction=_ROBOTICS_THRESHOLDS[
+                "max_deep_false_fill_fraction"
+            ],
             max_hull_count=_ROBOTICS_THRESHOLDS["max_hull_count"],
             max_hull_vertices=_ROBOTICS_THRESHOLDS["max_hull_vertices"],
             max_hull_triangles=_ROBOTICS_THRESHOLDS["max_hull_triangles"],

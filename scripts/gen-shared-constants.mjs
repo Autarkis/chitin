@@ -59,6 +59,14 @@ function loadContract() {
 function generatePython(contract, profiles) {
   const profileValues = profiles.map((name) => JSON.stringify(name)).join(", ");
   const tupleSuffix = profiles.length === 1 ? "," : "";
+  const acceptanceThresholds = Object.entries(contract.acceptance_thresholds)
+    .map(([profile, thresholds]) => {
+      const values = Object.entries(thresholds)
+        .map(([name, value]) => `        ${JSON.stringify(name)}: ${JSON.stringify(value)},`)
+        .join("\n");
+      return `    ${JSON.stringify(profile)}: {\n${values}\n    },`;
+    })
+    .join("\n");
   return `"""Generated from docs/shared-constants.json; do not edit."""
 
 COACD_CONCAVITY_THRESHOLD = ${JSON.stringify(contract.coacd.concavity_threshold)}
@@ -66,7 +74,9 @@ COACD_PREPROCESS_RESOLUTION = ${JSON.stringify(contract.coacd.preprocess_resolut
 NATIVE_MIN_HULL_VERTICES = ${JSON.stringify(contract.hull.native_min_vertices)}
 INTERACTIVE_MIN_HULL_VERTICES = ${JSON.stringify(contract.hull.interactive_min_vertices)}
 PROFILE_NAMES = (${profileValues}${tupleSuffix})
-ACCEPTANCE_THRESHOLDS = ${JSON.stringify(contract.acceptance_thresholds, null, 2)}
+ACCEPTANCE_THRESHOLDS = {
+${acceptanceThresholds}
+}
 `;
 }
 
