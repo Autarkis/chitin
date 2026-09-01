@@ -15,6 +15,7 @@ import {
   RUNTIME_REQUIRED,
   REPRODUCIBILITY_REQUIRED,
   CONFIG_REQUIRED,
+  BUILD_IDENTITY_REQUIRED,
   REPORT_STATUS_VALUES,
   VERDICT_STATUS_VALUES,
   CHECK_STATUS_VALUES,
@@ -94,6 +95,13 @@ export interface CompilationRuntime {
   dependencies: Record<string, string>;
 }
 
+export interface BuildIdentity {
+  effective_input_digest: string | null;
+  algorithm_version: string;
+  numerical_policy_version: string;
+  config_digest: string | null;
+}
+
 export interface CompilationReport {
   report_version: typeof COMPILATION_REPORT_VERSION;
   status: "complete" | "rejected";
@@ -141,6 +149,7 @@ export interface CompilationReport {
     effective: Record<string, unknown> | null;
   };
   artifacts: Record<string, string>;
+  build_identity: BuildIdentity;
 }
 
 export interface CreateCompilationReportOptions {
@@ -159,6 +168,8 @@ export interface CreateCompilationReportOptions {
   requested_config?: Record<string, unknown> | null;
   effective_config?: Record<string, unknown> | null;
   artifacts?: Record<string, string>;
+  algorithm_version?: string;
+  numerical_policy_version?: string;
 }
 
 export function metric(
@@ -241,6 +252,12 @@ export function createCompilationReport(
       effective: options.effective_config ?? null,
     },
     artifacts: { ...options.artifacts },
+    build_identity: {
+      effective_input_digest: null,
+      algorithm_version: options.algorithm_version ?? "1.0.0",
+      numerical_policy_version: options.numerical_policy_version ?? "1.0.0",
+      config_digest: null,
+    },
   };
   const problems = validateCompilationReport(report);
   if (problems.length > 0) {
@@ -406,6 +423,7 @@ export function validateCompilationReport(report: unknown): string[] {
   }
 
   requireFields(report.config, CONFIG_REQUIRED, "config", problems);
+  requireFields(report.build_identity, BUILD_IDENTITY_REQUIRED, "build_identity", problems);
 
   if (!isPlainObject(report.artifacts)) {
     problems.push("artifacts must be an object");

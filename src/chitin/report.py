@@ -64,6 +64,7 @@ REPORT_FIELDS = (
     "reproducibility",
     "config",
     "artifacts",
+    "build_identity",
 )
 
 
@@ -108,6 +109,7 @@ class CompilationReport:
     reproducibility: dict
     config: dict
     artifacts: dict[str, str]
+    build_identity: dict
     report_version: int = REPORT_VERSION
 
     def to_dict(self) -> dict:
@@ -128,6 +130,7 @@ class CompilationReport:
             "reproducibility": dict(self.reproducibility),
             "config": dict(self.config),
             "artifacts": dict(self.artifacts),
+            "build_identity": dict(self.build_identity),
         }
 
 
@@ -286,6 +289,7 @@ def build_compilation_report(
     artifact_bytes: int | None = None,
     artifact_sha256: str | None = None,
     timings_ms: dict[str, float] | None = None,
+    build_identity: dict | None = None,
 ) -> CompilationReport:
     """Build the canonical report without changing acceptance behavior."""
     from chitin.acceptance import report_metrics
@@ -343,6 +347,14 @@ def build_compilation_report(
         ),
     }
 
+    if build_identity is None:
+        build_identity = {
+            "effective_input_digest": None,
+            "algorithm_version": provenance.ALGORITHM_VERSION,
+            "numerical_policy_version": provenance.NUMERICAL_POLICY_VERSION,
+            "config_digest": None,
+        }
+
     report = CompilationReport(
         status="rejected" if verdict is not None and not verdict.passed else "complete",
         profile=resolved_profile,
@@ -396,6 +408,7 @@ def build_compilation_report(
             "effective": effective_config,
         },
         artifacts=dict(artifacts or {}),
+        build_identity=build_identity,
     )
     problems = validate_compilation_report(report.to_dict())
     if problems:
