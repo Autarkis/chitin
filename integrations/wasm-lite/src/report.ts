@@ -119,7 +119,6 @@ export interface CompilationReport {
   processing: {
     pipeline: string[];
     fallbacks: {
-      decomposition_failure_hulls: number;
       planar_substitute_hulls: number | null;
     };
     refinements: {
@@ -220,7 +219,6 @@ export function createCompilationReport(
     processing: {
       pipeline: ["decompose", "write-phys"],
       fallbacks: {
-        decomposition_failure_hulls: 0,
         planar_substitute_hulls: null,
       },
       refinements: {

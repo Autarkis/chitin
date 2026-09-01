@@ -181,15 +181,6 @@ def detected_issues(result) -> list[ReportWarning]:
     plan = result.build_plan
     detected = plan.detected if plan is not None else {}
     issues: list[ReportWarning] = []
-    fallback = int(detected.get("fallback_hulls", 0))
-    if fallback:
-        issues.append(
-            ReportWarning(
-                code="COACD_TIMEOUT_FALLBACK",
-                message=f"{fallback} AABB fallback hull(s) from CoACD timeout",
-                context={"hull_count": fallback},
-            )
-        )
     if plan is not None and plan.decimated:
         issues.append(
             ReportWarning(
@@ -380,7 +371,6 @@ def build_compilation_report(
         processing={
             "pipeline": list(plan.pipeline) if plan is not None else [],
             "fallbacks": {
-                "decomposition_failure_hulls": int(detected.get("fallback_hulls", 0)),
                 "planar_substitute_hulls": int(
                     detected.get("planar_substitute_hulls", 0)
                 ),

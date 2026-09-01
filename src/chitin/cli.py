@@ -7,6 +7,7 @@ from pathlib import Path
 
 from chitin.config import DEFAULT_COACD_TIMEOUT_SECONDS, Config
 from chitin.core import extract
+from chitin.errors import CompilationError
 from chitin.hooks import get_post_process_command, run_post_process
 from chitin.preflight import check as preflight_check
 
@@ -368,7 +369,24 @@ def _cmd_extract(args: argparse.Namespace) -> None:
         print(f"chitin: {args.input} -> {args.output} ({fmt}) [{profile.name}]")
 
     t0 = time.monotonic()
-    result = extract(args.input, config)
+    try:
+        result = extract(args.input, config)
+    except CompilationError as err:
+        import json
+
+        failure = {
+            "status": "failed",
+            "code": err.code,
+            "evidence": err.evidence,
+            "message": err.message,
+        }
+        print(
+            f"chitin: compilation failed: {err.message}",
+            file=sys.stderr,
+        )
+        if not args.quiet:
+            print(json.dumps(failure, indent=2), file=sys.stderr)
+        sys.exit(4)
     dt = time.monotonic() - t0
 
     # Outcome profiles evaluate the completed in-memory artifact. This runs

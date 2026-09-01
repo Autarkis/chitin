@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from chitin import Config, extract_from_rigged_mesh
 from chitin._metric_names import SOURCE_SURFACE_COVERAGE
@@ -86,26 +87,22 @@ def test_rigged_build_reports_coverage(two_bone_rig):
     assert verdict.passed, verdict.checks
 
 
-def test_rigged_merges_per_bone_fallback_counters(two_bone_rig, monkeypatch):
+def test_per_bone_timeout_raises_compilation_error(two_bone_rig, monkeypatch):
     # Bones decompose under their own plan, so a CoACD timeout inside one used
     # to die with it: the asset reported zero fallbacks and sailed through the
-    # robotics gate with a bounding box in it.
+    # robotics gate with a bounding box in it. A timeout is a compilation
+    # failure now, never a degraded artifact (chitin #102).
+    from chitin.errors import CompilationError
     from chitin.stages import decompose
 
     def boom(*args, **kwargs):
         raise decompose.CoACDTimeoutError("forced")
 
     monkeypatch.setattr(decompose, "run_coacd_bounded", boom)
-    r = extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
+    with pytest.raises(CompilationError) as exc_info:
+        extract_from_rigged_mesh(**two_bone_rig, config=Config(concavity=0.5))
 
-    assert r.build_plan.detected["fallback_hulls"] == 2
-    assert r.build_plan.detected["coacd_timeouts"] == 2
-    # And the per-bone pipelines stay off the asset's step list.
-    assert r.build_plan.pipeline.count("decompose") == 0
-
-    verdict = evaluate(get_profile("robotics").policy, report_metrics(r))
-    assert not verdict.passed
-    assert any(c.name == "no_fallback_hulls" and not c.passed for c in verdict.checks)
+    assert exc_info.value.code == "COACD_TIMEOUT"
 
 
 def test_rigged_lod_roundtrips_through_phys(rigged_lod_result, tmp_path):

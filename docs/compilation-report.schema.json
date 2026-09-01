@@ -96,9 +96,8 @@
         "fallbacks": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["decomposition_failure_hulls", "planar_substitute_hulls"],
+          "required": ["planar_substitute_hulls"],
           "properties": {
-            "decomposition_failure_hulls": { "type": "integer", "minimum": 0 },
             "planar_substitute_hulls": { "type": ["integer", "null"], "minimum": 0 }
           }
         },

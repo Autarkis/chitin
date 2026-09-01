@@ -129,6 +129,10 @@ def _build_report(
             "skipped (Open3D not installed); install chitin[splat] to enable it"
         )
 
+    # DEPRECATED: new builds never carry fallback_hulls — a CoACD timeout now
+    # raises CompilationError and fails the job outright (chitin #102, caught
+    # by run_job's except Exception above). Retained for a historical
+    # build_plan produced before #102.
     if plan and plan.detected.get("fallback_hulls"):
         n = plan.detected["fallback_hulls"]
         warnings.append(f"{n} AABB fallback hull(s) substituted after a CoACD timeout")

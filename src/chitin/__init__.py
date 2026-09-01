@@ -18,6 +18,7 @@ from chitin.acceptance import (
 )
 from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
+from chitin.errors import CompilationError
 from chitin.manifest import build_manifest, verify_bundle, write_manifest
 from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
@@ -52,6 +53,7 @@ __all__ = [
     "AcceptancePolicy",
     "BoneInfo",
     "BuildPlan",
+    "CompilationError",
     "CompilationReport",
     "Config",
     "ExtractionResult",

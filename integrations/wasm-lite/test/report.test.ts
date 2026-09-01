@@ -120,7 +120,7 @@ describe("validateCompilationReport covers the schema's required fields", () => 
   it("catches a missing field for every required property in the schema's object tree", () => {
     const paths = collectRequiredPaths(schema);
     // Include nested objects, not only the 14 top-level keys.
-    expect(paths.length).toBe(48);
+    expect(paths.length).toBe(47);
 
     for (const path of paths) {
       const report = reportFixture() as any;

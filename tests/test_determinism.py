@@ -8,6 +8,7 @@ run returned a different hull count and different bytes nearly every time
 """
 
 import numpy as np
+import pytest
 import trimesh
 
 from chitin import Config, extract_from_mesh
@@ -51,17 +52,18 @@ def test_repeated_decomposition_is_byte_identical():
     assert _hull_bytes(first) == _hull_bytes(second)
 
 
-def test_timeout_budget_is_configurable():
+def test_timeout_raises_compilation_error():
     # The budget exists to kill a native stall. It was hardcoded at 15s, below
-    # the real decomposition time of ordinary concave inputs, which silently
-    # replaced hulls with a bounding box; callers can set it now.
-    verts, faces = _l_shape()
-    result = extract_from_mesh(
-        verts, faces, config=Config(concavity=0.1, coacd_timeout=0.001)
-    )
+    # the real decomposition time of ordinary concave inputs, which used to
+    # silently replace hulls with a bounding box; a timeout is a compilation
+    # failure now, never a degraded artifact (chitin #102).
+    from chitin.errors import CompilationError
 
-    # The source has two disconnected solids, so the per-decomposition-unit
-    # budget is enforced and reported once for each component.
-    assert result.build_plan.detected["coacd_timeouts"] == 2
-    assert result.build_plan.detected["fallback_hulls"] == 2
-    assert len(result.hulls) == 2
+    verts, faces = _l_shape()
+    with pytest.raises(CompilationError) as exc_info:
+        extract_from_mesh(
+            verts, faces, config=Config(concavity=0.1, coacd_timeout=0.001)
+        )
+
+    assert exc_info.value.code == "COACD_TIMEOUT"
+    assert "timeout_seconds" in exc_info.value.evidence

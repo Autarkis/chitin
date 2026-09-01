@@ -72,6 +72,9 @@ def test_interactive_passes_anything():
 
 
 def test_robotics_rejects_fallback_hulls():
+    # New builds never produce fallback_hulls (a CoACD timeout raises
+    # CompilationError instead, chitin #102); this exercises the deprecated
+    # check that still interprets a pre-#102 archived build_plan correctly.
     policy = get_profile("robotics").policy
     verdict = evaluate(policy, _with(fallback_hulls=1))
     assert not verdict.passed
@@ -132,6 +135,8 @@ def test_walkable_coverage_gate():
 
 
 def test_walkable_bounds_fallback_ratio():
+    # Deprecated check, exercised here for historical build_plans only — see
+    # test_robotics_rejects_fallback_hulls.
     policy = get_profile("walkable").policy
     assert evaluate(policy, _with(fallback_hulls=1, **{FALLBACK_RATIO: 1 / 6})).passed
     verdict = evaluate(policy, _with(fallback_hulls=2, **{FALLBACK_RATIO: 2 / 6}))
