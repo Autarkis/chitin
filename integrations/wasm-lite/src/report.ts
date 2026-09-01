@@ -16,6 +16,7 @@ import {
   REPRODUCIBILITY_REQUIRED,
   CONFIG_REQUIRED,
   BUILD_IDENTITY_REQUIRED,
+  TOPOLOGY_REQUIRED,
   REPORT_STATUS_VALUES,
   VERDICT_STATUS_VALUES,
   CHECK_STATUS_VALUES,
@@ -102,6 +103,17 @@ export interface BuildIdentity {
   config_digest: string | null;
 }
 
+export interface TopologyAnalysis {
+  component_count: number;
+  boundary_edge_count: number;
+  non_manifold_edge_count: number;
+  degenerate_face_count: number;
+  consistently_oriented: boolean;
+  signed_volume_by_component?: number[];
+  closed: boolean;
+  two_manifold: boolean;
+}
+
 export interface CompilationReport {
   report_version: typeof COMPILATION_REPORT_VERSION;
   status: "complete" | "rejected";
@@ -150,6 +162,7 @@ export interface CompilationReport {
   };
   artifacts: Record<string, string>;
   build_identity: BuildIdentity;
+  topology: TopologyAnalysis | null;
 }
 
 export interface CreateCompilationReportOptions {
@@ -258,6 +271,7 @@ export function createCompilationReport(
       numerical_policy_version: options.numerical_policy_version ?? "1.0.0",
       config_digest: null,
     },
+    topology: null,
   };
   const problems = validateCompilationReport(report);
   if (problems.length > 0) {
@@ -424,6 +438,10 @@ export function validateCompilationReport(report: unknown): string[] {
 
   requireFields(report.config, CONFIG_REQUIRED, "config", problems);
   requireFields(report.build_identity, BUILD_IDENTITY_REQUIRED, "build_identity", problems);
+
+  if (report.topology !== null && report.topology !== undefined) {
+    requireFields(report.topology, TOPOLOGY_REQUIRED, "topology", problems);
+  }
 
   if (!isPlainObject(report.artifacts)) {
     problems.push("artifacts must be an object");

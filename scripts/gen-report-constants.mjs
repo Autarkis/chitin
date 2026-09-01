@@ -54,6 +54,10 @@ const REQUIRED_CONSTANTS = [
     name: "BUILD_IDENTITY_REQUIRED",
     get: (schema) => schema.properties.build_identity.required,
   },
+  {
+    name: "TOPOLOGY_REQUIRED",
+    get: (schema) => schema.properties.topology.required,
+  },
 ];
 
 const ENUM_CONSTANTS = [

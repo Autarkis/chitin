@@ -19,6 +19,7 @@ from chitin.acceptance import (
 from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
 from chitin.errors import CompilationError
+from chitin.topology import TopologyAnalysis, analyze_topology
 from chitin.manifest import build_manifest, verify_bundle, write_manifest
 from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
@@ -66,6 +67,7 @@ __all__ = [
     "ReportMetric",
     "ReportWarning",
     "ResolvedConfig",
+    "TopologyAnalysis",
     "Verdict",
     "__version__",
     "analyze_arrays",
@@ -82,6 +84,7 @@ __all__ = [
     "read_phys",
     "resolve_config",
     "validate_compilation_report",
+    "analyze_topology",
     "validate_phys",
     "verify_bundle",
     "write_manifest",

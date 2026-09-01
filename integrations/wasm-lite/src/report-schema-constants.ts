@@ -16,6 +16,7 @@ export const TOP_LEVEL_REQUIRED = [
   "config",
   "artifacts",
   "build_identity",
+  "topology",
 ] as const;
 export const VERDICT_REQUIRED = ["profile", "status", "reasons", "checks"] as const;
 export const CHECK_REQUIRED = ["code", "status", "message"] as const;
@@ -42,6 +43,15 @@ export const BUILD_IDENTITY_REQUIRED = [
   "algorithm_version",
   "numerical_policy_version",
   "config_digest",
+] as const;
+export const TOPOLOGY_REQUIRED = [
+  "component_count",
+  "boundary_edge_count",
+  "non_manifold_edge_count",
+  "degenerate_face_count",
+  "consistently_oriented",
+  "closed",
+  "two_manifold",
 ] as const;
 
 export const REPORT_STATUS_VALUES = ["complete", "rejected"] as const;
