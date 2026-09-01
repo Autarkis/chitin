@@ -438,6 +438,37 @@ test("rapier simulation runs after compilation", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("collider controls and simulation work without WebGL", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: () => null,
+    });
+  });
+  await page.goto("/");
+  await page.waitForFunction(() => window.__chitinDemo?.ready);
+  expect(await page.evaluate(() => window.__chitinDemo.previewAvailable)).toBe(false);
+
+  await page.getByTestId("sample-wicker").click();
+  await expect(page.getByText("Artifact compiled")).toBeVisible({ timeout: 60_000 });
+
+  const hullToggle = page.locator("#hull-list input").first();
+  await hullToggle.uncheck();
+  expect((await page.evaluate(() => window.__chitinDemo.state())).visibleHulls).toBe(0);
+
+  const simButton = page.locator("#simulate-button");
+  await expect(simButton).toBeEnabled();
+  await simButton.click();
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationActive,
+    { timeout: 30_000 },
+  ).toBe(true);
+  const initialHeight = (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight;
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__chitinDemo.state())).simulationHeight ?? Infinity,
+  ).toBeLessThan(initialHeight! - 0.001);
+});
+
 declare global {
   interface Window {
     __chitinDemo: ChitinDemoApi;

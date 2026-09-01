@@ -10,7 +10,7 @@ import coacdModuleUrl from "@autarkis/chitin-wasm?url";
 import coacdWasmUrl from "@autarkis/chitin-wasm/coacd.wasm?url";
 
 import type { ChitinDemoApi } from "./demo-api";
-import { NullPreviewController, PreviewController, type PreviewApi } from "./preview-controller";
+import { HeadlessPreviewController, PreviewController, type PreviewApi } from "./preview-controller";
 import { SimulationController } from "./simulation-controller";
 import {
   appliedThresholdCopy,
@@ -94,6 +94,7 @@ const codeSnippet = $("#code-snippet");
 const copySnippet = $("#copy-snippet") as HTMLButtonElement;
 const copyStatus = $("#copy-status");
 
+const simulationController = new SimulationController();
 let previewController: PreviewApi;
 let previewAvailable = true;
 try {
@@ -107,12 +108,10 @@ try {
     onTick: (time) => simulationController.tick(time),
   });
 } catch {
-  previewController = new NullPreviewController();
+  previewController = new HeadlessPreviewController((time) => simulationController.tick(time));
   canvas.hidden = true;
   previewAvailable = false;
 }
-
-const simulationController = new SimulationController();
 
 const compiler = new ChitinCompiler({
   wasm: {
@@ -360,7 +359,7 @@ function resetOutput(): void {
   simulationController.stop();
   previewController.setSimulationActive(false);
   simulateButton.textContent = "Test in Rapier";
-  simulateButton.disabled = !previewAvailable;
+  simulateButton.disabled = true;
   simulateStatus.hidden = true;
   showSimulation.checked = false;
   showSimulation.disabled = true;
@@ -453,6 +452,7 @@ function showResult(result: CompileGlbResult, detail: number): void {
   renderQualityPresentation(result);
   renderReport(result);
   updateThresholdStatus();
+  simulateButton.disabled = false;
   setRuntime("ready", "Artifact ready");
   resultSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }

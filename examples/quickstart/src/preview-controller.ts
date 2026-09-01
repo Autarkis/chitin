@@ -475,30 +475,57 @@ export class PreviewController implements PreviewApi {
   }
 }
 
-export class NullPreviewController implements PreviewApi {
+export class HeadlessPreviewController implements PreviewApi {
+  private readonly scene = new THREE.Scene();
+  private readonly onTick?: (time: number) => void;
+  private sourceLoaded = false;
+  private visibleHulls: boolean[] = [];
+  private simulationActive = false;
+  private animationFrame: number | null = null;
+  private disposed = false;
+  private readonly animate = (time: number): void => {
+    if (this.disposed) return;
+    this.onTick?.(time);
+    this.animationFrame = requestAnimationFrame(this.animate);
+  };
+
+  constructor(onTick?: (time: number) => void) {
+    this.onTick = onTick;
+    this.animationFrame = requestAnimationFrame(this.animate);
+  }
+
   hasSource(): boolean {
-    return false;
+    return this.sourceLoaded;
   }
 
   showSourcePreview(): Promise<void> {
+    this.sourceLoaded = true;
     return Promise.resolve();
   }
 
-  showColliderPreview(): void {}
+  showColliderPreview(result: CompileGlbResult): void {
+    this.visibleHulls = result.hulls.map(() => true);
+  }
 
-  clearColliders(): void {}
+  clearColliders(): void {
+    this.visibleHulls = [];
+  }
 
   updateLayers(): void {}
 
   updateExplosionControls(): void {}
 
-  getScene(): null {
-    return null;
+  getScene(): THREE.Scene {
+    return this.scene;
   }
 
-  setSimulationActive(): void {}
+  setSimulationActive(active: boolean): void {
+    this.simulationActive = active;
+  }
 
-  setHullVisible(): void {}
+  setHullVisible(index: number, visible: boolean): void {
+    if (index in this.visibleHulls) this.visibleHulls[index] = visible;
+  }
 
   state(): PreviewState {
     return {
@@ -510,10 +537,14 @@ export class NullPreviewController implements PreviewApi {
       colliderRevealCount: 0,
       exploded: false,
       explosionAmount: 0,
-      simulationActive: false,
-      visibleHulls: 0,
+      simulationActive: this.simulationActive,
+      visibleHulls: this.visibleHulls.filter(Boolean).length,
     };
   }
 
-  dispose(): void {}
+  dispose(): void {
+    this.disposed = true;
+    if (this.animationFrame !== null) cancelAnimationFrame(this.animationFrame);
+    this.animationFrame = null;
+  }
 }
