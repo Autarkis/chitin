@@ -1,4 +1,4 @@
-import type { BrowserProfileName } from "./shared-constants.js";
+import { ACCEPTANCE_THRESHOLDS, type BrowserProfileName } from "./shared-constants.js";
 import type { CompilationCheck, CompilationMetric, CompilationVerdict } from "./report.js";
 import type { ConvexHull } from "./types.js";
 
@@ -36,18 +36,20 @@ export function browserProfileVerdict(
     message: `${hulls.length} hull(s) generated`,
   }];
   if (profile === "walkable") {
+    const policy = ACCEPTANCE_THRESHOLDS.walkable;
     checks.push(
-      thresholdCheck("source_surface_coverage", value(metrics, "source_surface_coverage"), 0.85, "min"),
-      thresholdCheck("false_fill_fraction", value(metrics, "false_fill_fraction"), 0.5, "max"),
+      thresholdCheck("source_surface_coverage", value(metrics, "source_surface_coverage"), policy.min_covered_fraction, "min"),
+      thresholdCheck("false_fill_fraction", value(metrics, "false_fill_fraction"), policy.max_false_fill_fraction, "max"),
       { code: "walkable_probe", status: "not_evaluated", message: "Native walkable probe is unavailable in WASM" },
       { code: "capsule_sweep", status: "not_evaluated", message: "Native capsule sweep is unavailable in WASM" },
     );
   } else {
+    const policy = ACCEPTANCE_THRESHOLDS.robotics;
     checks.push(
-      thresholdCheck("source_surface_coverage", value(metrics, "source_surface_coverage"), 0.9, "min"),
-      thresholdCheck("worst_component_surface_coverage", value(metrics, "worst_component_surface_coverage"), 0.7, "min"),
-      thresholdCheck("false_fill_fraction", value(metrics, "false_fill_fraction"), 0.3, "max"),
-      thresholdCheck("deep_false_fill_fraction", value(metrics, "deep_false_fill_fraction"), 0.2, "max"),
+      thresholdCheck("source_surface_coverage", value(metrics, "source_surface_coverage"), policy.min_covered_fraction, "min"),
+      thresholdCheck("worst_component_surface_coverage", value(metrics, "worst_component_surface_coverage"), policy.min_worst_cell_fraction, "min"),
+      thresholdCheck("false_fill_fraction", value(metrics, "false_fill_fraction"), policy.max_false_fill_fraction, "max"),
+      thresholdCheck("deep_false_fill_fraction", value(metrics, "deep_false_fill_fraction"), policy.max_deep_false_fill_fraction, "max"),
       { code: "snug_fit", status: "not_evaluated", message: "Native snug-fit refinement is unavailable in WASM" },
     );
   }

@@ -41,6 +41,18 @@ function loadContract() {
       `${sourcePath} lists unknown browser profiles: ${unknownBrowserProfiles.join(", ")}`,
     );
   }
+  const thresholds = contract.acceptance_thresholds;
+  if (!thresholds || typeof thresholds !== "object" || Array.isArray(thresholds)) {
+    throw new Error(`${sourcePath} contains no acceptance thresholds`);
+  }
+  for (const [profile, values] of Object.entries(thresholds)) {
+    if (!profiles.includes(profile) || !values || typeof values !== "object" || Array.isArray(values)) {
+      throw new Error(`${sourcePath} contains invalid thresholds for ${profile}`);
+    }
+    if (Object.values(values).some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+      throw new Error(`${sourcePath} contains a non-numeric threshold for ${profile}`);
+    }
+  }
   return { contract, profiles, browserProfiles };
 }
 
@@ -54,6 +66,7 @@ COACD_PREPROCESS_RESOLUTION = ${JSON.stringify(contract.coacd.preprocess_resolut
 NATIVE_MIN_HULL_VERTICES = ${JSON.stringify(contract.hull.native_min_vertices)}
 INTERACTIVE_MIN_HULL_VERTICES = ${JSON.stringify(contract.hull.interactive_min_vertices)}
 PROFILE_NAMES = (${profileValues}${tupleSuffix})
+ACCEPTANCE_THRESHOLDS = ${JSON.stringify(contract.acceptance_thresholds, null, 2)}
 `;
 }
 
@@ -70,6 +83,7 @@ export const PROFILE_NAMES = [${profileValues}] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
 export const BROWSER_PROFILE_NAMES = [${browserValues}] as const;
 export type BrowserProfileName = (typeof BROWSER_PROFILE_NAMES)[number];
+export const ACCEPTANCE_THRESHOLDS = ${JSON.stringify(contract.acceptance_thresholds, null, 2)} as const;
 `;
 }
 
