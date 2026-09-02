@@ -132,6 +132,73 @@ def load_traces(trace_dir: str | Path) -> list[CoACDTrace]:
     return [_load_trace_file(trace_dir, f) for f in jsonl_files]
 
 
+def _load_array(
+    trace_dir: Path, filename: str, npz: np.lib.npyio.NpzFile | None
+) -> np.ndarray:
+    """Load array from npz archive if available, else from individual .npy."""
+    if npz is not None:
+        key = filename.replace(".npy", "")
+        if key in npz:
+            return npz[key]
+    return np.load(trace_dir / filename)
+
+
+def _try_load_array(
+    trace_dir: Path, filename: str, npz: np.lib.npyio.NpzFile | None
+) -> np.ndarray | None:
+    """Like _load_array but returns None if not found."""
+    if not filename or not isinstance(filename, str):
+        return None
+    if npz is not None:
+        key = filename.replace(".npy", "")
+        if key in npz:
+            return npz[key]
+        return None
+    npy_path = trace_dir / filename
+    if npy_path.exists():
+        return np.load(npy_path)
+    return None
+
+
+class _StreamCache:
+    """Pre-loads concatenated stream arrays from npz once, slices per-clip cheaply."""
+
+    def __init__(self, npz) -> None:
+        self._data: dict[str, np.ndarray] = {}
+        self._offsets: dict[str, np.ndarray] = {}
+        if npz is None:
+            return
+        for key in list(npz.keys()):
+            if key.endswith("_offsets"):
+                base = key[: -len("_offsets")]
+                self._offsets[base] = npz[key]
+            elif key + "_offsets" in npz:
+                self._data[key] = npz[key]
+
+    def slice(self, name: str, idx: int) -> np.ndarray | None:
+        if name not in self._data or name not in self._offsets:
+            return None
+        offsets = self._offsets[name]
+        if idx + 1 >= len(offsets):
+            return None
+        start = int(offsets[idx])
+        end = int(offsets[idx + 1])
+        if start == end:
+            return None
+        return self._data[name][start:end]
+
+
+def _is_stream_format(npz) -> bool:
+    """Detect concatenated-stream npz (v3) vs per-entry npz (v2)."""
+    if npz is None:
+        return False
+    if "clip_pos_verts" in npz and "clip_pos_verts_offsets" in npz:
+        return True
+    if "state_mesh_verts" in npz and "state_mesh_verts_offsets" in npz:
+        return True
+    return False
+
+
 def _load_trace_file(trace_dir: Path, jsonl_path: Path) -> CoACDTrace:
     """Parse one .jsonl file and its associated .npy blobs."""
     events: list[dict] = []
@@ -144,16 +211,32 @@ def _load_trace_file(trace_dir: Path, jsonl_path: Path) -> CoACDTrace:
     if not events or events[0]["event"] != "begin":
         raise ValueError(f"Trace file {jsonl_path} does not start with 'begin' event")
 
+    npz_files = sorted(trace_dir.glob("*_arrays.npz"))
+    npz = np.load(npz_files[0]) if npz_files else None
+    stream = _is_stream_format(npz)
+    streams = _StreamCache(npz) if stream else None
+
     begin = events[0]
     call_id = begin["call_id"]
-    input_verts = _load_npy(trace_dir, begin["input_verts"])
-    input_faces = _load_npy(trace_dir, begin["input_faces"])
+
+    if stream:
+        input_verts = npz["input_verts"]
+        input_faces = npz["input_faces"]
+    elif "input_verts" in begin:
+        input_verts = _load_array(trace_dir, begin["input_verts"], npz)
+        input_faces = _load_array(trace_dir, begin["input_faces"], npz)
+    else:
+        input_verts = np.zeros((0, 3), dtype=np.float64)
+        input_faces = np.zeros((0, 3), dtype=np.int32)
 
     trace = CoACDTrace(
         call_id=call_id,
         input_vertices=input_verts,
         input_faces=input_faces,
     )
+
+    clip_idx = 0
+    state_idx = 0
 
     for ev in events[1:]:
         kind = ev["event"]
@@ -185,22 +268,31 @@ def _load_trace_file(trace_dir: Path, jsonl_path: Path) -> CoACDTrace:
                 neg_faces=ev["neg_num_faces"],
                 intersection_count=ev["intersection_count"],
             )
-            for key, attr in [
-                ("pos_verts", "pos_vertices"),
-                ("pos_faces", "pos_triangles"),
-                ("neg_verts", "neg_vertices"),
-                ("neg_faces", "neg_triangles"),
-                ("input_verts", "input_vertices"),
-                ("input_faces", "input_faces"),
-                ("oracle_sides", "oracle_sides"),
-                ("cut_edges", "cut_edges"),
-                ("cut_points", "cut_points"),
-            ]:
-                filename = ev.get(key, "")
-                if filename and isinstance(filename, str):
-                    npy_path = trace_dir / filename
-                    if npy_path.exists():
-                        setattr(clip, attr, np.load(npy_path))
+            if stream:
+                clip.pos_vertices = streams.slice("clip_pos_verts", clip_idx)
+                clip.pos_triangles = streams.slice("clip_pos_faces", clip_idx)
+                clip.neg_vertices = streams.slice("clip_neg_verts", clip_idx)
+                clip.neg_triangles = streams.slice("clip_neg_faces", clip_idx)
+                clip.input_vertices = streams.slice("clip_input_verts", clip_idx)
+                clip.input_faces = streams.slice("clip_input_faces", clip_idx)
+                clip.oracle_sides = streams.slice("clip_oracle_sides", clip_idx)
+                clip.cut_points = streams.slice("clip_cut_points", clip_idx)
+            else:
+                for key, attr in [
+                    ("pos_verts", "pos_vertices"),
+                    ("pos_faces", "pos_triangles"),
+                    ("neg_verts", "neg_vertices"),
+                    ("neg_faces", "neg_triangles"),
+                    ("input_verts", "input_vertices"),
+                    ("input_faces", "input_faces"),
+                    ("oracle_sides", "oracle_sides"),
+                    ("cut_edges", "cut_edges"),
+                    ("cut_points", "cut_points"),
+                ]:
+                    arr = _try_load_array(trace_dir, ev.get(key, ""), npz)
+                    if arr is not None:
+                        setattr(clip, attr, arr)
+            clip_idx += 1
             trace.clips.append(clip)
         elif kind == "cost":
             trace.costs.append(
@@ -221,21 +313,52 @@ def _load_trace_file(trace_dir: Path, jsonl_path: Path) -> CoACDTrace:
                 )
             )
         elif kind == "component_state":
-            state = ComponentState(
-                iteration=ev["iteration"],
-                component_index=ev["component_index"],
-                mesh_vertices=_load_npy(trace_dir, ev["mesh_verts"]),
-                mesh_faces=_load_npy(trace_dir, ev["mesh_faces"]),
-                hull_vertices=_load_npy(trace_dir, ev["hull_verts"]),
-                hull_faces=_load_npy(trace_dir, ev["hull_faces"]),
-            )
+            if stream:
+
+                def _or_empty(arr, dtype=np.float64):
+                    return arr if arr is not None else np.zeros((0, 3), dtype=dtype)
+
+                state = ComponentState(
+                    iteration=ev["iteration"],
+                    component_index=ev["component_index"],
+                    mesh_vertices=_or_empty(
+                        streams.slice("state_mesh_verts", state_idx)
+                    ),
+                    mesh_faces=_or_empty(
+                        streams.slice("state_mesh_faces", state_idx), np.int32
+                    ),
+                    hull_vertices=_or_empty(
+                        streams.slice("state_hull_verts", state_idx)
+                    ),
+                    hull_faces=_or_empty(
+                        streams.slice("state_hull_faces", state_idx), np.int32
+                    ),
+                )
+            else:
+                state = ComponentState(
+                    iteration=ev["iteration"],
+                    component_index=ev["component_index"],
+                    mesh_vertices=_load_array(trace_dir, ev["mesh_verts"], npz),
+                    mesh_faces=_load_array(trace_dir, ev["mesh_faces"], npz),
+                    hull_vertices=_load_array(trace_dir, ev["hull_verts"], npz),
+                    hull_faces=_load_array(trace_dir, ev["hull_faces"], npz),
+                )
+            state_idx += 1
             trace.component_states.append(state)
         elif kind == "end":
-            part_files = ev["part_files"]
-            for i in range(0, len(part_files), 2):
-                verts = _load_npy(trace_dir, part_files[i])
-                faces = _load_npy(trace_dir, part_files[i + 1])
-                trace.output_parts.append((verts, faces))
+            if stream:
+                num_parts = ev.get("num_parts", 0)
+                for i in range(num_parts):
+                    vk = f"output_{i}_verts"
+                    fk = f"output_{i}_faces"
+                    if npz is not None and vk in npz and fk in npz:
+                        trace.output_parts.append((npz[vk], npz[fk]))
+            elif "part_files" in ev:
+                part_files = ev["part_files"]
+                for i in range(0, len(part_files), 2):
+                    verts = _load_array(trace_dir, part_files[i], npz)
+                    faces = _load_array(trace_dir, part_files[i + 1], npz)
+                    trace.output_parts.append((verts, faces))
 
     return trace
 
@@ -283,16 +406,44 @@ def capture_trace(
     return load_trace(trace_dir)
 
 
+def _build_stream(
+    clips: list[TracedClip],
+    getter,
+    dtype,
+    cols: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Concatenate per-clip arrays into one stream + offset table."""
+    parts = []
+    offsets = [0]
+    for c in clips:
+        arr = getter(c)
+        if arr is not None:
+            if arr.ndim == 1 and cols > 1:
+                arr = arr.reshape(-1, cols)
+            parts.append(arr)
+            offsets.append(offsets[-1] + arr.shape[0])
+        else:
+            offsets.append(offsets[-1])
+    if parts:
+        data = np.concatenate(parts).astype(dtype)
+    else:
+        data = np.zeros((0, cols), dtype=dtype)
+    return data, np.array(offsets, dtype=np.int64)
+
+
 def save_trace(trace: CoACDTrace, out_dir: str | Path) -> None:
-    """Serialize a trace to disk for CI replay (no traced DLL needed)."""
+    """Serialize a trace to disk for CI replay (no traced DLL needed).
+
+    Uses concatenated-stream format: each clip field becomes two npz entries
+    (data + offsets) instead of one entry per clip.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save main arrays
-    np.save(out_dir / "input_verts.npy", trace.input_vertices)
-    np.save(out_dir / "input_faces.npy", trace.input_faces)
+    arrays: dict[str, np.ndarray] = {}
+    arrays["input_verts"] = trace.input_vertices
+    arrays["input_faces"] = trace.input_faces
 
-    # Save metadata as JSON
     meta: dict = {
         "call_id": trace.call_id,
         "num_planes": len(trace.planes),
@@ -301,9 +452,9 @@ def save_trace(trace: CoACDTrace, out_dir: str | Path) -> None:
         "num_mcts": len(trace.mcts_transitions),
         "num_states": len(trace.component_states),
         "num_parts": len(trace.output_parts),
+        "format": "stream_v3",
     }
 
-    # Save planes
     planes_data = [
         {"a": p.a, "b": p.b, "c": p.c, "d": p.d, "method": p.method, "index": p.index}
         for p in trace.planes
@@ -311,59 +462,55 @@ def save_trace(trace: CoACDTrace, out_dir: str | Path) -> None:
     with open(out_dir / "planes.json", "w") as f:
         json.dump(planes_data, f)
 
-    # Save clips metadata (meshes saved as .npy)
     clips_meta = []
-    for i, c in enumerate(trace.clips):
-        cm = {
-            "component_id": c.component_id,
-            "plane": {"a": c.plane.a, "b": c.plane.b, "c": c.plane.c, "d": c.plane.d},
-            "pos_verts": c.pos_verts,
-            "pos_faces": c.pos_faces,
-            "neg_verts": c.neg_verts,
-            "neg_faces": c.neg_faces,
-            "intersection_count": c.intersection_count,
-        }
-        if (
-            c.pos_vertices is not None
-            and c.pos_triangles is not None
-            and c.neg_vertices is not None
-            and c.neg_triangles is not None
-        ):
-            np.save(out_dir / f"clip_{i}_pos_verts.npy", c.pos_vertices)
-            np.save(out_dir / f"clip_{i}_pos_faces.npy", c.pos_triangles)
-            np.save(out_dir / f"clip_{i}_neg_verts.npy", c.neg_vertices)
-            np.save(out_dir / f"clip_{i}_neg_faces.npy", c.neg_triangles)
-            cm["has_meshes"] = True
-        if c.input_vertices is not None and c.input_faces is not None:
-            np.save(out_dir / f"clip_{i}_input_verts.npy", c.input_vertices)
-            np.save(out_dir / f"clip_{i}_input_faces.npy", c.input_faces)
-            cm["has_input"] = True
-        if c.oracle_sides is not None:
-            np.save(out_dir / f"clip_{i}_oracle_sides.npy", c.oracle_sides)
-            cm["has_oracle_sides"] = True
-        if c.cut_edges is not None:
-            np.save(out_dir / f"clip_{i}_cut_edges.npy", c.cut_edges)
-            cm["has_cut_edges"] = True
-        if c.cut_points is not None:
-            np.save(out_dir / f"clip_{i}_cut_points.npy", c.cut_points)
-            cm["has_cut_points"] = True
-        clips_meta.append(cm)
+    for c in trace.clips:
+        clips_meta.append(
+            {
+                "component_id": c.component_id,
+                "plane": {
+                    "a": c.plane.a,
+                    "b": c.plane.b,
+                    "c": c.plane.c,
+                    "d": c.plane.d,
+                },
+                "pos_verts": c.pos_verts,
+                "pos_faces": c.pos_faces,
+                "neg_verts": c.neg_verts,
+                "neg_faces": c.neg_faces,
+                "intersection_count": c.intersection_count,
+            }
+        )
     with open(out_dir / "clips.json", "w") as f:
         json.dump(clips_meta, f)
 
-    # Save component states
+    stream_defs = [
+        ("clip_pos_verts", lambda c: c.pos_vertices, np.float64, 3),
+        ("clip_pos_faces", lambda c: c.pos_triangles, np.int32, 3),
+        ("clip_neg_verts", lambda c: c.neg_vertices, np.float64, 3),
+        ("clip_neg_faces", lambda c: c.neg_triangles, np.int32, 3),
+        ("clip_input_verts", lambda c: c.input_vertices, np.float64, 3),
+        ("clip_input_faces", lambda c: c.input_faces, np.int32, 3),
+        ("clip_oracle_sides", lambda c: c.oracle_sides, np.int16, 1),
+        ("clip_cut_points", lambda c: c.cut_points, np.float64, 3),
+    ]
+    for name, getter, dtype, cols in stream_defs:
+        data, offsets = _build_stream(trace.clips, getter, dtype, cols)
+        if data.size > 0:
+            arrays[name] = data
+            arrays[name + "_offsets"] = offsets
+
     for i, s in enumerate(trace.component_states):
-        np.save(out_dir / f"state_{i}_mesh_verts.npy", s.mesh_vertices)
-        np.save(out_dir / f"state_{i}_mesh_faces.npy", s.mesh_faces)
-        np.save(out_dir / f"state_{i}_hull_verts.npy", s.hull_vertices)
-        np.save(out_dir / f"state_{i}_hull_faces.npy", s.hull_faces)
+        arrays[f"state_{i}_mesh_verts"] = s.mesh_vertices
+        arrays[f"state_{i}_mesh_faces"] = s.mesh_faces
+        arrays[f"state_{i}_hull_verts"] = s.hull_vertices
+        arrays[f"state_{i}_hull_faces"] = s.hull_faces
 
-    # Save output parts
     for i, (v, f_arr) in enumerate(trace.output_parts):
-        np.save(out_dir / f"part_{i}_verts.npy", v)
-        np.save(out_dir / f"part_{i}_faces.npy", f_arr)
+        arrays[f"part_{i}_verts"] = v
+        arrays[f"part_{i}_faces"] = f_arr
 
-    # Save costs, mcts as JSON
+    np.savez(str(out_dir / "arrays.npz"), **arrays)
+
     with open(out_dir / "costs.json", "w") as f:
         json.dump(
             [
@@ -396,16 +543,29 @@ def save_trace(trace: CoACDTrace, out_dir: str | Path) -> None:
 
 
 def load_saved_trace(trace_dir: str | Path) -> CoACDTrace:
-    """Load a trace saved by save_trace() (CI replay format)."""
+    """Load a trace saved by save_trace() (CI replay format).
+
+    Supports stream_v3 (concatenated streams) and v2/v1 (per-clip entries).
+    """
     trace_dir = Path(trace_dir)
 
     with open(trace_dir / "meta.json") as f:
         meta = json.load(f)
 
+    npz_path = trace_dir / "arrays.npz"
+    npz = np.load(str(npz_path)) if npz_path.exists() else None
+    stream = meta.get("format") == "stream_v3" or _is_stream_format(npz)
+    streams = _StreamCache(npz) if stream else None
+
+    def _arr(key: str) -> np.ndarray:
+        if npz is not None and key in npz:
+            return npz[key]
+        return np.load(trace_dir / f"{key}.npy")
+
     trace = CoACDTrace(
         call_id=meta["call_id"],
-        input_vertices=np.load(trace_dir / "input_verts.npy"),
-        input_faces=np.load(trace_dir / "input_faces.npy"),
+        input_vertices=_arr("input_verts"),
+        input_faces=_arr("input_faces"),
     )
 
     with open(trace_dir / "planes.json") as f:
@@ -442,20 +602,44 @@ def load_saved_trace(trace_dir: str | Path) -> CoACDTrace:
             neg_faces=cm["neg_faces"],
             intersection_count=cm["intersection_count"],
         )
-        if cm.get("has_meshes"):
-            clip.pos_vertices = np.load(trace_dir / f"clip_{i}_pos_verts.npy")
-            clip.pos_triangles = np.load(trace_dir / f"clip_{i}_pos_faces.npy")
-            clip.neg_vertices = np.load(trace_dir / f"clip_{i}_neg_verts.npy")
-            clip.neg_triangles = np.load(trace_dir / f"clip_{i}_neg_faces.npy")
-        if cm.get("has_input"):
-            clip.input_vertices = np.load(trace_dir / f"clip_{i}_input_verts.npy")
-            clip.input_faces = np.load(trace_dir / f"clip_{i}_input_faces.npy")
-        if cm.get("has_oracle_sides"):
-            clip.oracle_sides = np.load(trace_dir / f"clip_{i}_oracle_sides.npy")
-        if cm.get("has_cut_edges"):
-            clip.cut_edges = np.load(trace_dir / f"clip_{i}_cut_edges.npy")
-        if cm.get("has_cut_points"):
-            clip.cut_points = np.load(trace_dir / f"clip_{i}_cut_points.npy")
+        if stream and npz is not None:
+            clip.pos_vertices = streams.slice("clip_pos_verts", i)
+            clip.pos_triangles = streams.slice("clip_pos_faces", i)
+            clip.neg_vertices = streams.slice("clip_neg_verts", i)
+            clip.neg_triangles = streams.slice("clip_neg_faces", i)
+            clip.input_vertices = streams.slice("clip_input_verts", i)
+            clip.input_faces = streams.slice("clip_input_faces", i)
+            clip.oracle_sides = streams.slice("clip_oracle_sides", i)
+            clip.cut_points = streams.slice("clip_cut_points", i)
+        elif npz is not None:
+            for key, attr in [
+                (f"clip_{i}_pos_verts", "pos_vertices"),
+                (f"clip_{i}_pos_faces", "pos_triangles"),
+                (f"clip_{i}_neg_verts", "neg_vertices"),
+                (f"clip_{i}_neg_faces", "neg_triangles"),
+                (f"clip_{i}_input_verts", "input_vertices"),
+                (f"clip_{i}_input_faces", "input_faces"),
+                (f"clip_{i}_oracle_sides", "oracle_sides"),
+                (f"clip_{i}_cut_edges", "cut_edges"),
+                (f"clip_{i}_cut_points", "cut_points"),
+            ]:
+                if key in npz:
+                    setattr(clip, attr, npz[key])
+        else:
+            if cm.get("has_meshes"):
+                clip.pos_vertices = np.load(trace_dir / f"clip_{i}_pos_verts.npy")
+                clip.pos_triangles = np.load(trace_dir / f"clip_{i}_pos_faces.npy")
+                clip.neg_vertices = np.load(trace_dir / f"clip_{i}_neg_verts.npy")
+                clip.neg_triangles = np.load(trace_dir / f"clip_{i}_neg_faces.npy")
+            if cm.get("has_input"):
+                clip.input_vertices = np.load(trace_dir / f"clip_{i}_input_verts.npy")
+                clip.input_faces = np.load(trace_dir / f"clip_{i}_input_faces.npy")
+            if cm.get("has_oracle_sides"):
+                clip.oracle_sides = np.load(trace_dir / f"clip_{i}_oracle_sides.npy")
+            if cm.get("has_cut_edges"):
+                clip.cut_edges = np.load(trace_dir / f"clip_{i}_cut_edges.npy")
+            if cm.get("has_cut_points"):
+                clip.cut_points = np.load(trace_dir / f"clip_{i}_cut_points.npy")
         trace.clips.append(clip)
 
     with open(trace_dir / "costs.json") as f:
@@ -487,16 +671,16 @@ def load_saved_trace(trace_dir: str | Path) -> CoACDTrace:
             ComponentState(
                 iteration=0,
                 component_index=i,
-                mesh_vertices=np.load(trace_dir / f"state_{i}_mesh_verts.npy"),
-                mesh_faces=np.load(trace_dir / f"state_{i}_mesh_faces.npy"),
-                hull_vertices=np.load(trace_dir / f"state_{i}_hull_verts.npy"),
-                hull_faces=np.load(trace_dir / f"state_{i}_hull_faces.npy"),
+                mesh_vertices=_arr(f"state_{i}_mesh_verts"),
+                mesh_faces=_arr(f"state_{i}_mesh_faces"),
+                hull_vertices=_arr(f"state_{i}_hull_verts"),
+                hull_faces=_arr(f"state_{i}_hull_faces"),
             )
         )
 
     for i in range(meta["num_parts"]):
-        verts = np.load(trace_dir / f"part_{i}_verts.npy")
-        faces = np.load(trace_dir / f"part_{i}_faces.npy")
+        verts = _arr(f"part_{i}_verts")
+        faces = _arr(f"part_{i}_faces")
         trace.output_parts.append((verts, faces))
 
     return trace
