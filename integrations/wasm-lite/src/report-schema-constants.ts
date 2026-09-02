@@ -15,6 +15,7 @@ export const TOP_LEVEL_REQUIRED = [
   "reproducibility",
   "config",
   "artifacts",
+  "build_identity",
 ] as const;
 export const VERDICT_REQUIRED = ["profile", "status", "reasons", "checks"] as const;
 export const CHECK_REQUIRED = ["code", "status", "message"] as const;
@@ -36,6 +37,12 @@ export const SNUG_FIT_REQUIRED = ["status", "refined_hulls", "rejected_hulls", "
 export const RUNTIME_REQUIRED = ["kind", "implementation", "version", "compiler_version", "dependencies"] as const;
 export const REPRODUCIBILITY_REQUIRED = ["scope", "deterministic", "artifact_sha256"] as const;
 export const CONFIG_REQUIRED = ["requested", "effective"] as const;
+export const BUILD_IDENTITY_REQUIRED = [
+  "effective_input_digest",
+  "algorithm_version",
+  "numerical_policy_version",
+  "config_digest",
+] as const;
 
 export const REPORT_STATUS_VALUES = ["complete", "rejected"] as const;
 export const VERDICT_STATUS_VALUES = ["pass", "fail", "not_evaluated"] as const;

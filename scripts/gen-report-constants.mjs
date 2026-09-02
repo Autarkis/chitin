@@ -50,6 +50,10 @@ const REQUIRED_CONSTANTS = [
     get: (schema) => schema.properties.reproducibility.required,
   },
   { name: "CONFIG_REQUIRED", get: (schema) => schema.properties.config.required },
+  {
+    name: "BUILD_IDENTITY_REQUIRED",
+    get: (schema) => schema.properties.build_identity.required,
+  },
 ];
 
 const ENUM_CONSTANTS = [

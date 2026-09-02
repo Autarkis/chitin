@@ -18,7 +18,8 @@
     "runtime",
     "reproducibility",
     "config",
-    "artifacts"
+    "artifacts",
+    "build_identity"
   ],
   "properties": {
     "report_version": { "const": 1 },
@@ -163,6 +164,39 @@
     "artifacts": {
       "type": "object",
       "additionalProperties": { "type": "string" }
+    },
+    "build_identity": {
+      "type": "object",
+      "description": "Three-layer provenance identity (lingot #64 / chitin #100). Logical build identity = what was asked; realization = how it was built; artifact_digest = what came out.",
+      "additionalProperties": false,
+      "required": [
+        "effective_input_digest",
+        "algorithm_version",
+        "numerical_policy_version",
+        "config_digest"
+      ],
+      "properties": {
+        "effective_input_digest": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of post-preprocessing canonical geometry entering decomposition. Not the source file hash. Null when not computable (e.g. browser WASM without preprocessing access).",
+          "pattern": "^(sha256|blake3):[0-9a-f]+$"
+        },
+        "algorithm_version": {
+          "type": "string",
+          "description": "Semantic version of the decomposition algorithm, independent of chitin package version.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "numerical_policy_version": {
+          "type": "string",
+          "description": "Version of acceptance thresholds and profile definitions. Changes invalidate verdicts, not geometry.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "config_digest": {
+          "type": ["string", "null"],
+          "description": "SHA-256 of output-affecting resolved config (excludes timeout, deterministic, operational settings). Null when config hashing is not available.",
+          "pattern": "^(sha256|blake3):[0-9a-f]+$"
+        }
+      }
     }
   },
   "$defs": {
