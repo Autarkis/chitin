@@ -79,3 +79,8 @@ testpaths = ["tests"]
 # SIGALRM handler cannot interrupt -- and the dump names the stuck test + call.
 timeout = 180
 timeout_method = "thread"
+
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"

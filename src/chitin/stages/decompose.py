@@ -16,6 +16,7 @@ from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig
 from chitin.result import ExtractionResult, Hull, LodHulls
 from chitin.stages.flatness import make_planar_box
+from chitin.trace import TraceRecorder
 from chitin.verify.convex import outward_face_planes as _outward_face_planes
 from chitin.verify.convex import points_inside as _per_vertex_inside
 
@@ -480,7 +481,10 @@ def decompose_and_build(
     mesh_count: int,
     config: ResolvedConfig,
     _plan: BuildPlan | None = None,
+    trace_recorder: TraceRecorder | None = None,
 ) -> ExtractionResult:
+    original_vertices = vertices
+    original_faces = faces
     pre_decimate_count = len(vertices)
     vertices, faces = maybe_decimate(vertices, faces, config.max_decompose_vertices)
 
@@ -514,6 +518,7 @@ def decompose_and_build(
             mesh_vertex_count=mesh_count,
             build_plan=_plan,
             lod_tiers=None,
+            trace=trace_recorder,
         )
 
     tm = trimesh.Trimesh(vertices=vertices, faces=faces)
@@ -546,6 +551,11 @@ def decompose_and_build(
         # these hulls can be reproduced.
         _plan.detected["coacd_deterministic"] = bool(config.coacd_deterministic)
 
+    if trace_recorder is not None:
+        trace_recorder.record_stage(
+            "preprocess", original_vertices, vertices, original_faces, faces
+        )
+
     def _decompose(threshold: float) -> list[Hull]:
         parts = run_coacd_bounded(
             tm.vertices,
@@ -567,6 +577,15 @@ def decompose_and_build(
 
     try:
         hulls = _decompose(config.concavity)
+
+        if trace_recorder is not None:
+            hull_pairs = [(h.vertices, h.indices) for h in hulls]
+            trace_recorder.record_decompose(
+                "decompose",
+                tm.vertices.astype(np.float32),
+                tm.faces.astype(np.int32),
+                hull_pairs,
+            )
 
         lod_tiers = None
         if config.lod_concavities:
@@ -598,6 +617,7 @@ def decompose_and_build(
         mesh_vertex_count=mesh_count,
         build_plan=_plan,
         lod_tiers=lod_tiers,
+        trace=trace_recorder,
     )
 
 
@@ -607,6 +627,7 @@ def decompose_source_mesh(
     source_count: int,
     config: ResolvedConfig,
     _plan: BuildPlan | None = None,
+    trace_recorder: TraceRecorder | None = None,
 ) -> ExtractionResult:
     """Decompose each topological source-mesh component independently.
 
@@ -624,6 +645,7 @@ def decompose_source_mesh(
             len(vertices),
             config,
             _plan=_plan,
+            trace_recorder=trace_recorder,
         )
 
     if _plan is not None:
@@ -653,6 +675,7 @@ def decompose_source_mesh(
             len(component_vertices),
             config,
             _plan=child_plan,
+            trace_recorder=trace_recorder,
         )
         hulls.extend(result.hulls)
         processed_vertices += (
@@ -686,4 +709,5 @@ def decompose_source_mesh(
         mesh_vertex_count=len(vertices),
         build_plan=_plan,
         lod_tiers=lod_tiers,
+        trace=trace_recorder,
     )

@@ -54,6 +54,9 @@ class Config:
     target_footprint: float | None = None
     up_axis: int = 1
     flat_aspect_ratio: float = 0.2
+    # Observability only — does not affect output geometry, so it is deliberately
+    # absent from ResolvedConfig (see resolve.py) and from any output hash.
+    trace: bool = False
 
     def __post_init__(self) -> None:
         if self.concavity <= 0:
