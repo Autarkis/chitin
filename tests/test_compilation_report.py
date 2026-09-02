@@ -301,7 +301,7 @@ def test_validator_falls_back_to_hand_rolled_checks_without_jsonschema(monkeypat
         (
             "missing fields: status, profile, verdict, input, output, timings_ms, "
             "warnings, metrics, processing, runtime, reproducibility, config, artifacts, "
-            "build_identity"
+            "build_identity, topology"
         )
     ]
 

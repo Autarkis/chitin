@@ -32,6 +32,7 @@ from chitin.report import (
 )
 from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult
+from chitin.topology import TopologyAnalysis, analyze_topology
 
 
 def __getattr__(name):
@@ -66,10 +67,12 @@ __all__ = [
     "ReportMetric",
     "ReportWarning",
     "ResolvedConfig",
+    "TopologyAnalysis",
     "Verdict",
     "__version__",
     "analyze_arrays",
     "analyze_input",
+    "analyze_topology",
     "apply_profile",
     "build_compilation_report",
     "build_manifest",

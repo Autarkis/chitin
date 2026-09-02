@@ -19,7 +19,8 @@
     "reproducibility",
     "config",
     "artifacts",
-    "build_identity"
+    "build_identity",
+    "topology"
   ],
   "properties": {
     "report_version": { "const": 1 },
@@ -195,6 +196,59 @@
           "type": ["string", "null"],
           "description": "SHA-256 of output-affecting resolved config (excludes timeout, deterministic, operational settings). Null when config hashing is not available.",
           "pattern": "^(sha256|blake3):[0-9a-f]+$"
+        }
+      }
+    },
+    "topology": {
+      "type": ["object", "null"],
+      "description": "Orthogonal topology analysis of the input mesh (chitin #103). Null when topology analysis was not performed (e.g. splat/point-cloud input).",
+      "additionalProperties": false,
+      "required": [
+        "component_count",
+        "boundary_edge_count",
+        "non_manifold_edge_count",
+        "degenerate_face_count",
+        "consistently_oriented",
+        "closed",
+        "two_manifold"
+      ],
+      "properties": {
+        "component_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of vertex-connected components."
+        },
+        "boundary_edge_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Edges shared by exactly one triangle (open boundary)."
+        },
+        "non_manifold_edge_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Edges shared by more than two triangles."
+        },
+        "degenerate_face_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Triangles with zero area."
+        },
+        "consistently_oriented": {
+          "type": "boolean",
+          "description": "All adjacent faces agree on half-edge direction."
+        },
+        "signed_volume_by_component": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "Signed volume of each connected component via the divergence theorem."
+        },
+        "closed": {
+          "type": "boolean",
+          "description": "No boundary edges and no non-manifold edges."
+        },
+        "two_manifold": {
+          "type": "boolean",
+          "description": "No edges shared by more than two triangles."
         }
       }
     }

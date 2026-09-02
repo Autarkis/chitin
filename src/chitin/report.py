@@ -65,6 +65,7 @@ REPORT_FIELDS = (
     "config",
     "artifacts",
     "build_identity",
+    "topology",
 )
 
 
@@ -110,6 +111,7 @@ class CompilationReport:
     config: dict
     artifacts: dict[str, str]
     build_identity: dict
+    topology: dict | None
     report_version: int = REPORT_VERSION
 
     def to_dict(self) -> dict:
@@ -131,6 +133,7 @@ class CompilationReport:
             "config": dict(self.config),
             "artifacts": dict(self.artifacts),
             "build_identity": dict(self.build_identity),
+            "topology": self.topology,
         }
 
 
@@ -290,6 +293,7 @@ def build_compilation_report(
     artifact_sha256: str | None = None,
     timings_ms: dict[str, float] | None = None,
     build_identity: dict | None = None,
+    topology: dict | None = None,
 ) -> CompilationReport:
     """Build the canonical report without changing acceptance behavior."""
     from chitin.acceptance import report_metrics
@@ -409,6 +413,7 @@ def build_compilation_report(
         },
         artifacts=dict(artifacts or {}),
         build_identity=build_identity,
+        topology=topology,
     )
     problems = validate_compilation_report(report.to_dict())
     if problems:

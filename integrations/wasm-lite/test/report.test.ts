@@ -119,11 +119,25 @@ describe("validateCompilationReport covers the schema's required fields", () => 
 
   it("catches a missing field for every required property in the schema's object tree", () => {
     const paths = collectRequiredPaths(schema);
-    // Include nested objects, not only the 14 top-level keys.
-    expect(paths.length).toBe(52);
+    // Include nested objects, not only the 15 top-level keys.
+    expect(paths.length).toBe(60);
 
     for (const path of paths) {
       const report = reportFixture() as any;
+      // topology is nullable and createCompilationReport() always emits it as
+      // null (browser WASM doesn't compute it today), so deleting one of its
+      // nested required fields needs a populated object to delete from.
+      if (path[0] === "topology" && path.length > 1) {
+        report.topology = {
+          component_count: 1,
+          boundary_edge_count: 0,
+          non_manifold_edge_count: 0,
+          degenerate_face_count: 0,
+          consistently_oriented: true,
+          closed: true,
+          two_manifold: true,
+        };
+      }
       deleteAtPath(report, path);
       const problems = validateCompilationReport(report);
       expect(problems.length, `expected a problem when ${path.join(".")} is missing`).toBeGreaterThan(0);
