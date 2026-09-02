@@ -358,7 +358,7 @@ def main():
             [sys.executable, __file__, name],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=600,
         )
         if result.returncode != 0:
             print(f"  FAILED: {result.stderr.strip()}")
