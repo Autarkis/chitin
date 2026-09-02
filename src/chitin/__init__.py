@@ -19,7 +19,6 @@ from chitin.acceptance import (
 from chitin.analyze import InputAnalysis, analyze_arrays, analyze_input
 from chitin.config import Config
 from chitin.errors import CompilationError
-from chitin.topology import TopologyAnalysis, analyze_topology
 from chitin.manifest import build_manifest, verify_bundle, write_manifest
 from chitin.phys import LodTier, PhysBone, PhysFile, PhysHull, read_phys, validate_phys
 from chitin.plan import BuildPlan
@@ -33,6 +32,7 @@ from chitin.report import (
 )
 from chitin.resolve import ResolvedConfig, resolve_config
 from chitin.result import BoneInfo, ExtractionResult
+from chitin.topology import TopologyAnalysis, analyze_topology
 
 
 def __getattr__(name):
@@ -72,6 +72,7 @@ __all__ = [
     "__version__",
     "analyze_arrays",
     "analyze_input",
+    "analyze_topology",
     "apply_profile",
     "build_compilation_report",
     "build_manifest",
@@ -84,7 +85,6 @@ __all__ = [
     "read_phys",
     "resolve_config",
     "validate_compilation_report",
-    "analyze_topology",
     "validate_phys",
     "verify_bundle",
     "write_manifest",

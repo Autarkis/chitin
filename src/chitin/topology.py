@@ -113,7 +113,7 @@ def _check_consistent_orientation(faces: np.ndarray) -> bool:
     from collections import Counter
 
     counts = Counter(he_tuples)
-    for (a, b), c in counts.items():
+    for c in counts.values():
         if c > 1:
             return False
     return True
