@@ -73,6 +73,10 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: full topology replay (O(n^2), minutes per fixture)",
+    "gate: corpus integrity gate checks",
+]
 # Hard ceiling so a deadlocked test fails fast instead of freezing CI. The
 # "thread" method (not "signal") dumps every thread's stack and hard-exits on
 # timeout, so it can break a C-level deadlock (e.g. open3d/OpenMP) that a Python

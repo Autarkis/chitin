@@ -23,11 +23,12 @@ TRACES_DIR = Path(__file__).parent / "fixtures" / "traces"
 
 CORPUS_FIXTURES = [
     "box",
-    "l_shape",
-    "t_shape",
-    "thin_panel",
-    "staircase",
     "icosphere",
+    "thin_panel",
+    "l_shape",
+    "thin_u_channel",
+    "cross_bracket",
+    "staircase",
 ]
 
 # Multi-policy sweep across grid quantization widths at and above
