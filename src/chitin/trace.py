@@ -154,7 +154,7 @@ class TraceRecorder:
         return index_path
 
     @classmethod
-    def load(cls, directory: str | Path) -> "TraceRecorder":
+    def load(cls, directory: str | Path) -> TraceRecorder:
         """Load a saved trace from directory."""
         directory = Path(directory)
         index_path = directory / "trace.json"
