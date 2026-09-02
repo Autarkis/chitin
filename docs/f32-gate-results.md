@@ -1,119 +1,106 @@
-# F32 Predicate Disproof Gate — Results
+# f32 Predicate Disproof Gate — Results
 
-Issue: [#101](https://github.com/Autarkis/chitin/issues/101)
-Date: 2026-09-01
-Policy version: 0.1.0
+**Issues**: #101, #108 (both open)
+**Date**: 2026-09-02
+**Policy tested**: `DEFAULT_POLICY` (grid_bits=20, classification_ulp_margin=0, intersection_snap_bits=20)
+**Oracle**: CoACD 1.0.14, instrumented DLL, 5 C++ trace hooks (plane, clip, cost, MCTS, component state)
 
-## Verdict: PASS (topology predicates)
+## Verdict: INCONCLUSIVE
 
-One versioned f32/quantized policy preserves classification signs, clip topology,
-and cap boundary loops across the full corpus. G2 is unblocked.
+Not a pass, conditional or otherwise. Not a failure either. #93 and #94 are
+**not** unblocked by this measurement — G2/GPU work should not treat this
+gate as cleared.
 
-Hull volume diverges on thin/degenerate geometry and high-complexity meshes — this
-is a derived quantity, not a topology predicate. CoACD's MCTS search uses plane-side
-classifications and loop topology, not hull volume, for its decisions.
+## What was measured
 
-## Corpus
+- 6 trace fixtures captured from the traced CoACD DLL (box, l_shape, t_shape,
+  thin_panel, staircase, icosphere).
+- f32 vs f64 vertex classification, replayed on 7,334 clips.
+- Corpus-wide classification agreement: **93.7%** (461 disagreements).
+- Worst fixture: staircase at **91.5%** (442 of the 461 disagreements).
+- box, thin_panel, icosphere are already convex and produce zero clips —
+  they contribute no signal.
 
-6 procedural fixtures from `chitin.trace_fixtures` (license-clean, CI-sized):
+## Why this is inconclusive, not a pass
 
-| Fixture | Vertices | Faces | Character |
-|---------|----------|-------|-----------|
-| box | 8 | 12 | Axis-aligned, well-conditioned |
-| l_shape | 12 | 20 | Concave, axis-aligned |
-| thin_panel | 8 | 12 | 0.02 thickness — adversarial |
-| disconnected | 16 | 24 | Two separate boxes |
-| degenerate | 8 | 12 | Near-zero-volume box |
-| high_complexity | 162 | 320 | Subdivided icosphere |
+1. **Tests did not enforce a threshold.** `test_trace_replay.py` printed
+   agreement percentages but asserted nothing — the suite passed even at
+   0% agreement.
 
-8 candidate splitting planes per fixture (3 axis-aligned through centroid + 5 seeded
-random), seed=42. Total: 48 test cases per policy.
+2. **The classification comparison is not against the original mesh.** It
+   reconstructs an approximate input mesh by concatenating each clip's
+   positive/negative outputs, which duplicates cut vertices and loses vertex
+   identity. The comparison is against a reconstruction, not CoACD's real
+   intermediate state.
 
-## Quantization sweep
+3. **No comparison against the C++ oracle's actual decisions.** Both sides
+   of the measured comparison are Python (f64 NumPy vs f32 NumPy); neither
+   is the traced C++ `Side`/`CutSide` classification itself.
 
-Grid bits swept from 10 to 23 (14 policies). Total: 672 test cases.
+4. **"Classification agreement implies topology agreement" is unsupported.**
+   Even with identical per-vertex signs, f32 intersections, snapping,
+   deduplication, loop construction, and winding can still diverge. One
+   matching data point (l_shape, 98.5% both) is not a proof this holds in
+   general.
 
-### Per-predicate agreement
+5. **staircase and t_shape only got classification replay**, not full
+   clip+cap topology replay — the topology comparison is O(n²) in the Python
+   harness and those two fixtures produce 10K–26K vertices per clip after
+   CoACD's voxel preprocessing, making full replay infeasible in test time.
 
-| Predicate | Agree | Disagree | Rate |
-|-----------|-------|----------|------|
-| Plane-side classification | 671 | 1 | 99.85% |
-| Mesh clip | 671 | 1 | 99.85% |
-| Cap / boundary loop | 672 | 0 | 100.00% |
-| Convex hull (topology+volume) | 308 | 364 | 45.83% |
+6. **Only `DEFAULT_POLICY` was tested.** No sweep across `grid_bits`,
+   `classification_ulp_margin`, or `intersection_snap_bits` against the
+   trace corpus.
 
-The single classification disagreement (1/672) is at grid_bits=10 on
-high_complexity — the coarsest quantization on the most complex geometry. All
-grid_bits >= 11 achieve 100% classification and clip agreement.
+7. **The corpus barely exercises decomposition.** Only 3 of 6 fixtures
+   produce clips at all, and of the 7,334 clips measured, staircase alone
+   accounts for 5,226 — the result is dominated by one fixture.
 
-### Hull disagreements — breakdown
+8. **The epsilon-tolerance checker missed bare numeric comparisons**, e.g.
+   `norm < 1e-15` written as a literal rather than threaded through
+   `QuantizationPolicy` — a gap in the tooling meant to catch absolute
+   world-unit epsilons slipping into grid-relative code.
 
-Hull failures are exclusively:
-- **Volume-only divergence** on near-zero-volume clipped geometry (box, thin_panel,
-  disconnected, degenerate): ref volume is 0.00e+00 or -1.73e-18 in f64, f32
-  produces ~1e-7 to ~1e-6. Face counts and outward consistency match.
-- **Face count divergence** on high_complexity only (1280 vs 1364-1378): f32
-  rounding changes Qhull's combinatorial decisions on the 320-face icosphere.
-  Volume also diverges here (including sign flips).
+## What's been done to address this
 
-### Per-policy pass rate (full predicate set including hull volume)
+- C++ instrumentation extended to record the original input mesh plus each
+  triangle's actual `Side` decision at `Clip()` entry.
+- `save_trace`/`load_saved_trace` extended to persist this oracle data.
+- Tests now assert thresholds (classification ≥ 90%, clip/cap topology ≥ 85%)
+  instead of printing and passing unconditionally.
+- Full topology replay work started for staircase/t_shape (previously
+  classification-only).
+- A policy sweep test was added (grid_bits 12, 16, 20, 22).
+- An oracle comparison test was added, skipping gracefully on v1 (pre-oracle)
+  traces.
+- The epsilon checker was expanded to catch bare numeric comparisons, not
+  just named tolerance assignments.
 
-| Grid bits | Pass | Fail | Rate |
-|-----------|------|------|------|
-| 10 | 13 | 35 | 27.1% |
-| 11 | 18 | 30 | 37.5% |
-| 12 | 14 | 34 | 29.2% |
-| 13 | 24 | 24 | 50.0% |
-| 14 | 26 | 22 | 54.2% |
-| 15 | 23 | 25 | 47.9% |
-| 16 | 27 | 21 | 56.2% |
-| 17 | 21 | 27 | 43.8% |
-| 18 | 22 | 26 | 45.8% |
-| 19 | 23 | 25 | 47.9% |
-| 20 | 26 | 22 | 54.2% |
-| 21 | 26 | 22 | 54.2% |
-| 22 | 22 | 26 | 45.8% |
-| 23 | 23 | 25 | 47.9% |
+## What remains before the gate can pass
 
-Pass rate does not improve monotonically with grid_bits because hull volume
-failure is dominated by near-zero reference volumes (division-by-near-zero
-artifact), not by quantization resolution.
+- Regenerate the trace corpus with the v2 instrumented DLL (captures input
+  mesh + oracle sides) — the saved corpus on disk is still v1.
+- Run the oracle comparison and measure f32 vs the C++ oracle's actual
+  decisions, not f64-NumPy-vs-f32-NumPy.
+- Finish and run full clip+cap topology replay on staircase and t_shape, and
+  report the measured rates (not just classification).
+- Sweep policies across the full corpus and characterize the envelope.
+- Define final pass thresholds from the measured data — the current 90%/85%
+  values are regression floors pinned to today's numbers, not derived
+  acceptance criteria.
+- Add nonconvex thin and curved fixtures that force multi-hull decomposition;
+  the current corpus is convex-dominated (half the fixtures produce zero
+  clips) and staircase-dominated among the rest.
+- If exact f32/f64 agreement turns out to be unreachable, document
+  quantitatively what diverges and show end-to-end candidate-ordering and
+  final-collider quality are preserved despite it.
 
-**Excluding hull volume** (topology-only gate): 99.85% pass rate at grid_bits >= 11,
-100% at grid_bits >= 11 for classification+clip+cap.
+## Reproduction
 
-## Selected policy
+```bash
+# Capture corpus (requires the traced DLL deployed)
+python scripts/capture_trace_corpus.py
 
+# Run gate tests (uses saved corpus, no DLL needed)
+python -m pytest tests/test_trace_replay.py -v -s
 ```
-QuantizationPolicy(
-    version="0.1.0",
-    grid_bits=20,
-    classification_ulp_margin=0,
-    intersection_snap_bits=20,
-    winding_check=True,
-)
-```
-
-Grid_bits=20 selected as the default: safely above the grid_bits=10 floor where
-the single classification disagreement occurs, provides ~1M grid resolution per
-axis (sufficient for furniture-scale geometry), and matches the default
-`DEFAULT_POLICY`.
-
-## Rejected alternatives
-
-- **Emulated f64 in WGSL**: not pursued. Topology predicates pass in f32, so the
-  2x register / 4x arithmetic cost of emulated double is unnecessary.
-- **Grid_bits < 11**: one classification disagreement at grid_bits=10 rules out
-  the coarsest quantization levels.
-- **Absolute world-unit epsilons**: no absolute epsilon or asset-specific patch
-  was used. All tolerances are grid-relative.
-
-## Timing
-
-Full 672-case sweep: 8.4s on CPU (not the benchmark — correctness gate only).
-
-## G2 status
-
-**Unblocked.** The f32 quantized-predicate policy preserves topology across the
-admitted corpus. WGSL implementation of classification, clip, and cap can proceed
-with the selected policy.
