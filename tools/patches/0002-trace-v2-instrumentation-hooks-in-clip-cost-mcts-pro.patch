@@ -1,0 +1,275 @@
+From 85f97fcffd28fd3375eb13c3f5e605600c5e635a Mon Sep 17 00:00:00 2001
+From: autarkis <autarkis@gmail.com>
+Date: Wed, 2 Sep 2026 13:58:59 -0700
+Subject: [PATCH 2/2] trace: v2 instrumentation hooks in clip/cost/mcts/process
+
+Record clip oracle decisions, MCTS transitions, cost evaluations,
+and decomposition state. Build config links zlib for crc32.
+---
+ python/package/__init__.py |  4 +++-
+ run_tests.py               | 12 ++++++++----
+ setup.py                   | 10 +++++-----
+ src/clip.cpp               | 11 +++++++++++
+ src/cost.cpp               |  2 ++
+ src/mcts.cpp               |  8 ++++++++
+ src/process.cpp            | 17 +++++++++++++++++
+ 7 files changed, 54 insertions(+), 10 deletions(-)
+
+diff --git a/python/package/__init__.py b/python/package/__init__.py
+index 7219f27..6f87562 100644
+--- a/python/package/__init__.py
++++ b/python/package/__init__.py
+@@ -18,7 +18,9 @@ from ctypes import (
+ _lib_files = os.listdir(os.path.dirname(os.path.abspath(__file__)))
+ for _file in _lib_files:
+     if _file.startswith("lib_coacd"):
+-        _lib = ctypes.CDLL(os.path.join(os.path.dirname(os.path.abspath(__file__)), _file))
++        _lib = ctypes.CDLL(
++            os.path.join(os.path.dirname(os.path.abspath(__file__)), _file)
++        )
+
+
+ class CoACD_Mesh(ctypes.Structure):
+diff --git a/run_tests.py b/run_tests.py
+index f233642..87e3b2a 100644
+--- a/run_tests.py
++++ b/run_tests.py
+@@ -10,7 +10,7 @@ class TestExamples(unittest.TestCase):
+     @staticmethod
+     def single(input_file):
+
+-        def _test(self: 'TestExamples'):
++        def _test(self: "TestExamples"):
+             coacd.set_log_level("warn")
+             mesh = trimesh.load(input_file, force="mesh")
+             mesh = coacd.Mesh(mesh.vertices, mesh.faces)
+@@ -20,7 +20,7 @@ class TestExamples(unittest.TestCase):
+
+     @unittest.skip
+     def test_deterministic(self):
+-        mesh = trimesh.load('examples/SnowFlake.obj', force="mesh")
++        mesh = trimesh.load("examples/SnowFlake.obj", force="mesh")
+         coacd.set_log_level("debug")
+         mesh = coacd.Mesh(mesh.vertices, mesh.faces)
+         acd1 = coacd.run_coacd(mesh, merge=False, seed=1337)
+@@ -37,8 +37,12 @@ class TestExamples(unittest.TestCase):
+
+
+ for f in glob.glob("examples/*.obj"):
+-    setattr(TestExamples, f'test_{os.path.splitext(os.path.basename(f))[0].lower()}', TestExamples.single(f))
++    setattr(
++        TestExamples,
++        f"test_{os.path.splitext(os.path.basename(f))[0].lower()}",
++        TestExamples.single(f),
++    )
+
+
+-if __name__ == '__main__':
++if __name__ == "__main__":
+     unittest.main()
+diff --git a/setup.py b/setup.py
+index 822c92f..d07c68d 100644
+--- a/setup.py
++++ b/setup.py
+@@ -1,6 +1,5 @@
+ # -*- coding: utf-8 -*-
+ import os
+-import sys
+ import platform
+ import subprocess
+
+@@ -46,7 +45,7 @@ class CMakeBuild(build_ext):
+             "-DOPENVDB_CORE_SHARED=OFF",
+             "-DTBB_TEST=OFF",
+             f"-DCMAKE_CXX_FLAGS=-fPIC {'-static-libgcc -static-libstdc++' if system == 'linux' else '/MT /EHsc' if system == 'windows' else '-Wno-missing-template-arg-list-after-template-kw' if system == 'darwin' else ''}",
+-            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
++            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+         ]
+         # Dual-OpenMP safety (e.g. ROCm/HIP torch already mapped libgomp): force std::thread.
+         _omp = os.environ.get("COACD_WITH_OPENMP", "").strip().lower()
+@@ -61,7 +60,7 @@ class CMakeBuild(build_ext):
+         #    cmake_args += ["-GNinja"]
+
+         self.parallel = 4
+-        if "CMAKE_BUILD_PARALLEL_LEVEL" not in os.environ and system != 'windows':
++        if "CMAKE_BUILD_PARALLEL_LEVEL" not in os.environ and system != "windows":
+             if hasattr(self, "parallel") and self.parallel:
+                 build_args += ["-j{}".format(self.parallel)]
+
+@@ -74,7 +73,8 @@ class CMakeBuild(build_ext):
+             ["cmake", ext.sourcedir] + cmake_args, cwd=self.build_temp
+         )
+         subprocess.check_call(
+-            ["cmake", "--build", ".", "--target", "_coacd" , '--config', cfg] + build_args,
++            ["cmake", "--build", ".", "--target", "_coacd", "--config", cfg]
++            + build_args,
+             cwd=self.build_temp,
+         )
+
+@@ -113,5 +113,5 @@ setup(
+     cmdclass={"build_ext": CMakeBuild, "bdist_wheel": bdist_wheel_abi3},
+     zip_safe=False,
+     package_dir={"coacd": os.path.join("python/package")},
+-    scripts=["python/package/bin/coacd"]
++    scripts=["python/package/bin/coacd"],
+ )
+diff --git a/src/clip.cpp b/src/clip.cpp
+index 991eabd..9ee30dc 100644
+--- a/src/clip.cpp
++++ b/src/clip.cpp
+@@ -2,6 +2,7 @@
+ #include "process.h"
+ #include "CDTUtils.h"
+ #include "CDT.h"
++#include "trace_hook.h"
+
+ namespace coacd
+ {
+@@ -431,6 +432,7 @@ namespace coacd
+         int idx = 0;
+         vector<bool> pos_map(N);
+         vector<bool> neg_map(N);
++        std::vector<short> vertex_sides(N, 0);
+
+         map<pair<int, int>, int> edge_map;
+         map<int, int> vertex_map;
+@@ -447,6 +449,9 @@ namespace coacd
+             p2 = mesh.points[id2];
+             short s0 = plane.Side(p0), s1 = plane.Side(p1), s2 = plane.Side(p2);
+             short sum = s0 + s1 + s2;
++            vertex_sides[id0] = s0;
++            vertex_sides[id1] = s1;
++            vertex_sides[id2] = s2;
+             if (s0 == 0 && s1 == 0 && s2 == 0)
+             {
+                 s0 = s1 = s2 = plane.CutSide(p0, p1, p2, plane);
+@@ -454,6 +459,9 @@ namespace coacd
+                 overlap.push_back(p0);
+                 overlap.push_back(p1);
+                 overlap.push_back(p2);
++                vertex_sides[id0] = s0;
++                vertex_sides[id1] = s1;
++                vertex_sides[id2] = s2;
+             }
+
+             if (sum == 3 || sum == 2 || (sum == 1 && ((s0 == 1 && s1 == 0 && s2 == 0) || (s0 == 0 && s1 == 1 && s2 == 0) || (s0 == 0 && s1 == 0 && s2 == 1)))) // pos side
+@@ -949,6 +957,9 @@ namespace coacd
+                                      neg_N + border_map[final_triangles[i][0]] - 1});
+         }
+
++        trace::record_clip_oracle(trace::current_component_id, plane, mesh, vertex_sides,
++                                  pos, neg, border, (int)border.size());
++
+         return true;
+     }
+ }
+diff --git a/src/cost.cpp b/src/cost.cpp
+index 69a2d82..90853af 100644
+--- a/src/cost.cpp
++++ b/src/cost.cpp
+@@ -1,5 +1,6 @@
+ #include "cost.h"
+ #include "hausdorff.h"
++#include "trace_hook.h"
+
+ namespace coacd
+ {
+@@ -93,6 +94,7 @@ namespace coacd
+   {
+     double h_pos = ComputeHCost(pos, posCH, k, resolution, seed, epsilon);
+     double h_neg = ComputeHCost(neg, negCH, k, resolution, seed, epsilon);
++    trace::record_cost(-1, h_pos, h_neg, max(h_pos, h_neg));
+     return max(h_pos, h_neg);
+   }
+
+diff --git a/src/mcts.cpp b/src/mcts.cpp
+index f0a7626..c8ee6a9 100644
+--- a/src/mcts.cpp
++++ b/src/mcts.cpp
+@@ -1,6 +1,7 @@
+ #include <stdint.h>
+ #include "mcts.h"
+ #include "process.h"
++#include "trace_hook.h"
+
+ namespace coacd
+ {
+@@ -631,6 +632,11 @@ namespace coacd
+         {
+             std::shuffle(planes.begin(), planes.end(), coacd::random_engine);
+         }
++
++        if (trace::active()) {
++            for (int i = 0; i < (int)planes.size(); ++i)
++                trace::record_plane(planes[i], "axis_aligned", i);
++        }
+     }
+
+     bool ComputeBestRvClippingPlane(Model &m, Params &params, vector<Plane> &planes, Plane &bestplane, double &bestcost)
+@@ -685,6 +691,8 @@ namespace coacd
+             reward += h;
+         }
+
++        trace::record_mcts(0, h_max, worst_part_idx, 0);
++
+         return h_max;
+     }
+
+diff --git a/src/process.cpp b/src/process.cpp
+index d221f16..b9909a6 100644
+--- a/src/process.cpp
++++ b/src/process.cpp
+@@ -2,6 +2,7 @@
+ #include "mcts.h"
+ #include "config.h"
+ #include "bvh.h"
++#include "trace_hook.h"
+
+ #include <algorithm>
+ #include <cmath>
+@@ -537,6 +538,11 @@ namespace coacd
+         logger::info("# Triangles: {}", mesh.triangles.size());
+         logger::info(" - Decomposition (MCTS)");
+
++        {
++            static int trace_call_counter = 0;
++            trace::begin_decomposition(trace_call_counter++, mesh);
++        }
++
+         size_t iter = 0;
+         while ((int)InputParts.size() > 0)
+         {
+@@ -556,6 +562,7 @@ namespace coacd
+                 if (p % (num_inputs / 10 + 1) == 0)
+                     logger::info("Processing [{:.1f}%]", p * 100.0 / num_inputs);
+
++                trace::current_component_id = p;
+                 Model pmesh = InputParts[p], pCH;
+                 Plane bestplane;
+                 pmesh.ComputeAPX(pCH, params.apx_mode, true);
+@@ -675,6 +682,14 @@ namespace coacd
+             InputParts = tmp;
+             tmp.clear();
+             iter++;
++
++            if (trace::active()) {
++                for (int p = 0; p < num_inputs; p++) {
++                    if (done[p]) {
++                        trace::record_component_state((int)iter - 1, p, done_mesh[p], done_ch[p]);
++                    }
++                }
++            }
+         }
+         if (params.merge)
+             MergeConvexHulls(mesh, pmeshs, parts, params);
+@@ -698,6 +713,8 @@ namespace coacd
+ #endif
+         logger::info("# Convex Hulls: {}", (int)parts.size());
+
++        trace::end_decomposition(parts);
++
+         return parts;
+     }
+ }
+--
+2.50.0.windows.1

@@ -1,0 +1,723 @@
+From 2a8b2b45288b2a45bc99784fd19bf99d218d4093 Mon Sep 17 00:00:00 2001
+From: autarkis <autarkis@gmail.com>
+Date: Wed, 2 Sep 2026 13:58:49 -0700
+Subject: [PATCH 1/2] trace: concatenated-stream trace hook with ZIP64 flush
+
+Stream<T> buffers concatenate all clips' data into contiguous arrays
+with int64 offset tables. Single ZIP64 npz flush at end_decomposition.
+
+Fixes: thread-unsafe buffer ops outside mutex, uint16 entry overflow
+at >65535 entries, ftell 32-bit overflow on >2GB files.
+h_shape (20954 clips) produces ~20 npz entries instead of 167k.
+---
+ CMakeLists.txt     |   2 +-
+ src/trace_hook.cpp | 621 +++++++++++++++++++++++++++++++++++++++++++++
+ src/trace_hook.h   |  56 ++++
+ 3 files changed, 678 insertions(+), 1 deletion(-)
+ create mode 100644 src/trace_hook.cpp
+ create mode 100644 src/trace_hook.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ae77500..7c7d43f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -85,7 +85,7 @@ else()
+ endif()
+
+ add_library(coacd_objects OBJECT ${COACD_SRC})
+-target_link_libraries(coacd_objects PRIVATE coacd_interface)
++target_link_libraries(coacd_objects PRIVATE coacd_interface ZLIB::ZLIB)
+ target_include_directories(coacd_objects
+     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/public>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+diff --git a/src/trace_hook.cpp b/src/trace_hook.cpp
+new file mode 100644
+index 0000000..1d31816
+--- /dev/null
++++ b/src/trace_hook.cpp
+@@ -0,0 +1,621 @@
++#include "trace_hook.h"
++
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <string>
++#include <vector>
++#include <mutex>
++#include <sys/stat.h>
++#include <sys/types.h>
++#include <zlib.h>
++
++#ifdef _WIN32
++#define COACD_STAT _stat
++#define COACD_STAT_STRUCT struct _stat
++#else
++#define COACD_STAT stat
++#define COACD_STAT_STRUCT struct stat
++#endif
++
++namespace coacd {
++namespace trace {
++
++namespace {
++
++// Concatenated stream: all clips' data for one field appended into a single
++// contiguous buffer, with a row-offset table so the reader can slice per-clip.
++// At flush time each stream becomes exactly 2 npz entries (data + offsets)
++// instead of one entry per clip.
++template <typename T>
++struct Stream {
++    std::vector<T> data;
++    std::vector<int64_t> offsets;  // offsets[i] = row index where clip i starts
++    size_t cols = 0;               // fixed column count (3 for verts/faces, 1 for sides)
++
++    void begin() {
++        offsets.push_back(static_cast<int64_t>(cols > 0 ? data.size() / cols : data.size()));
++    }
++
++    void append(const T* src, size_t rows, size_t c) {
++        cols = c;
++        if (src && rows > 0) {
++            data.insert(data.end(), src, src + rows * c);
++        }
++    }
++
++    size_t total_rows() const { return cols > 0 ? data.size() / cols : data.size(); }
++    bool empty() const { return offsets.empty(); }
++
++    void clear() {
++        data.clear();
++        data.shrink_to_fit();
++        offsets.clear();
++        offsets.shrink_to_fit();
++    }
++};
++
++struct TraceState {
++    std::string trace_dir;
++    bool enabled = false;
++    FILE* jsonl_fp = nullptr;
++    int current_call_id = -1;
++    int clip_counter = 0;
++
++    // Clip data streams — concatenated across all clips
++    Stream<double> pos_verts;
++    Stream<int>    pos_faces;
++    Stream<double> neg_verts;
++    Stream<int>    neg_faces;
++    Stream<double> input_verts;
++    Stream<int>    input_faces;
++    Stream<short>  oracle_sides;
++    Stream<double> cut_points;
++
++    // Component state streams
++    Stream<double> state_mesh_verts;
++    Stream<int>    state_mesh_faces;
++    Stream<double> state_hull_verts;
++    Stream<int>    state_hull_faces;
++
++    // Decomposition input + output (small, kept as individual arrays)
++    std::vector<double> decomp_input_verts;
++    size_t decomp_input_nverts = 0;
++    std::vector<int> decomp_input_faces;
++    size_t decomp_input_nfaces = 0;
++
++    struct OutputPart {
++        std::vector<double> verts;
++        size_t nverts;
++        std::vector<int> faces;
++        size_t nfaces;
++    };
++    std::vector<OutputPart> output_parts;
++
++    void clear_all() {
++        clip_counter = 0;
++        pos_verts.clear(); pos_faces.clear();
++        neg_verts.clear(); neg_faces.clear();
++        input_verts.clear(); input_faces.clear();
++        oracle_sides.clear(); cut_points.clear();
++        state_mesh_verts.clear(); state_mesh_faces.clear();
++        state_hull_verts.clear(); state_hull_faces.clear();
++        decomp_input_verts.clear(); decomp_input_faces.clear();
++        decomp_input_nverts = 0; decomp_input_nfaces = 0;
++        output_parts.clear();
++    }
++};
++
++TraceState g_state;
++std::mutex g_mutex;
++
++bool dir_exists(const std::string& path) {
++    if (path.empty()) return false;
++    COACD_STAT_STRUCT st;
++    if (COACD_STAT(path.c_str(), &st) != 0) return false;
++#ifdef _WIN32
++    return (st.st_mode & _S_IFDIR) != 0;
++#else
++    return S_ISDIR(st.st_mode);
++#endif
++}
++
++std::string join_path(const std::string& dir, const std::string& name) {
++    if (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) {
++        return dir + name;
++    }
++    return dir + "/" + name;
++}
++
++// --- .npy serialization into memory ---
++
++void append_npy_header(std::vector<char>& out, const char* descr, size_t rows, size_t cols) {
++    char shape_buf[128];
++    if (cols == 1) {
++        std::snprintf(shape_buf, sizeof(shape_buf), "(%zu,)", rows);
++    } else {
++        std::snprintf(shape_buf, sizeof(shape_buf), "(%zu, %zu)", rows, cols);
++    }
++
++    std::string header = "{'descr': '";
++    header += descr;
++    header += "', 'fortran_order': False, 'shape': ";
++    header += shape_buf;
++    header += ", }";
++
++    size_t base_len = header.size() + 1;
++    size_t total_len = 10 + base_len;
++    size_t padded_total = ((total_len + 63) / 64) * 64;
++    size_t pad = padded_total - total_len;
++    header.append(pad, ' ');
++    header += "\n";
++
++    unsigned char magic[6] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
++    unsigned char version[2] = {0x01, 0x00};
++    unsigned short header_len = static_cast<unsigned short>(header.size());
++
++    out.insert(out.end(), magic, magic + 6);
++    out.insert(out.end(), version, version + 2);
++    const char* hl = reinterpret_cast<const char*>(&header_len);
++    out.insert(out.end(), hl, hl + sizeof(unsigned short));
++    out.insert(out.end(), header.begin(), header.end());
++}
++
++// Build a complete .npy blob in memory
++template <typename T>
++std::vector<char> make_npy(const T* data, size_t rows, size_t cols, const char* descr) {
++    std::vector<char> blob;
++    append_npy_header(blob, descr, rows, cols);
++    if (rows > 0 && cols > 0) {
++        size_t nbytes = rows * cols * sizeof(T);
++        const char* src = reinterpret_cast<const char*>(data);
++        blob.insert(blob.end(), src, src + nbytes);
++    }
++    return blob;
++}
++
++// --- ZIP64 writer ---
++
++void write_le16(FILE* fp, uint16_t v) {
++    unsigned char b[2] = {static_cast<unsigned char>(v & 0xFF),
++                          static_cast<unsigned char>((v >> 8) & 0xFF)};
++    std::fwrite(b, 1, 2, fp);
++}
++
++void write_le32(FILE* fp, uint32_t v) {
++    unsigned char b[4] = {static_cast<unsigned char>(v & 0xFF),
++                          static_cast<unsigned char>((v >> 8) & 0xFF),
++                          static_cast<unsigned char>((v >> 16) & 0xFF),
++                          static_cast<unsigned char>((v >> 24) & 0xFF)};
++    std::fwrite(b, 1, 4, fp);
++}
++
++void write_le64(FILE* fp, uint64_t v) {
++    unsigned char b[8];
++    for (int i = 0; i < 8; ++i) b[i] = static_cast<unsigned char>((v >> (i * 8)) & 0xFF);
++    std::fwrite(b, 1, 8, fp);
++}
++
++int64_t ftell64(FILE* fp) {
++#ifdef _WIN32
++    return _ftelli64(fp);
++#else
++    return static_cast<int64_t>(ftello(fp));
++#endif
++}
++
++struct NpzEntry {
++    std::string name;
++    std::vector<char> npy_blob;
++};
++
++void flush_npz(const std::string& path, std::vector<NpzEntry>& entries) {
++    if (entries.empty()) return;
++
++    FILE* fp = std::fopen(path.c_str(), "wb");
++    if (!fp) return;
++
++    struct CentralEntry {
++        std::string fname;
++        uint32_t crc;
++        uint64_t size;
++        uint64_t local_offset;
++    };
++    std::vector<CentralEntry> central;
++    central.reserve(entries.size());
++
++    for (auto& e : entries) {
++        std::string fname = e.name + ".npy";
++        uint64_t data_size = e.npy_blob.size();
++        uint32_t crc = static_cast<uint32_t>(
++            ::crc32(::crc32(0L, Z_NULL, 0),
++                    reinterpret_cast<const Bytef*>(e.npy_blob.data()),
++                    static_cast<uInt>(data_size)));
++        uint64_t local_offset = static_cast<uint64_t>(ftell64(fp));
++        uint16_t extra_len = 28;
++
++        write_le32(fp, 0x04034b50);
++        write_le16(fp, 45);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le32(fp, crc);
++        write_le32(fp, 0xFFFFFFFF);
++        write_le32(fp, 0xFFFFFFFF);
++        write_le16(fp, static_cast<uint16_t>(fname.size()));
++        write_le16(fp, extra_len);
++        std::fwrite(fname.data(), 1, fname.size(), fp);
++
++        write_le16(fp, 0x0001);
++        write_le16(fp, 24);
++        write_le64(fp, data_size);
++        write_le64(fp, data_size);
++        write_le64(fp, local_offset);
++
++        std::fwrite(e.npy_blob.data(), 1, e.npy_blob.size(), fp);
++
++        central.push_back({fname, crc, data_size, local_offset});
++
++        e.npy_blob.clear();
++        e.npy_blob.shrink_to_fit();
++    }
++
++    uint64_t cd_offset = static_cast<uint64_t>(ftell64(fp));
++
++    for (auto& c : central) {
++        uint16_t extra_len = 28;
++        write_le32(fp, 0x02014b50);
++        write_le16(fp, 45);
++        write_le16(fp, 45);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le32(fp, c.crc);
++        write_le32(fp, 0xFFFFFFFF);
++        write_le32(fp, 0xFFFFFFFF);
++        write_le16(fp, static_cast<uint16_t>(c.fname.size()));
++        write_le16(fp, extra_len);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le16(fp, 0);
++        write_le32(fp, 0);
++        write_le32(fp, 0xFFFFFFFF);
++        std::fwrite(c.fname.data(), 1, c.fname.size(), fp);
++        write_le16(fp, 0x0001);
++        write_le16(fp, 24);
++        write_le64(fp, c.size);
++        write_le64(fp, c.size);
++        write_le64(fp, c.local_offset);
++    }
++
++    uint64_t cd_size = static_cast<uint64_t>(ftell64(fp)) - cd_offset;
++    uint64_t num_entries = central.size();
++
++    write_le32(fp, 0x06064b50);
++    write_le64(fp, 44);
++    write_le16(fp, 45);
++    write_le16(fp, 45);
++    write_le32(fp, 0);
++    write_le32(fp, 0);
++    write_le64(fp, num_entries);
++    write_le64(fp, num_entries);
++    write_le64(fp, cd_size);
++    write_le64(fp, cd_offset);
++
++    write_le32(fp, 0x07064b50);
++    write_le32(fp, 0);
++    write_le64(fp, cd_offset + cd_size);
++    write_le32(fp, 1);
++
++    write_le32(fp, 0x06054b50);
++    write_le16(fp, 0);
++    write_le16(fp, 0);
++    write_le16(fp, num_entries <= 0xFFFE ? static_cast<uint16_t>(num_entries) : 0xFFFF);
++    write_le16(fp, num_entries <= 0xFFFE ? static_cast<uint16_t>(num_entries) : 0xFFFF);
++    write_le32(fp, cd_size <= 0xFFFFFFFE ? static_cast<uint32_t>(cd_size) : 0xFFFFFFFF);
++    write_le32(fp, cd_offset <= 0xFFFFFFFE ? static_cast<uint32_t>(cd_offset) : 0xFFFFFFFF);
++    write_le16(fp, 0);
++
++    std::fclose(fp);
++}
++
++// Collect all streams into NpzEntry vector for flush_npz.
++template <typename T>
++void emit_stream(std::vector<NpzEntry>& entries, const std::string& name,
++                 Stream<T>& stream, const char* descr) {
++    if (stream.empty()) return;
++    // Finalize offsets — add sentinel for total rows
++    stream.offsets.push_back(static_cast<int64_t>(stream.total_rows()));
++
++    entries.push_back({name, make_npy(stream.data.data(), stream.total_rows(),
++                                      stream.cols, descr)});
++    entries.push_back({name + "_offsets",
++                       make_npy(stream.offsets.data(), stream.offsets.size(), 1, "<i8")});
++}
++
++} // anonymous namespace
++
++thread_local int current_component_id = -1;
++
++void init() {
++    const char* env = std::getenv("COACD_TRACE_DIR");
++    if (env == nullptr || std::strlen(env) == 0) {
++        g_state.enabled = false;
++        return;
++    }
++    g_state.trace_dir = env;
++    g_state.enabled = dir_exists(g_state.trace_dir);
++}
++
++bool active() {
++    return g_state.enabled;
++}
++
++void begin_decomposition(int call_id, const Model& input_mesh) {
++    init();
++    if (!g_state.enabled) return;
++
++    std::lock_guard<std::mutex> lock(g_mutex);
++
++    g_state.current_call_id = call_id;
++    g_state.clear_all();
++
++    std::string jsonl_path = join_path(g_state.trace_dir, std::to_string(call_id) + ".jsonl");
++    g_state.jsonl_fp = std::fopen(jsonl_path.c_str(), "w");
++
++    // Store decomposition input mesh
++    const auto& pts = input_mesh.points;
++    const auto& tris = input_mesh.triangles;
++    g_state.decomp_input_nverts = pts.size();
++    g_state.decomp_input_nfaces = tris.size();
++    g_state.decomp_input_verts.resize(pts.size() * 3);
++    for (size_t i = 0; i < pts.size(); ++i) {
++        g_state.decomp_input_verts[i*3+0] = pts[i][0];
++        g_state.decomp_input_verts[i*3+1] = pts[i][1];
++        g_state.decomp_input_verts[i*3+2] = pts[i][2];
++    }
++    g_state.decomp_input_faces.resize(tris.size() * 3);
++    for (size_t i = 0; i < tris.size(); ++i) {
++        g_state.decomp_input_faces[i*3+0] = tris[i][0];
++        g_state.decomp_input_faces[i*3+1] = tris[i][1];
++        g_state.decomp_input_faces[i*3+2] = tris[i][2];
++    }
++
++    if (g_state.jsonl_fp) {
++        std::fprintf(g_state.jsonl_fp,
++            "{\"event\":\"begin\",\"call_id\":%d,\"num_vertices\":%zu,\"num_faces\":%zu}\n",
++            call_id, pts.size(), tris.size());
++    }
++}
++
++void record_plane(const Plane& plane, const char* generation_method, int plane_index) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++    std::lock_guard<std::mutex> lock(g_mutex);
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"plane\",\"a\":%.17g,\"b\":%.17g,\"c\":%.17g,\"d\":%.17g,\"method\":\"%s\",\"index\":%d}\n",
++        plane.a, plane.b, plane.c, plane.d, generation_method, plane_index);
++}
++
++void record_clip(int component_id, const Plane& plane,
++                 const Model& pos, const Model& neg,
++                 int intersection_count) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++
++    std::lock_guard<std::mutex> lock(g_mutex);
++
++    int clip_idx = g_state.clip_counter++;
++
++    g_state.pos_verts.begin();
++    g_state.pos_verts.append(
++        pos.points.empty() ? nullptr : reinterpret_cast<const double*>(pos.points.data()),
++        pos.points.size(), 3);
++    g_state.pos_faces.begin();
++    g_state.pos_faces.append(
++        pos.triangles.empty() ? nullptr : reinterpret_cast<const int*>(pos.triangles.data()),
++        pos.triangles.size(), 3);
++    g_state.neg_verts.begin();
++    g_state.neg_verts.append(
++        neg.points.empty() ? nullptr : reinterpret_cast<const double*>(neg.points.data()),
++        neg.points.size(), 3);
++    g_state.neg_faces.begin();
++    g_state.neg_faces.append(
++        neg.triangles.empty() ? nullptr : reinterpret_cast<const int*>(neg.triangles.data()),
++        neg.triangles.size(), 3);
++
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"clip\",\"clip_idx\":%d,\"component_id\":%d,"
++        "\"a\":%.17g,\"b\":%.17g,\"c\":%.17g,\"d\":%.17g,"
++        "\"pos_num_vertices\":%zu,\"pos_num_faces\":%zu,"
++        "\"neg_num_vertices\":%zu,\"neg_num_faces\":%zu,"
++        "\"intersection_count\":%d}\n",
++        clip_idx, component_id, plane.a, plane.b, plane.c, plane.d,
++        pos.points.size(), pos.triangles.size(),
++        neg.points.size(), neg.triangles.size(),
++        intersection_count);
++}
++
++void record_clip_oracle(int component_id, const Plane& plane,
++                        const Model& input_mesh,
++                        const std::vector<short>& vertex_sides,
++                        const Model& pos, const Model& neg,
++                        const std::vector<vec3d>& border,
++                        int intersection_count) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++
++    std::lock_guard<std::mutex> lock(g_mutex);
++
++    int clip_idx = g_state.clip_counter++;
++
++    // Append to concatenated streams
++    g_state.pos_verts.begin();
++    g_state.pos_verts.append(
++        pos.points.empty() ? nullptr : reinterpret_cast<const double*>(pos.points.data()),
++        pos.points.size(), 3);
++    g_state.pos_faces.begin();
++    g_state.pos_faces.append(
++        pos.triangles.empty() ? nullptr : reinterpret_cast<const int*>(pos.triangles.data()),
++        pos.triangles.size(), 3);
++    g_state.neg_verts.begin();
++    g_state.neg_verts.append(
++        neg.points.empty() ? nullptr : reinterpret_cast<const double*>(neg.points.data()),
++        neg.points.size(), 3);
++    g_state.neg_faces.begin();
++    g_state.neg_faces.append(
++        neg.triangles.empty() ? nullptr : reinterpret_cast<const int*>(neg.triangles.data()),
++        neg.triangles.size(), 3);
++    g_state.input_verts.begin();
++    g_state.input_verts.append(
++        input_mesh.points.empty() ? nullptr : reinterpret_cast<const double*>(input_mesh.points.data()),
++        input_mesh.points.size(), 3);
++    g_state.input_faces.begin();
++    g_state.input_faces.append(
++        input_mesh.triangles.empty() ? nullptr : reinterpret_cast<const int*>(input_mesh.triangles.data()),
++        input_mesh.triangles.size(), 3);
++    g_state.oracle_sides.begin();
++    g_state.oracle_sides.append(
++        vertex_sides.empty() ? nullptr : vertex_sides.data(),
++        vertex_sides.size(), 1);
++    g_state.cut_points.begin();
++    g_state.cut_points.append(
++        border.empty() ? nullptr : reinterpret_cast<const double*>(border.data()),
++        border.size(), 3);
++
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"clip\",\"clip_idx\":%d,\"component_id\":%d,"
++        "\"a\":%.17g,\"b\":%.17g,\"c\":%.17g,\"d\":%.17g,"
++        "\"pos_num_vertices\":%zu,\"pos_num_faces\":%zu,"
++        "\"neg_num_vertices\":%zu,\"neg_num_faces\":%zu,"
++        "\"input_num_vertices\":%zu,\"input_num_faces\":%zu,"
++        "\"oracle_num_sides\":%zu,\"cut_num_points\":%zu,"
++        "\"intersection_count\":%d}\n",
++        clip_idx, component_id, plane.a, plane.b, plane.c, plane.d,
++        pos.points.size(), pos.triangles.size(),
++        neg.points.size(), neg.triangles.size(),
++        input_mesh.points.size(), input_mesh.triangles.size(),
++        vertex_sides.size(), border.size(),
++        intersection_count);
++}
++
++void record_cost(int component_id, double rv, double hb, double energy) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++    std::lock_guard<std::mutex> lock(g_mutex);
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"cost\",\"component_id\":%d,\"rv\":%.17g,\"hb\":%.17g,\"energy\":%.17g}\n",
++        component_id, rv, hb, energy);
++}
++
++void record_mcts(int iteration, double reward, int worst_part_idx, int visit_count) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++    std::lock_guard<std::mutex> lock(g_mutex);
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"mcts\",\"iteration\":%d,\"reward\":%.17g,\"worst_part\":%d,\"visits\":%d}\n",
++        iteration, reward, worst_part_idx, visit_count);
++}
++
++void record_component_state(int iteration, int component_index,
++                            const Model& mesh, const Model& convex_hull) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++    std::lock_guard<std::mutex> lock(g_mutex);
++
++    g_state.state_mesh_verts.begin();
++    g_state.state_mesh_verts.append(
++        mesh.points.empty() ? nullptr : reinterpret_cast<const double*>(mesh.points.data()),
++        mesh.points.size(), 3);
++    g_state.state_mesh_faces.begin();
++    g_state.state_mesh_faces.append(
++        mesh.triangles.empty() ? nullptr : reinterpret_cast<const int*>(mesh.triangles.data()),
++        mesh.triangles.size(), 3);
++    g_state.state_hull_verts.begin();
++    g_state.state_hull_verts.append(
++        convex_hull.points.empty() ? nullptr : reinterpret_cast<const double*>(convex_hull.points.data()),
++        convex_hull.points.size(), 3);
++    g_state.state_hull_faces.begin();
++    g_state.state_hull_faces.append(
++        convex_hull.triangles.empty() ? nullptr : reinterpret_cast<const int*>(convex_hull.triangles.data()),
++        convex_hull.triangles.size(), 3);
++
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"component_state\",\"iteration\":%d,\"component_index\":%d}\n",
++        iteration, component_index);
++}
++
++void end_decomposition(const std::vector<Model>& output_parts) {
++    if (!g_state.enabled || !g_state.jsonl_fp) return;
++    std::lock_guard<std::mutex> lock(g_mutex);
++
++    int call_id = g_state.current_call_id;
++
++    // Store output parts
++    for (auto& part : output_parts) {
++        TraceState::OutputPart op;
++        op.nverts = part.points.size();
++        op.nfaces = part.triangles.size();
++        op.verts.resize(op.nverts * 3);
++        for (size_t i = 0; i < op.nverts; ++i) {
++            op.verts[i*3+0] = part.points[i][0];
++            op.verts[i*3+1] = part.points[i][1];
++            op.verts[i*3+2] = part.points[i][2];
++        }
++        op.faces.resize(op.nfaces * 3);
++        for (size_t i = 0; i < op.nfaces; ++i) {
++            op.faces[i*3+0] = part.triangles[i][0];
++            op.faces[i*3+1] = part.triangles[i][1];
++            op.faces[i*3+2] = part.triangles[i][2];
++        }
++        g_state.output_parts.push_back(std::move(op));
++    }
++
++    std::fprintf(g_state.jsonl_fp,
++        "{\"event\":\"end\",\"num_clips\":%d,\"num_parts\":%zu}\n",
++        g_state.clip_counter, output_parts.size());
++
++    std::fclose(g_state.jsonl_fp);
++    g_state.jsonl_fp = nullptr;
++
++    // Build npz entries from concatenated streams
++    std::vector<NpzEntry> entries;
++
++    // Decomposition input mesh
++    entries.push_back({"input_verts",
++        make_npy(g_state.decomp_input_verts.data(),
++                 g_state.decomp_input_nverts, 3, "<f8")});
++    entries.push_back({"input_faces",
++        make_npy(g_state.decomp_input_faces.data(),
++                 g_state.decomp_input_nfaces, 3, "<i4")});
++
++    // Clip streams — each becomes 2 entries (data + offsets)
++    emit_stream(entries, "clip_pos_verts", g_state.pos_verts, "<f8");
++    emit_stream(entries, "clip_pos_faces", g_state.pos_faces, "<i4");
++    emit_stream(entries, "clip_neg_verts", g_state.neg_verts, "<f8");
++    emit_stream(entries, "clip_neg_faces", g_state.neg_faces, "<i4");
++    emit_stream(entries, "clip_input_verts", g_state.input_verts, "<f8");
++    emit_stream(entries, "clip_input_faces", g_state.input_faces, "<i4");
++    emit_stream(entries, "clip_oracle_sides", g_state.oracle_sides, "<i2");
++    emit_stream(entries, "clip_cut_points", g_state.cut_points, "<f8");
++
++    // Component state streams
++    emit_stream(entries, "state_mesh_verts", g_state.state_mesh_verts, "<f8");
++    emit_stream(entries, "state_mesh_faces", g_state.state_mesh_faces, "<i4");
++    emit_stream(entries, "state_hull_verts", g_state.state_hull_verts, "<f8");
++    emit_stream(entries, "state_hull_faces", g_state.state_hull_faces, "<i4");
++
++    // Output parts — small count, individual entries
++    for (size_t i = 0; i < g_state.output_parts.size(); ++i) {
++        auto& op = g_state.output_parts[i];
++        entries.push_back({"output_" + std::to_string(i) + "_verts",
++            make_npy(op.verts.data(), op.nverts, 3, "<f8")});
++        entries.push_back({"output_" + std::to_string(i) + "_faces",
++            make_npy(op.faces.data(), op.nfaces, 3, "<i4")});
++    }
++
++    std::string npz_path = join_path(g_state.trace_dir, std::to_string(call_id) + "_arrays.npz");
++    flush_npz(npz_path, entries);
++
++    g_state.clear_all();
++}
++
++} // namespace trace
++} // namespace coacd
+diff --git a/src/trace_hook.h b/src/trace_hook.h
+new file mode 100644
+index 0000000..ccb9b94
+--- /dev/null
++++ b/src/trace_hook.h
+@@ -0,0 +1,56 @@
++#pragma once
++#include "shape.h"
++#include "model_obj.h"
++#include <string>
++#include <vector>
++
++namespace coacd {
++namespace trace {
++
++// Call once at library load / first use. Reads COACD_TRACE_DIR env var.
++// If unset or empty, all hooks are no-ops.
++void init();
++
++// Returns true if tracing is active (COACD_TRACE_DIR was set and valid).
++bool active();
++
++// Begin a new decomposition trace. call_id is a monotonic counter.
++// Opens <trace_dir>/<call_id>.jsonl for writing.
++void begin_decomposition(int call_id, const Model& input_mesh);
++
++// Hook 1: A candidate cutting plane was generated.
++// generation_method: "axis_aligned" or "ternary_refine"
++void record_plane(const Plane& plane, const char* generation_method, int plane_index);
++
++// Hook 2: A clip operation completed.
++void record_clip(int component_id, const Plane& plane,
++                 const Model& pos, const Model& neg,
++                 int intersection_count);
++
++// Hook 2b: Per-vertex Side decisions and input mesh at Clip() entry.
++void record_clip_oracle(int component_id, const Plane& plane,
++                        const Model& input_mesh,
++                        const std::vector<short>& vertex_sides,
++                        const Model& pos, const Model& neg,
++                        const std::vector<vec3d>& border,
++                        int intersection_count);
++
++// Hook 3: Cost computed for a component pair.
++void record_cost(int component_id, double rv, double hb, double energy);
++
++// Hook 4: MCTS reward computed.
++void record_mcts(int iteration, double reward, int worst_part_idx, int visit_count);
++
++// Hook 5: Component state at end of an iteration of the main loop.
++// Writes vertex/face arrays as .npy binary blobs.
++void record_component_state(int iteration, int component_index,
++                            const Model& mesh, const Model& convex_hull);
++
++// Finalize: write output hulls and close the JSONL file.
++void end_decomposition(const std::vector<Model>& output_parts);
++
++// Thread-local component id for clip hook (set by process.cpp parallel lambda)
++extern thread_local int current_component_id;
++
++} // namespace trace
++} // namespace coacd
+--
+2.50.0.windows.1
