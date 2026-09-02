@@ -115,7 +115,7 @@ _OUTPUT_AFFECTING_CONFIG_FIELDS = (
 )
 
 
-def effective_input_digest(vertices: "numpy.ndarray", faces: "numpy.ndarray") -> str:
+def effective_input_digest(vertices: numpy.ndarray, faces: numpy.ndarray) -> str:
     """SHA-256 of the post-preprocessing canonical geometry entering CoACD.
 
     This is the effective input — not the source file hash. A remeshed mesh
@@ -138,8 +138,8 @@ def output_affecting_config_digest(config) -> str:
 
 
 def build_logical_identity(
-    vertices: "numpy.ndarray",
-    faces: "numpy.ndarray",
+    vertices: numpy.ndarray,
+    faces: numpy.ndarray,
     config,
 ) -> dict:
     """The logical build identity: what was asked for, independent of toolchain."""
