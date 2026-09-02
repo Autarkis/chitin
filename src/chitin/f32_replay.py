@@ -170,7 +170,7 @@ def run_predicate_gate(
 
     clip_ref = clip_mesh_f64(v, f, pp, pn)
     clip_cand = clip_mesh_f32(v, f, pp, pn, policy)
-    clip_diff_result = diff_clips(clip_ref, clip_cand)
+    clip_diff_result = diff_clips(clip_ref, clip_cand, policy)
 
     cap_ref = extract_cap_f64(clip_ref)
     cap_cand = extract_cap_f32(clip_cand, policy)

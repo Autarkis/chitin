@@ -27,3 +27,16 @@ integrations/walktest/.release-candidate/
 
 # Agent instructions (local only, not shipped in the public repo)
 CLAUDE.md
+
+# CoACD trace corpus (raw JSONL + .npy) — too large for git, see README
+tests/fixtures/traces/
+
+# Traced-DLL build output and other tool build dirs — too large for git, see README
+tools/coacd-traced/
+tools/coacd-build/
+tools/*.dll
+tools/**/*.dll
+tools/*.so
+tools/**/*.so
+tools/*.dylib
+tools/**/*.dylib
