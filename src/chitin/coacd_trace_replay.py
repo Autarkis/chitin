@@ -202,7 +202,8 @@ def compare_oracle(
     normal = normal / norm
     point = normal * (-clip.plane.d / np.dot(normal, normal))
 
-    f32_sides = classify_plane_f32(vertices, point, normal, policy)
+    f32_result = classify_plane_f32(vertices, point, normal, policy)
+    f32_sides = f32_result.signs
     oracle_sides = clip.oracle_sides.astype(np.int8)
 
     agree_mask = f32_sides == oracle_sides
