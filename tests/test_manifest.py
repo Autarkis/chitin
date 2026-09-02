@@ -156,13 +156,15 @@ def test_config_hash_is_stable_and_config_sensitive(tmp_path):
     assert m1["config"]["hash"] != m3["config"]["hash"]
 
 
-def test_quality_warnings_flags_fallback(box_result):
+def test_quality_warnings_no_longer_flags_fallback(box_result):
     # No warnings on a clean box build...
     assert quality_warnings(box_result) == []
-    # ...but a tagged fallback surfaces.
+    # ...and a historical build_plan tagged with a fallback count (new builds
+    # never produce one — a CoACD timeout raises CompilationError instead,
+    # chitin #102) no longer surfaces a warning for it either.
     box_result.build_plan.detected["fallback_hulls"] = 2
     warnings = quality_warnings(box_result)
-    assert any("fallback" in w for w in warnings)
+    assert not any("fallback" in w for w in warnings)
 
 
 def test_profiles_produce_different_configs():

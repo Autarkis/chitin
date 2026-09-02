@@ -54,6 +54,8 @@ class AcceptancePolicy:
     name: str
     mode: str = "permissive"  # "permissive" | "strict"
     require_hulls: bool = False
+    # DEPRECATED: new builds never produce fallback hulls (chitin #102).
+    # Retained for interpreting historical artifacts.
     allow_fallback_hulls: bool = True
     require_deterministic: bool = False
     require_snug_fit: bool = False
@@ -61,6 +63,7 @@ class AcceptancePolicy:
     min_worst_cell_fraction: float | None = None
     max_false_fill_fraction: float | None = None
     max_deep_false_fill_fraction: float | None = None
+    # DEPRECATED: see allow_fallback_hulls.
     max_fallback_ratio: float | None = None
     require_walkable_probe: bool = False
     min_probe_coverage: float | None = None
@@ -370,6 +373,10 @@ def evaluate(policy: AcceptancePolicy, metrics: dict) -> Verdict:
             )
         )
 
+    # Both checks below are effectively dead code for new builds: a CoACD
+    # timeout now raises CompilationError before a build_plan even exists
+    # (chitin #102), so fallback_hulls is always 0. Retained so a historical
+    # artifact's build_plan (from before #102) still evaluates correctly.
     if not policy.allow_fallback_hulls:
         fallback = int(metrics.get("fallback_hulls") or 0)
         ok = fallback == 0

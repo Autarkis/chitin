@@ -136,12 +136,15 @@ def test_requested_snug_fit_without_execution_stats_is_skipped():
     assert report["processing"]["refinements"]["snug_fit"]["status"] == "skipped"
 
 
-def test_fallback_warning_is_typed_and_separate_from_planar_substitute():
+def test_fallback_hulls_no_longer_produce_a_warning():
+    # A CoACD timeout now raises CompilationError before a build_plan even
+    # exists (chitin #102), so new builds never carry fallback_hulls. A
+    # historical build_plan that still has the field (from before #102)
+    # reports the count in metrics but no longer emits a build-plan warning
+    # for it.
     report = build_compilation_report(_result(fallback_hulls=1)).to_dict()
-    assert report["warnings"][0]["code"] == "COACD_TIMEOUT_FALLBACK"
-    assert report["warnings"][0]["context"] == {"hull_count": 1}
+    assert not any(w["code"] == "COACD_TIMEOUT_FALLBACK" for w in report["warnings"])
     assert report["processing"]["fallbacks"] == {
-        "decomposition_failure_hulls": 1,
         "planar_substitute_hulls": 0,
     }
     assert report["metrics"][FALLBACK_RATIO]["value"] == 1.0

@@ -11,6 +11,7 @@ import numpy as np
 import trimesh
 
 from chitin.config import DEFAULT_COACD_TIMEOUT_SECONDS
+from chitin.errors import CompilationError
 from chitin.plan import BuildPlan
 from chitin.resolve import ResolvedConfig
 from chitin.result import ExtractionResult, Hull, LodHulls
@@ -176,64 +177,6 @@ def run_coacd_bounded(
         with np.load(out_path) as data:
             n = int(data["n"][0])
             return [(data[f"v{i}"], data[f"t{i}"]) for i in range(n)]
-
-
-def _aabb_box_hull(vertices: np.ndarray) -> Hull:
-    """Axis-aligned bounding box of ``vertices`` as a fallback convex hull."""
-    mn, mx = aabb(vertices)
-    mn = mn.astype(np.float32)
-    mx = mx.astype(np.float32)
-    corners = np.array(
-        [
-            [x, y, z]
-            for x in (mn[0], mx[0])
-            for y in (mn[1], mx[1])
-            for z in (mn[2], mx[2])
-        ],
-        dtype=np.float32,
-    )
-    tris = np.array(
-        [
-            0,
-            1,
-            3,
-            0,
-            3,
-            2,
-            4,
-            6,
-            7,
-            4,
-            7,
-            5,
-            0,
-            4,
-            5,
-            0,
-            5,
-            1,
-            2,
-            3,
-            7,
-            2,
-            7,
-            6,
-            0,
-            2,
-            6,
-            0,
-            6,
-            4,
-            1,
-            5,
-            7,
-            1,
-            7,
-            3,
-        ],
-        dtype=np.uint32,
-    )
-    return Hull(vertices=corners, indices=tris)
 
 
 logger = logging.getLogger("chitin")
@@ -604,32 +547,16 @@ def decompose_and_build(
         _plan.detected["coacd_deterministic"] = bool(config.coacd_deterministic)
 
     def _decompose(threshold: float) -> list[Hull]:
-        # Bound CoACD (native, can stall on non-watertight input); fall back to
-        # the mesh's bounding box rather than hang the pipeline.
-        try:
-            parts = run_coacd_bounded(
-                tm.vertices,
-                tm.faces,
-                threshold=threshold,
-                preprocess_mode=config.coacd_preprocess_mode,
-                preprocess_resolution=preprocess_resolution,
-                max_convex_hull=config.max_hulls,
-                timeout=config.coacd_timeout,
-                deterministic=config.coacd_deterministic,
-            )
-        except CoACDTimeoutError:
-            if _plan is not None:
-                _plan.detected["coacd_timeouts"] = (
-                    _plan.detected.get("coacd_timeouts", 0) + 1
-                )
-                # Tag the substituted bounding-box hull explicitly: a coarse AABB
-                # is fine for an interactive prop but disqualifying for robotics,
-                # so acceptance policies gate on this count rather than having to
-                # infer it from the timeout counter.
-                _plan.detected["fallback_hulls"] = (
-                    _plan.detected.get("fallback_hulls", 0) + 1
-                )
-            return env_hulls + [_aabb_box_hull(np.asarray(tm.vertices))]
+        parts = run_coacd_bounded(
+            tm.vertices,
+            tm.faces,
+            threshold=threshold,
+            preprocess_mode=config.coacd_preprocess_mode,
+            preprocess_resolution=preprocess_resolution,
+            max_convex_hull=config.max_hulls,
+            timeout=config.coacd_timeout,
+            deterministic=config.coacd_deterministic,
+        )
         out = env_hulls.copy()
         for verts, tris in parts:
             verts = np.asarray(verts, dtype=np.float32)
@@ -638,14 +565,32 @@ def decompose_and_build(
                 out.append(Hull(vertices=verts, indices=tris))
         return out
 
-    hulls = _decompose(config.concavity)
+    try:
+        hulls = _decompose(config.concavity)
 
-    lod_tiers = None
-    if config.lod_concavities:
-        lod_tiers = [
-            LodHulls(concavity=c, hulls=_decompose(c))
-            for c in sorted(config.lod_concavities)
-        ]
+        lod_tiers = None
+        if config.lod_concavities:
+            lod_tiers = [
+                LodHulls(concavity=c, hulls=_decompose(c))
+                for c in sorted(config.lod_concavities)
+            ]
+    except CoACDTimeoutError as exc:
+        raise CompilationError(
+            code="COACD_TIMEOUT",
+            evidence={
+                "source_vertex_count": source_count,
+                "mesh_vertex_count": mesh_count,
+                "timeout_seconds": config.coacd_timeout,
+                "preprocess_mode": config.coacd_preprocess_mode,
+                "preprocess_resolution": preprocess_resolution,
+                "concavity": config.concavity,
+                "deterministic": config.coacd_deterministic,
+            },
+            message=(
+                f"CoACD timed out after {config.coacd_timeout}s on mesh "
+                f"with {mesh_count} vertices"
+            ),
+        ) from exc
 
     return ExtractionResult(
         hulls=hulls,

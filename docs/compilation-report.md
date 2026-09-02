@@ -21,11 +21,14 @@ directly as `result.report`.
   decomposition.
 - Warning and check `code` values are stable machine-readable identifiers;
   `message` is user-facing text.
-- `decomposition_failure_hulls` and `planar_substitute_hulls` are separate.
-  The Python compiler populates `planar_substitute_hulls` as an integer,
-  `0` when no substitution happened during the run, never `null` for a
-  normal Python run. The browser compiler (`@autarkis/chitin-lite`) still
-  reports `null`: it has no planar-substitution path.
+- `processing.fallbacks` carries only `planar_substitute_hulls` now: a CoACD
+  timeout is a compilation failure (`CompilationError`, code
+  `COACD_TIMEOUT`), never a degraded artifact, so there is no longer a
+  decomposition-failure-hull count to report (chitin #102). The Python
+  compiler populates `planar_substitute_hulls` as an integer, `0` when no
+  substitution happened during the run, never `null` for a normal Python
+  run. The browser compiler (`@autarkis/chitin-lite`) still reports `null`:
+  it has no planar-substitution path.
 - Refinements report `applied`, `skipped`, `not_requested`, or `unknown`.
   Requesting snug-fit without recorded execution statistics is `skipped`.
 - Reproducibility is scoped to `same_runtime_toolchain`. Python-native and
