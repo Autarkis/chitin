@@ -19,6 +19,7 @@ from chitin.stages.splat import (
     inflate_splat_points,
     normals_from_covariance,
 )
+from chitin.trace import TraceRecorder
 
 
 def _normalize_geometry(
@@ -181,6 +182,8 @@ def extract_from_arrays(
     if _resolved.decisions.get("is_environment"):
         _plan.detected["is_environment"] = True
 
+    trace_recorder = TraceRecorder() if config.trace else None
+
     has_covariance = scales is not None and rots is not None
     if has_covariance:
         scales = np.asarray(scales, dtype=np.float64)
@@ -238,6 +241,7 @@ def extract_from_arrays(
             source_vertex_count=source_count,
             mesh_vertex_count=0,
             build_plan=_plan,
+            trace=trace_recorder,
         )
 
     has_valid_normals = normals is not None and not np.allclose(normals, 0)
@@ -254,6 +258,7 @@ def extract_from_arrays(
             source_vertex_count=source_count,
             mesh_vertex_count=len(vertices),
             build_plan=_plan,
+            trace=trace_recorder,
         )
 
     vertices, triangles = post_poisson_filter(
@@ -265,10 +270,17 @@ def extract_from_arrays(
             source_vertex_count=source_count,
             mesh_vertex_count=len(vertices),
             build_plan=_plan,
+            trace=trace_recorder,
         )
 
     result = decompose_and_build(
-        vertices, triangles, source_count, len(vertices), _resolved, _plan=_plan
+        vertices,
+        triangles,
+        source_count,
+        len(vertices),
+        _resolved,
+        _plan=_plan,
+        trace_recorder=trace_recorder,
     )
 
     from chitin.stages.occlusion import cull_occluded_hulls
@@ -309,15 +321,22 @@ def extract_from_mesh(
     if _resolved is None:
         analysis = analyze_arrays(vertices, format="mesh", face_count=len(faces))
         _resolved = resolve_config(config, analysis)
+    trace_recorder = TraceRecorder() if config.trace else None
     if len(vertices) < 4 or len(faces) < 4:
         return ExtractionResult(
             hulls=[],
             source_vertex_count=len(vertices),
             mesh_vertex_count=len(vertices),
             build_plan=_plan,
+            trace=trace_recorder,
         )
     result = decompose_source_mesh(
-        vertices, faces, len(vertices), _resolved, _plan=_plan
+        vertices,
+        faces,
+        len(vertices),
+        _resolved,
+        _plan=_plan,
+        trace_recorder=trace_recorder,
     )
 
     if _resolved.snug_fit:
@@ -397,6 +416,8 @@ def extract_from_rigged_mesh(
         )
         _resolved = resolve_config(config, analysis)
 
+    trace_recorder = TraceRecorder() if config.trace else None
+
     source_count = len(vertices)
     _plan.step("segment_by_bone")
     segments = segment_by_bone(vertices, faces, joint_indices, joint_weights)
@@ -440,6 +461,7 @@ def extract_from_rigged_mesh(
             len(seg_verts),
             _resolved,
             _plan=bone_plan,
+            trace_recorder=trace_recorder,
         )
         if _resolved.snug_fit:
             from chitin.stages.snugfit import refine_hulls
@@ -507,4 +529,5 @@ def extract_from_rigged_mesh(
         bones=bones,
         build_plan=_plan,
         lod_tiers=lod_tiers,
+        trace=trace_recorder,
     )

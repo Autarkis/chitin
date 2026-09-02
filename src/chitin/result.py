@@ -39,6 +39,9 @@ class ExtractionResult:
     lod_tiers: list[LodHulls] | None = None
     analysis: object | None = None
     resolved: object | None = None
+    # Populated when Config(trace=True); typed loosely (not TraceRecorder) to
+    # avoid coupling the result type to the trace module.
+    trace: object | None = None
 
     def to_json(self, path: str | Path) -> None:
         from chitin.exporters.json import export_json

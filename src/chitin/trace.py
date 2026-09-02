@@ -3,6 +3,20 @@
 Records the geometry state at each pipeline stage boundary. Events are
 timestampless and carry input/output digests so two traces can be compared
 to isolate the first divergent stage.
+
+Instrumentation boundary
+------------------------
+CoACD runs as an opaque subprocess (_coacd_worker.py) via its Python bindings
+(coacd.run_coacd). Internal state — candidate splitting planes, MCTS
+transitions, per-face predicate classifications, clip intersections — is not
+observable without patching the C++ source. This tracer operates at the Python
+stage boundary: it records geometry entering and leaving each stage, and hull
+geometry produced by decomposition. When two traces diverge, the replay diff
+reports the first stage whose output differs and, for decomposition stages,
+a semantic hull-level comparison (hull count, per-hull vertex/face counts,
+max vertex displacement, winding consistency). Predicate-level divergence
+isolation requires a trace-instrumented CoACD build (future work, tracked
+as chitin #91 Phase 2).
 """
 
 from __future__ import annotations

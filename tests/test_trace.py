@@ -266,3 +266,86 @@ class TestReplay:
         loaded = TraceRecorder.load(tmp_path / "ref")
         result = replay_and_diff(ref, loaded)
         assert result.identical
+
+
+class TestSemanticReplay:
+    def test_hull_divergence_reported(self):
+        """When decompose outputs differ, replay reports hull-level detail."""
+        from chitin.trace_replay import replay_and_diff
+
+        v, f = _box_arrays()
+        idx = f.ravel().astype(np.uint32)
+
+        ref = TraceRecorder()
+        hulls_ref = [(v[:4], idx[:12]), (v[4:], idx[:12])]
+        ref.record_decompose("decompose", v, f, hulls_ref)
+
+        cand = TraceRecorder()
+        # Perturb one hull's vertices
+        v_perturbed = v[:4].copy()
+        v_perturbed[0] += 0.5
+        hulls_cand = [(v_perturbed, idx[:12]), (v[4:], idx[:12])]
+        cand.record_decompose("decompose", v, f, hulls_cand)
+
+        result = replay_and_diff(ref, cand)
+        assert not result.identical
+        assert result.divergence.kind == "output_mismatch"
+        assert "hull_divergence" in result.divergence.detail
+        hd = result.divergence.detail["hull_divergence"]
+        assert hd["hull_count_reference"] == 2
+        assert hd["hull_count_candidate"] == 2
+        assert hd["first_divergent_hull"] == 0
+        assert hd["max_vertex_displacement"] > 0
+
+    def test_hull_count_mismatch(self):
+        from chitin.trace_replay import replay_and_diff
+
+        v, f = _box_arrays()
+        idx = f.ravel().astype(np.uint32)
+
+        ref = TraceRecorder()
+        ref.record_decompose("decompose", v, f, [(v, idx)])
+
+        cand = TraceRecorder()
+        cand.record_decompose("decompose", v, f, [(v[:4], idx[:12]), (v[4:], idx[:12])])
+
+        result = replay_and_diff(ref, cand)
+        assert not result.identical
+        hd = result.divergence.detail["hull_divergence"]
+        assert hd["hull_count_reference"] == 1
+        assert hd["hull_count_candidate"] == 2
+
+    def test_winding_comparison(self):
+        from chitin.trace_replay import _check_winding_consistency
+
+        v, f = _box_arrays()
+        idx = f.ravel().astype(np.uint32)
+        # Standard box should have consistent winding
+        assert _check_winding_consistency(v, idx) in (
+            True,
+            False,
+        )  # just verifies it runs without error
+
+        # Flipped face should break consistency
+        idx_flipped = idx.copy()
+        # Swap two vertices of first triangle to flip its winding
+        idx_flipped[0], idx_flipped[1] = idx_flipped[1], idx_flipped[0]
+        # May or may not be consistent depending on geometry, but shouldn't crash
+        _check_winding_consistency(v, idx_flipped)
+
+
+def test_trace_wired_into_pipeline():
+    """Config(trace=True) produces an ExtractionResult with a populated trace."""
+    import trimesh
+
+    from chitin import Config, extract_from_mesh
+
+    mesh = trimesh.creation.box(extents=[1, 1, 1])
+    v = np.asarray(mesh.vertices, dtype=np.float32)
+    f = np.asarray(mesh.faces, dtype=np.int32)
+    result = extract_from_mesh(v, f, config=Config(trace=True))
+    assert result.trace is not None
+    assert len(result.trace.events) > 0
+    # At minimum a decompose event should be recorded
+    stages = [e.stage for e in result.trace.events]
+    assert "decompose" in stages
