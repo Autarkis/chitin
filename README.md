@@ -6,13 +6,13 @@
 Open-source geometry-to-physics compiler for generated, captured, and authored
 3D assets.
 
-Chitin is a free MIT-licensed compiler that bridges the gap between geometry and
-physics simulation. Feed it a point cloud, Gaussian field, mesh, or skinned
-model and get back portable convex hulls that a physics engine can load. Raw
-hulls are the direct runtime result; the `.phys` binary sidecar is the durable,
-validated representation, with readers for Python, TypeScript, C#, and C++.
+Chitin is a free MIT-licensed compiler that turns geometry into physics
+colliders. Feed it a point cloud, Gaussian field, mesh, or skinned model and
+get back portable convex hulls that a physics engine can load. Raw hulls are
+the direct output; `.phys` is the persistent format, with readers for Python,
+TypeScript, C#, and C++.
 
-It is not a splat viewer feature or a single-engine import button. Viewer collision tools are great for making one splat scene walkable; Chitin's job is to turn messy 3D assets into deterministic, validated physics artifacts that can ship through web, engine, simulation, and CI pipelines.
+It is not a splat viewer feature or a single-engine import button. Viewer collision tools are great for making one splat scene walkable; Chitin compiles 3D assets into portable convex hulls that work across engines and pipelines.
 
 ## Why Chitin
 
@@ -44,11 +44,10 @@ Chitin reconstructs surfaces and decomposes them into convex hulls. That is the 
 
 ## Ecosystem
 
-Chitin is the geometry-to-physics layer. It emits raw convex hulls for immediate
-runtime use and optional `.phys` artifacts for persistence. It stays independent,
-but is designed to sit under a **scene-level registry** — the layer that owns
-coordinate frames, stable object identity, provenance, and layout, and that
-references selected Chitin physics artifacts rather than producing physics
+Chitin is the geometry-to-physics layer. It emits convex hulls directly and
+optional `.phys` files for persistence. It stays independent but is designed to
+sit under a **scene-level registry** that owns coordinate frames, identity, and
+layout. The registry references Chitin artifacts rather than producing physics
 itself.
 
 Visual-only viewers (mesh or gaussian-splat) render read-only geometry; Chitin
@@ -317,7 +316,7 @@ chitin-server download <job_id> -o ./output
 8. For environment scans: proximity-filters closure surfaces and optionally extrudes a thin shell to prevent interior volume fill
 9. PCA-based flatness detection replaces near-flat octree cells with oriented boxes instead of running CoACD
 10. Decomposes remaining cells into convex hulls (CoACD), in a subprocess and pinned to one thread so the same input yields the same hulls; `--fast` unpins it for 2-4x on concave assets and gives up reproducibility
-11. Seam repair: detects height discontinuities at octree cell boundaries, merges affected cells, and re-extracts for seamless coverage
+11. Seam repair: detects height discontinuities at octree cell boundaries, merges affected cells, and re-extracts for continuous coverage
 12. Deduplicates cross-cell hulls by AABB IOU
 13. If `lod_concavities` is set, runs additional decompositions at each threshold to produce LOD tiers
 14. For rigged GLTF assets (experimental): reads joint weights directly from GLB binary, segments by dominant bone, generates per-bone hulls in bone-local space

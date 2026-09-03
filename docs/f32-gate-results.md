@@ -35,7 +35,7 @@ The clip implementation is structurally sound whenever classification agrees:
 
 The remaining problem is the rare near-plane predicate decision. Only 47 vertex
 decisions out of 166M differed from the C++ oracle, all at |dot| < 7e-7. A slow
-robust path would execute extraordinarily rarely.
+robust path would rarely execute.
 
 ### Path to Policy 0.2.0
 

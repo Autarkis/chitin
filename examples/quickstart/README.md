@@ -15,9 +15,9 @@ unpublished. It does not upload the selected asset.
 
 Collider Lab is also the maintained shell for Chitin's
 [Frontier Labs](../../docs/frontier-labs.md). The current release demonstrates
-the completed-GLB/WASM journey. Future admitted stages extend this same surface
+the completed-GLB/WASM path. Future admitted stages extend this same surface
 with backend comparison, a persistent compiler session, fragment batches,
-progressive capture tiles, and atomic Rapier replacement; they do not create a
+progressive capture tiles, and atomic Rapier replacement. They do not create a
 parallel demo or imply that WebGPU already ships.
 
 Do not open `index.html` directly: the browser's `file://` mode cannot run the

@@ -84,11 +84,11 @@ Add fields to `TracedClip`:
 @dataclass
 class TracedClip:
     # ... existing fields ...
-    input_vertices: np.ndarray | None = None   # (V, 3) float64
-    input_faces: np.ndarray | None = None      # (F, 3) int32
-    oracle_sides: np.ndarray | None = None     # (V,) int8
-    cut_edges: np.ndarray | None = None        # (K, 2) int32
-    cut_points: np.ndarray | None = None       # (K, 3) float64
+    input_vertices: np.ndarray | None = None  # (V, 3) float64
+    input_faces: np.ndarray | None = None  # (F, 3) int32
+    oracle_sides: np.ndarray | None = None  # (V,) int8
+    cut_edges: np.ndarray | None = None  # (K, 2) int32
+    cut_points: np.ndarray | None = None  # (K, 3) float64
 ```
 
 Update `_load_trace_file` to load these from the new `.npy` files when present.
@@ -114,7 +114,9 @@ else:
 Add oracle comparison:
 
 ```python
-def compare_against_oracle(clip: TracedClip, policy: QuantizationPolicy) -> OracleComparison:
+def compare_against_oracle(
+    clip: TracedClip, policy: QuantizationPolicy
+) -> OracleComparison:
     """Compare f32 classification directly against C++ oracle decisions."""
     if clip.oracle_sides is None:
         return None  # trace doesn't have oracle data
