@@ -58,7 +58,9 @@ evaluator and will be rejected on reuse.
 ### Policy 0.2.0 (pending)
 
 Acceptance criteria frozen in `docs/holdout-protocol-0.2.0.md` (#121).
-Corpus not yet selected. Evaluation: `scripts/evaluate_holdout.py --policy 0.2.0`.
+Corpus not yet selected. Selection manifest: `docs/holdout-corpus-0.2.0.json`.
+Capture: `scripts/capture_holdout_corpus.py --manifest <path> --output-dir <dir>`.
+Evaluation: `scripts/evaluate_holdout.py --policy 0.2.0 --corpus-manifest <path>`.
 Output: `docs/holdout-results-0.2.0.json`.
 
 ## Integrity check

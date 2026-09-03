@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "0.2.0",
+  "protocol": "docs/holdout-protocol-0.2.0.md",
+  "traced_coacd": {
+    "version": "1.0.14",
+    "dll_digest": "dd295d37ad6579545f1017c7125bfe8daab65b52a9ff1853a104b8a2851853d3"
+  },
+  "capture": {
+    "threshold": 0.05,
+    "stream_format": "v3"
+  },
+  "fixtures": []
+}

@@ -42,6 +42,14 @@ KNOWN_CORPUS_DIGESTS = {
     "b42e20807a3cf4fc2b6d8048dfc434e83f13f137c4658951de5471a290fa6972",  # h_shape
     # Regression tier — calibration (spent)
     "c2311cfc0c026ee3e870c35ed8b295b1a455c1b1525e24e4b348db511d0ee92b",  # manifest.json
+    # CI tier — calibration (spent)
+    "f2778d3f5ddb58e309bf903667899940b9cbed192b9102791194d889697f125c",  # box
+    "5ff57d55f916ed43e9c54c359f7bb2bde9545248e426625d26bfc853025e0e87",  # icosphere
+    "874302dd2e001fb74d1235ba9302100464a78f246e4d48f831d013a9fddf57c5",  # thin_panel
+    "48a45262c932e01d278544522f15d45d25b59a9f3bc920f5ddcbbdd0e8f68420",  # l_shape
+    "1b1223a253fedc2a86e6c000d6a5d873bf586aab0bbdf04f5175bcae9bb36e40",  # thin_u_channel
+    "fa2e275d0da0bc8c539b0b772e0795d3818f883af9a91c3b2a810544f174593e",  # cross_bracket
+    "9f9be026aecacccb40891d0c60b1874b70fbcdbc9c8d972c4d9300fb4b0760c5",  # staircase
 }
 
 
@@ -58,6 +66,119 @@ def _git_head() -> str:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except (subprocess.CalledProcessError, OSError):
         return "unknown"
+
+
+def _load_corpus_manifest(path: Path) -> dict:
+    """Load and validate a holdout corpus manifest."""
+    with open(path) as f:
+        manifest = json.load(f)
+    if manifest.get("schema_version") != "1.0":
+        raise SystemExit(
+            f"Unsupported manifest schema version: {manifest.get('schema_version')}"
+        )
+    fixtures = manifest.get("fixtures", [])
+    if not fixtures:
+        raise SystemExit(f"Manifest {path} declares no fixtures")
+    for entry in fixtures:
+        if "name" not in entry:
+            raise SystemExit(f"Manifest fixture entry missing 'name': {entry}")
+    return manifest
+
+
+def _load_capture_record(traces_dir: Path, manifest_path: Path) -> dict:
+    """Load and verify the capture record against the manifest."""
+    record_path = traces_dir / "capture-record.json"
+    if not record_path.exists():
+        raise SystemExit(
+            f"Capture record not found at {record_path} — "
+            "run capture_holdout_corpus.py first"
+        )
+    with open(record_path) as f:
+        record = json.load(f)
+    # Verify the capture was made from this manifest
+    actual_manifest_digest = _sha256_file(manifest_path)
+    recorded_manifest_digest = record.get("manifest_digest")
+    if recorded_manifest_digest != actual_manifest_digest:
+        raise SystemExit(
+            f"Capture record manifest digest mismatch: "
+            f"record={recorded_manifest_digest} actual={actual_manifest_digest}"
+        )
+    return record
+
+
+ACCEPTANCE_CRITERIA_0_2_0 = {
+    "classification_rate": 0.99,
+    "oracle_rate": 0.9999,
+    "disagree_face_set_rate": 1.0,
+    "stratified_face_set_rate": 0.99,
+    "invalid_geometry": 0,
+}
+
+
+def _compute_verdict(results: dict) -> dict:
+    """Compare aggregates against frozen acceptance criteria."""
+    fixtures = [f for f in results["fixtures"] if "error" not in f]
+
+    cls_rate = results["aggregate"]["classification_rate"]
+    oracle_rate = results["aggregate"]["oracle_rate"]
+
+    disagree_clips = []
+    for f in fixtures:
+        disagree_clips.extend(f.get("classification_disagreements", []))
+    if disagree_clips:
+        disagree_face_ok = sum(
+            1 for d in disagree_clips if d.get("clip_face_set_agrees")
+        )
+        disagree_face_rate = disagree_face_ok / len(disagree_clips)
+    else:
+        disagree_face_rate = 1.0
+
+    topo_face_agree = sum(f["clip_topology"]["face_set_agree"] for f in fixtures)
+    topo_total = sum(f["clip_topology"]["total"] for f in fixtures)
+    strat_face_rate = topo_face_agree / max(1, topo_total)
+
+    nan_count = sum(
+        f.get("intersection_error", {}).get("nan_residual_count", 0) for f in fixtures
+    )
+    inf_count = sum(
+        f.get("intersection_error", {}).get("inf_residual_count", 0) for f in fixtures
+    )
+    invalid_count = nan_count + inf_count
+
+    checks = {
+        "classification_gte_99pct": {
+            "value": cls_rate,
+            "threshold": 0.99,
+            "pass": cls_rate >= 0.99,
+        },
+        "oracle_gte_99_99pct": {
+            "value": oracle_rate,
+            "threshold": 0.9999,
+            "pass": oracle_rate >= 0.9999,
+        },
+        "zero_invalid_geometry": {
+            "value": invalid_count,
+            "threshold": 0,
+            "nan_count": nan_count,
+            "inf_count": inf_count,
+            "pass": invalid_count == 0,
+            "note": "Counts NaN/Inf clip residuals; structural cap-loop welding (#120) is out of scope",
+        },
+        "disagree_topology_100pct_face_set": {
+            "value": disagree_face_rate,
+            "threshold": 1.0,
+            "count": len(disagree_clips),
+            "pass": disagree_face_rate >= 1.0 or len(disagree_clips) == 0,
+        },
+        "stratified_topology_gte_99pct": {
+            "value": strat_face_rate,
+            "threshold": 0.99,
+            "pass": strat_face_rate >= 0.99,
+        },
+    }
+
+    verdict = "PASS" if all(c["pass"] for c in checks.values()) else "FAIL"
+    return {"verdict": verdict, "checks": checks}
 
 
 def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -> dict:
@@ -280,6 +401,17 @@ def _parse_args():
         choices=["0.1.0", "0.2.0"],
         default="0.1.0",
     )
+    parser.add_argument(
+        "--corpus-manifest",
+        type=Path,
+        default=None,
+        help="JSON manifest for holdout corpus (required for --policy 0.2.0)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing output (development only)",
+    )
     args = parser.parse_args()
 
     if args.policy == "0.2.0":
@@ -296,11 +428,30 @@ def _parse_args():
             else Path("docs/holdout-results.json")
         )
 
+    if args.policy == "0.2.0" and args.corpus_manifest is None:
+        raise SystemExit("--corpus-manifest is required for --policy 0.2.0")
+
     return args, policy
 
 
 def main():
     args, policy = _parse_args()
+
+    CANONICAL_OUTPUTS = {
+        "0.1.0": Path("docs/holdout-results.json"),
+        "0.2.0": Path("docs/holdout-results-0.2.0.json"),
+    }
+    if args.output.exists():
+        canonical = CANONICAL_OUTPUTS.get(policy.version)
+        if canonical and args.output.resolve() == canonical.resolve():
+            raise SystemExit(
+                f"Canonical result {args.output} exists and is permanently immutable."
+            )
+        if not args.force:
+            raise SystemExit(
+                f"Output {args.output} already exists — holdout result is immutable. "
+                "Use --force to overwrite (development only)."
+            )
 
     evaluator_digest = _sha256_file(Path(__file__).resolve())
     prior_digest = _sha256_file(args.output) if args.output.exists() else None
@@ -323,10 +474,56 @@ def main():
         "fixtures": [],
     }
 
-    for name in EXTERNAL_FIXTURES:
+    if args.corpus_manifest:
+        manifest = _load_corpus_manifest(args.corpus_manifest)
+        fixture_names = [entry["name"] for entry in manifest["fixtures"]]
+        results["corpus_manifest"] = str(args.corpus_manifest)
+        results["corpus_manifest_digest"] = _sha256_file(args.corpus_manifest)
+        # Verify capture record chain-of-custody
+        capture_record = _load_capture_record(args.traces_dir, args.corpus_manifest)
+        trace_digests = {
+            r["name"]: r["trace_digest"] for r in capture_record.get("fixtures", [])
+        }
+        for name in fixture_names:
+            npz_path = args.traces_dir / name / "arrays.npz"
+            if not npz_path.exists():
+                raise SystemExit(f"Trace data missing for fixture '{name}': {npz_path}")
+            actual_digest = _sha256_file(npz_path)
+            expected_digest = trace_digests.get(name)
+            if expected_digest is None:
+                raise SystemExit(f"Fixture '{name}' not in capture record")
+            if actual_digest != expected_digest:
+                raise SystemExit(
+                    f"Trace digest mismatch for '{name}': "
+                    f"record={expected_digest} actual={actual_digest}"
+                )
+        # Verify compiler identity from capture record
+        traced_coacd = capture_record.get("traced_coacd", {})
+        if not traced_coacd.get("dll_verified"):
+            raise SystemExit(
+                "Capture record has dll_verified=false — "
+                "holdout evaluation requires verified compiler identity"
+            )
+        recorded_dll_digest = traced_coacd.get("dll_digest")
+        if recorded_dll_digest != DLL_DIGEST:
+            raise SystemExit(
+                f"Capture record DLL digest mismatch:\n"
+                f"  capture record: {recorded_dll_digest}\n"
+                f"  evaluator:      {DLL_DIGEST}"
+            )
+        results["capture_record_verified"] = True
+    else:
+        fixture_names = EXTERNAL_FIXTURES
+
+    for name in fixture_names:
         print(f"Evaluating {name}...", flush=True)
         fixture_result = _evaluate_fixture(name, args.traces_dir, policy)
         results["fixtures"].append(fixture_result)
+        if "error" in fixture_result:
+            raise SystemExit(
+                f"ABORT: fixture '{name}' failed: {fixture_result['error']}. "
+                "No partial results written."
+            )
         if "error" not in fixture_result:
             cls = fixture_result["classification"]
             clip = fixture_result["clip_topology"]
@@ -356,6 +553,15 @@ def main():
         "total_oracle_vertices": total_oracle,
     }
 
+    if policy.version != "0.1.0":
+        verdict_result = _compute_verdict(results)
+        results["verdict"] = verdict_result["verdict"]
+        results["verdict_checks"] = verdict_result["checks"]
+        print(f"\nVerdict: {verdict_result['verdict']}")
+        for check_name, check in verdict_result["checks"].items():
+            status = "PASS" if check["pass"] else "FAIL"
+            print(f"  {check_name}: {status} ({check['value']})")
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     def _sanitize(obj):
@@ -372,6 +578,8 @@ def main():
     with open(args.output, "w") as f:
         json.dump(_sanitize(results), f, indent=2)
     print(f"\nResults written to {args.output}")
+    if "verdict" in results:
+        print(f"Verdict: {results['verdict']}")
 
 
 if __name__ == "__main__":
