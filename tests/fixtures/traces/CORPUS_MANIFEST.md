@@ -30,11 +30,27 @@ Too large for git. Stored as release artifacts or CAS.
 
 Total: ~17.4 GB, 25,170 clips.
 
+## Regression tier (#118, tracked in git)
+
+Extracted from the external-tier holdout after Policy 0.1.0's FAIL verdict
+(`scripts/extract_regression_corpus.py`). 114 clips where f32 classification
+disagreement changed clip face-set topology. Per-clip compressed `.npz` files
+at `tests/fixtures/regression/`, with `manifest.json` carrying per-clip
+SHA-256 digests.
+
+| Source fixture | Clips | Size | manifest.json SHA-256 |
+|----------------|-------|------|-----------------------|
+| t_shape | 2 | 575,326 | `c2311cfc0c026ee3e870c35ed8b295b1a455c1b1525e24e4b348db511d0ee92b` |
+| h_shape | 112 | 11,494,642 | (same manifest) |
+
+Total: ~12 MB, 114 clips.
+
 ## Holdout protocol
 
-External-tier fixtures are holdout candidates. They must not influence regression
-floor tuning. The holdout evaluation runs once, records an immutable result, and
-issues the final PASS/FAIL verdict before #108/#101 close.
+The original holdout evaluation (Policy 0.1.0) ran once, recorded an immutable
+FAIL result (`docs/holdout-results.json`), and the 114 failing clips were
+promoted to the regression tier (#118). Those clips are **spent** — Policy 0.2.0
+evaluation (#115) requires a fresh, disjoint holdout corpus.
 
 ## Integrity check
 
