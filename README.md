@@ -3,9 +3,14 @@
 [![CI](https://github.com/Autarkis/chitin/actions/workflows/ci.yml/badge.svg)](https://github.com/Autarkis/chitin/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Open-source physics asset compiler for scanned, generated, splat, and rigged 3D assets.
+Open-source geometry-to-physics compiler for generated, captured, and authored
+3D assets.
 
-Chitin is a free MIT-licensed compiler that bridges the gap between visual capture (gaussian splats, photogrammetry, LiDAR) and physics simulation. Feed it a point cloud, mesh, or skinned model and get back portable convex hulls that any engine can load. The primary output is the `.phys` binary sidecar -- a compact format with readers for Python, TypeScript, C#, and C++.
+Chitin is a free MIT-licensed compiler that bridges the gap between geometry and
+physics simulation. Feed it a point cloud, Gaussian field, mesh, or skinned
+model and get back portable convex hulls that a physics engine can load. Raw
+hulls are the direct runtime result; the `.phys` binary sidecar is the durable,
+validated representation, with readers for Python, TypeScript, C#, and C++.
 
 It is not a splat viewer feature or a single-engine import button. Viewer collision tools are great for making one splat scene walkable; Chitin's job is to turn messy 3D assets into deterministic, validated physics artifacts that can ship through web, engine, simulation, and CI pipelines.
 
@@ -17,6 +22,9 @@ It is not a splat viewer feature or a single-engine import button. Viewer collis
 - **Broader input surface**: splats, point clouds, static meshes, USD assets, and experimental rigged GLB support.
 - **Thin runtime readers**: Python, TypeScript, C#, and C++ consumers load the same binary format while the heavy reconstruction/decomposition work stays in the compiler.
 - **Pipeline-friendly checks**: `chitin check`, `inspect`, and `validate` make collision generation scriptable and reviewable.
+- **Runtime direction**: the portable WebGPU program is building toward a warm,
+  persistent physicalization session for generated assets, topology-change
+  events, and progressively navigable captures.
 
 ## Use cases
 
@@ -25,6 +33,8 @@ It is not a splat viewer feature or a single-engine import button. Viewer collis
 - **Web/XR**: load `.phys` sidecars in the browser alongside your 3D viewer (Three.js + Rapier)
 - **Game engines**: Unity's ScriptedImporter turns `.phys` into MeshColliders on drop; the Unreal plugin imports the hull data as an asset
 - **Rigged characters**: per-bone convex hulls in bone-local space, ready for ragdoll or hit detection
+- **Generated and mutable worlds**: locally physicalize novel mesh components
+  and committed topology revisions without a server-side asset oven (roadmap)
 
 ## Compared with viewer collision
 
@@ -34,11 +44,12 @@ Chitin reconstructs surfaces and decomposes them into convex hulls. That is the 
 
 ## Ecosystem
 
-Chitin is the asset layer: a compiler that emits `.phys` and nothing more. It
-stays independent, but is designed to sit under a **scene-level registry** — the
-layer that owns coordinate frames, stable object identity, provenance, and
-layout, and that references each asset's `.phys` sidecar rather than producing
-physics itself.
+Chitin is the geometry-to-physics layer. It emits raw convex hulls for immediate
+runtime use and optional `.phys` artifacts for persistence. It stays independent,
+but is designed to sit under a **scene-level registry** — the layer that owns
+coordinate frames, stable object identity, provenance, and layout, and that
+references selected Chitin physics artifacts rather than producing physics
+itself.
 
 Visual-only viewers (mesh or gaussian-splat) render read-only geometry; Chitin
 colliders fill the collision/raycast gap via the Three.js + Rapier reader
@@ -46,6 +57,22 @@ colliders fill the collision/raycast gap via the Three.js + Rapier reader
 
 Integration is by artifact (`.phys`) and reference type, never by package
 import.
+
+## Direction
+
+The shipping browser path is Worker-hosted WASM. A hard-gated portable WebGPU
+implementation is in progress; it is not yet a shipping GPU claim. The target
+is one persistent runtime that can serve three workload classes:
+
+- novel generated or uploaded objects;
+- batches created by committed fracture/topology-change events; and
+- spatial tiles reconstructed from captured Gaussian or point data.
+
+See the [Frontier Labs](docs/frontier-labs.md),
+[adoption strategy](docs/adoption-strategy.md), and
+[WebGPU implementation plan](docs/webgpu-decomposition.md). Public performance
+claims wait for trace correctness, the stage continuation gate, complete output,
+and end-to-end vendor admission.
 
 ## Install
 
@@ -133,10 +160,10 @@ path:       either
 reason:     manifold mesh, eligible for browser-side decomposition
 ```
 
-Point clouds, gaussian splats, and non-manifold meshes require the Python
-pipeline. Its native CoACD build can voxel-remesh open geometry; the browser
-build reports the offending connected part because it intentionally omits that
-repair dependency.
+Plain point-cloud/PLY file ingestion and non-manifold repair require the Python
+pipeline today. Browser callers can compile already-decoded Gaussian fields via
+`compileGaussianField()`, but the browser build cannot repair open meshes because
+it intentionally omits that dependency.
 
 ## CLI
 

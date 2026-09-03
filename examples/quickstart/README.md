@@ -13,6 +13,13 @@ the operating system's reduced-motion preference.
 The demo runs against the local package builds while Chitin remains
 unpublished. It does not upload the selected asset.
 
+Collider Lab is also the maintained shell for Chitin's
+[Frontier Labs](../../docs/frontier-labs.md). The current release demonstrates
+the completed-GLB/WASM journey. Future admitted stages extend this same surface
+with backend comparison, a persistent compiler session, fragment batches,
+progressive capture tiles, and atomic Rapier replacement; they do not create a
+parallel demo or imply that WebGPU already ships.
+
 Do not open `index.html` directly: the browser's `file://` mode cannot run the
 module Worker or load WebAssembly. On Windows, double-click `START_DEMO.cmd` in
 this directory. It prepares the local packages, starts the required local-only
@@ -106,3 +113,18 @@ with metric semantics documented in [`benchmarks/README.md`](benchmarks/README.m
 The package dependencies intentionally use local `file:` references. Switch
 them to released versions only when the npm artifacts containing this API are
 ready to publish.
+
+## Planned evidence surface
+
+The Lab will keep stage and end-to-end evidence distinct:
+
+- `wasm | webgpu` requested and effective backend;
+- cold and warm time to first usable and final accepted collider;
+- source triangles/components and workload class;
+- peak memory, hull complexity, quality, and explicit failure reason;
+- fragment-batch latency distribution and convex-bypass rate; and
+- capture-stage attribution, time to first safe walkable tile, and coverage
+  over time.
+
+Complete WebGPU rows appear only after canonical GPU output exists. Earlier
+clip+hull numbers remain visibly labeled as partial-stage benchmarks.
