@@ -37,14 +37,36 @@ The remaining problem is the rare near-plane predicate decision. Only 47 vertex
 decisions out of 166M differed from the C++ oracle, all at |dot| < 7e-7. A slow
 robust path would rarely execute.
 
+### Refined diagnosis (#119)
+
+Per-clip first-divergence classification (`docs/divergence-report.json`) isolates
+the cause to **grid quantization**, not raw f32 rounding:
+
+| Variant | Classification disagree | Face-set disagree |
+|---------|------------------------:|------------------:|
+| raw f32 (no grid) | 0/114 | 0/114 |
+| grid, no snap | 114/114 | 114/114 |
+| Policy 0.1.0 (grid + snap) | 114/114 | 114/114 |
+
+`normalize_to_grid` maps vertices onto a 2^20 integer grid. For these 114 clips,
+1-2 vertices per clip (108 clips: 1 vertex; 6 clips: 2 vertices) land on the
+wrong side of the plane after quantization — all at |dot| < 7e-7 in the original
+frame, collapsing to exactly zero in the grid frame.
+
+Raw f32 arithmetic without the grid has zero divergence from f64 on all 114 clips.
+Intersection snapping contributes no additional classification error beyond what
+the grid already introduces.
+
 ### Path to Policy 0.2.0
 
-1. Record 114 known failures as regression cases.
-2. Design a filtered predicate: ordinary f32 for almost every vertex, explicit
-   floating-point error bound, deterministic fixed-point or compensated evaluation
-   only inside the ambiguous band.
-3. Use only the calibration corpus for development (holdout is spent).
-4. Evaluate Policy 0.2.0 against a new unseen holdout.
+1. Record 114 known failures as regression cases (#118).
+2. Classify first divergence per clip (#119) — **done**: all 114 diverge at
+   classification due to grid quantization.
+3. Design a filtered predicate: ordinary grid classification for vertices far
+   from the plane, fallback to f64 or compensated evaluation for vertices within
+   the grid cell size of the plane (the ambiguity band).
+4. Use only the calibration corpus for development (holdout is spent).
+5. Evaluate Policy 0.2.0 against a new unseen holdout.
 
 Intersection-coordinate drift (the coordinate-only failures) does not block the
 architecture; 114 connectivity changes do.
