@@ -44,6 +44,11 @@ class TraceReplayReport:
     clip_detail: str
     cap_agrees: bool
     cap_detail: str
+    clip_face_set_agrees: bool = True
+    clip_points_agree: bool = True
+    clip_max_residual: float = 0.0
+    clip_tolerance: float = 0.0
+    cap_face_set_agrees: bool = True
 
 
 @dataclass
@@ -57,6 +62,9 @@ class TraceCorpusReport:
     num_cap_agree: int
     reports: list[TraceReplayReport] = field(default_factory=list)
     skipped: int = 0
+    num_clip_face_agree: int = 0
+    num_clip_points_agree: int = 0
+    max_residuals: list[float] = field(default_factory=list)
 
     @property
     def classification_rate(self) -> float:
@@ -69,6 +77,27 @@ class TraceCorpusReport:
     @property
     def cap_rate(self) -> float:
         return self.num_cap_agree / max(1, self.num_clips_replayed)
+
+    @property
+    def clip_face_rate(self) -> float:
+        return self.num_clip_face_agree / max(1, self.num_clips_replayed)
+
+    @property
+    def clip_points_rate(self) -> float:
+        return self.num_clip_points_agree / max(1, self.num_clips_replayed)
+
+    def residual_percentiles(self) -> dict[str, float]:
+        if not self.max_residuals:
+            return {}
+        import numpy as np
+
+        arr = np.array(self.max_residuals)
+        return {
+            "p50": float(np.percentile(arr, 50)),
+            "p95": float(np.percentile(arr, 95)),
+            "p99": float(np.percentile(arr, 99)),
+            "max": float(np.max(arr)),
+        }
 
     @property
     def all_agree(self) -> bool:
@@ -159,8 +188,13 @@ def replay_clip(
         classification_detail=cls_diff.first_divergence or "",
         clip_agrees=clip_diff.agrees,
         clip_detail=clip_diff.first_divergence or "",
+        clip_face_set_agrees=clip_diff.details.get("face_set_agrees", True),
+        clip_points_agree=clip_diff.details.get("intersection_points_agree", True),
+        clip_max_residual=clip_diff.details.get("intersection_max_residual", 0.0),
+        clip_tolerance=clip_diff.details.get("intersection_tolerance", 0.0),
         cap_agrees=cap_diff.agrees,
         cap_detail=cap_diff.first_divergence or "",
+        cap_face_set_agrees=cap_diff.details.get("cap_face_set_agrees", True),
     )
 
 
@@ -262,6 +296,12 @@ def replay_trace(
             report.num_clip_agree += 1
         if result.cap_agrees:
             report.num_cap_agree += 1
+        if result.clip_face_set_agrees:
+            report.num_clip_face_agree += 1
+        if result.clip_points_agree:
+            report.num_clip_points_agree += 1
+        if result.clip_max_residual > 0:
+            report.max_residuals.append(result.clip_max_residual)
 
     return report
 

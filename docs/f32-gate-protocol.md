@@ -62,3 +62,12 @@ Applied to holdout evaluation (external-tier corpus). All must pass.
 4. Issue PASS or FAIL verdict.
 5. If PASS: close #108 and #101 with sha link.
 6. If FAIL: document failure class, file remediation issue, do not close.
+
+## Deferred measurements
+
+**Candidate ordering preservation** is not measured by this gate. The f32
+predicate gate validates classification, topology, and oracle agreement —
+whether the f32 predicates produce equivalent geometry. Candidate ordering
+(whether the search explores decompositions in the same sequence) is owned
+by #95 (cost graph and deterministic ordering). This gate's CONDITIONAL PASS
+does not assert ordering equivalence.
