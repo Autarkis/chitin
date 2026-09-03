@@ -1,0 +1,10 @@
+{
+  "call_id": 0,
+  "num_planes": 84757,
+  "num_clips": 2108,
+  "num_costs": 0,
+  "num_mcts": 720,
+  "num_states": 3,
+  "num_parts": 3,
+  "format": "stream_v3"
+}

@@ -27,3 +27,23 @@ integrations/walktest/.release-candidate/
 
 # Agent instructions (local only, not shipped in the public repo)
 CLAUDE.md
+
+# CoACD trace corpus — CI tier tracked (stream v3 containers only),
+# external tier ignored (>1GB each). Per-clip .npy files are redundant
+# with stream format and excluded everywhere.
+tests/fixtures/traces/t_shape/
+tests/fixtures/traces/curved_pipe_quarter/
+tests/fixtures/traces/h_shape/
+tests/fixtures/traces/*/clip_*.npy
+tests/fixtures/traces/*/part_*.npy
+tests/fixtures/traces/*/state_*.npy
+
+# Traced-DLL build output and other tool build dirs — too large for git, see README
+tools/coacd-traced/
+tools/coacd-build/
+tools/*.dll
+tools/**/*.dll
+tools/*.so
+tools/**/*.so
+tools/*.dylib
+tools/**/*.dylib

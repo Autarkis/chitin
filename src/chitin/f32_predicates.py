@@ -3,12 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, KDTree, QhullError
 
 from chitin.f32_policy import QuantizationPolicy
 
 _HULL_VOLUME_REL_TOL = 1e-3
-_OUTWARD_TOL = 1e-9
+_POSITION_REL_TOL = 1e-3
+_GRID_CELL_SAFETY_FACTOR = 64.0
 
 
 @dataclass
@@ -320,32 +321,37 @@ def extract_cap_f32(clip_result: ClipResult, policy: QuantizationPolicy) -> CapR
     return CapResult(loops, cap_faces, winding_consistent)
 
 
-def _tetra_volume_sum(vertices: np.ndarray, faces: np.ndarray) -> float:
-    total = 0.0
-    for face in faces:
-        v0, v1, v2 = vertices[face[0]], vertices[face[1]], vertices[face[2]]
-        total += np.dot(v0, np.cross(v1, v2)) / 6.0
-    return float(total)
-
-
 def _outward_consistent(
     vertices: np.ndarray, faces: np.ndarray, face_normals: np.ndarray
 ) -> bool:
     hull_centroid = vertices[np.unique(faces)].mean(axis=0)
     for face, normal in zip(faces, face_normals):
         face_centroid = vertices[face].mean(axis=0)
-        if np.dot(normal, face_centroid - hull_centroid) < -_OUTWARD_TOL:
+        if np.dot(normal, face_centroid - hull_centroid) < 0:
             return False
     return True
 
 
+def _empty_hull_result(points: np.ndarray) -> HullResult:
+    return HullResult(
+        points,
+        np.empty((0, 3), dtype=np.int64),
+        np.empty((0, 3), dtype=points.dtype),
+        False,
+        0.0,
+    )
+
+
 def convex_hull_f64(points: np.ndarray) -> HullResult:
-    hull = ConvexHull(points)
+    try:
+        hull = ConvexHull(points)
+    except QhullError:
+        return _empty_hull_result(points)
     vertices = points
     faces = hull.simplices
     face_normals = hull.equations[:, :3]
     outward_consistent = _outward_consistent(vertices, faces, face_normals)
-    volume = _tetra_volume_sum(vertices, faces)
+    volume = float(hull.volume)
     return HullResult(vertices, faces, face_normals, outward_consistent, volume)
 
 
@@ -354,14 +360,21 @@ def convex_hull_f32(points: np.ndarray, policy: QuantizationPolicy) -> HullResul
     grid_coords, _centroid, _scale_factor = policy.normalize_to_grid(points_f32)
     grid_coords_f32 = grid_coords.astype(np.float32)
 
-    hull = ConvexHull(grid_coords_f32)
+    try:
+        hull = ConvexHull(grid_coords_f32)
+    except QhullError:
+        return _empty_hull_result(points)
     faces = hull.simplices
     vertices = points
 
     points_f32_world = points.astype(np.float32)
     face_normals = hull.equations[:, :3].astype(np.float32)
-    volume = _tetra_volume_sum(points_f32_world, faces)
     outward_consistent = _outward_consistent(points_f32_world, faces, face_normals)
+    try:
+        world_hull = ConvexHull(points_f32_world)
+        volume = float(world_hull.volume)
+    except QhullError:
+        volume = 0.0
     return HullResult(vertices, faces, face_normals, outward_consistent, volume)
 
 
@@ -390,24 +403,136 @@ def diff_classifications(
     return PredicateDiff("classify_plane", agrees, first_divergence, details)
 
 
-def diff_clips(ref: ClipResult, cand: ClipResult) -> PredicateDiff:
-    checks = [
-        ("vertex count", len(ref.vertices), len(cand.vertices)),
-        ("face count", len(ref.faces), len(cand.faces)),
-        (
-            "intersection point count",
-            len(ref.intersection_points),
-            len(cand.intersection_points),
-        ),
-        ("boundary edge count", len(ref.boundary_edges), len(cand.boundary_edges)),
-    ]
-    first_divergence = None
-    for name, ref_val, cand_val in checks:
-        if ref_val != cand_val:
-            first_divergence = f"{name}: ref={ref_val} cand={cand_val}"
-            break
-    agrees = first_divergence is None
+def _canonical_face(face: np.ndarray) -> tuple[int, int, int]:
+    a, b, c = int(face[0]), int(face[1]), int(face[2])
+    return tuple(sorted((a, b, c)))
+
+
+def _canonical_face_list(faces: np.ndarray) -> list[tuple[int, int, int]]:
+    return sorted(_canonical_face(face) for face in faces)
+
+
+def _face_set_diff(
+    ref_faces: np.ndarray, cand_faces: np.ndarray
+) -> tuple[bool, str | None, list[tuple[int, int, int]], list[tuple[int, int, int]]]:
+    ref_canonical = _canonical_face_list(ref_faces)
+    cand_canonical = _canonical_face_list(cand_faces)
+    if ref_canonical == cand_canonical:
+        return True, None, ref_canonical, cand_canonical
+    ref_set = set(ref_canonical)
+    cand_set = set(cand_canonical)
+    only_ref = sorted(ref_set - cand_set)
+    only_cand = sorted(cand_set - ref_set)
+    if only_ref or only_cand:
+        return (
+            False,
+            (
+                f"face set: {len(only_ref)} faces only in ref, {len(only_cand)} only in cand"
+                f" (first ref-only={only_ref[0] if only_ref else None},"
+                f" first cand-only={only_cand[0] if only_cand else None})"
+            ),
+            ref_canonical,
+            cand_canonical,
+        )
+    return (
+        False,
+        f"face multiplicity differs: ref={ref_canonical} cand={cand_canonical}",
+        ref_canonical,
+        cand_canonical,
+    )
+
+
+def _characteristic_scale(*point_arrays: np.ndarray) -> float:
+    pts = [p for p in point_arrays if len(p) > 0]
+    if not pts:
+        return 1.0
+    stacked = np.concatenate(pts, axis=0)
+    spread = float(np.max(np.ptp(stacked, axis=0))) if len(stacked) > 1 else 0.0
+    return max(spread, 1.0)
+
+
+def _match_points_by_position(
+    ref_points: np.ndarray, cand_points: np.ndarray, tol: float
+) -> tuple[bool, str | None, float]:
+    if len(ref_points) != len(cand_points):
+        return (
+            False,
+            f"intersection point count: ref={len(ref_points)} cand={len(cand_points)}",
+            float("inf"),
+        )
+    if len(ref_points) == 0:
+        return True, None, 0.0
+
+    n_cand = len(cand_points)
+    tree = KDTree(cand_points)
+    nn_dist, nn_idx = tree.query(ref_points, k=1)
+    nn_dist = np.atleast_1d(nn_dist)
+    nn_idx = np.atleast_1d(nn_idx)
+
+    order = np.argsort(nn_dist, kind="stable")
+    claimed: set[int] = set()
+    max_residual = 0.0
+    failures: dict[int, tuple[float, str | None]] = {}
+
+    for pos in order:
+        ref_i = int(pos)
+        cand_i = int(nn_idx[ref_i])
+        best_dist = float(nn_dist[ref_i])
+        if cand_i in claimed:
+            k = 2
+            while True:
+                k = min(k, n_cand)
+                q_dist, q_idx = tree.query(ref_points[ref_i], k=k)
+                q_dist = np.atleast_1d(q_dist)
+                q_idx = np.atleast_1d(q_idx)
+                found = False
+                for d, idx in zip(q_dist, q_idx):
+                    idx = int(idx)
+                    if idx not in claimed:
+                        best_dist = float(d)
+                        cand_i = idx
+                        found = True
+                        break
+                if found or k >= n_cand:
+                    break
+                k *= 2
+        claimed.add(cand_i)
+        max_residual = max(max_residual, best_dist)
+        if best_dist > tol:
+            failures[ref_i] = (
+                best_dist,
+                f"intersection point {ref_i}: nearest cand match distance {best_dist} > tol {tol}",
+            )
+
+    if failures:
+        first_i = min(failures)
+        return False, failures[first_i][1], max_residual
+    return True, None, max_residual
+
+
+def diff_clips(
+    ref: ClipResult, cand: ClipResult, policy: QuantizationPolicy | None = None
+) -> PredicateDiff:
+    faces_agree, faces_divergence, _ref_canonical, _cand_canonical = _face_set_diff(
+        ref.faces, cand.faces
+    )
+    scale = _characteristic_scale(ref.intersection_points, cand.intersection_points)
+    if policy is not None:
+        tol = _GRID_CELL_SAFETY_FACTOR * scale / policy.grid_scale
+    else:
+        tol = _POSITION_REL_TOL * scale
+    points_agree, points_divergence, max_residual = _match_points_by_position(
+        ref.intersection_points, cand.intersection_points, tol
+    )
+
+    agrees = faces_agree and points_agree
+    first_divergence = faces_divergence if not faces_agree else points_divergence
+
     details = {
+        "face_set_agrees": faces_agree,
+        "intersection_points_agree": points_agree,
+        "intersection_max_residual": max_residual,
+        "intersection_tolerance": tol,
         "ref_vertex_count": len(ref.vertices),
         "cand_vertex_count": len(cand.vertices),
         "ref_face_count": len(ref.faces),
@@ -420,49 +545,115 @@ def diff_clips(ref: ClipResult, cand: ClipResult) -> PredicateDiff:
     return PredicateDiff("clip_mesh", agrees, first_divergence, details)
 
 
-def diff_caps(ref: CapResult, cand: CapResult) -> PredicateDiff:
-    first_divergence = None
-    ref_loop_sizes = [len(loop) for loop in ref.loops]
-    cand_loop_sizes = [len(loop) for loop in cand.loops]
+def _canonicalize_loop(loop: np.ndarray) -> tuple[int, ...]:
+    n = len(loop)
+    if n == 0:
+        return ()
+    indices = [int(v) for v in loop]
+    rotations = [tuple(indices[i:] + indices[:i]) for i in range(n)]
+    return min(rotations)
 
-    if len(ref.loops) != len(cand.loops):
-        first_divergence = f"loop count: ref={len(ref.loops)} cand={len(cand.loops)}"
-    elif ref_loop_sizes != cand_loop_sizes:
-        first_divergence = f"loop sizes: ref={ref_loop_sizes} cand={cand_loop_sizes}"
-    elif ref.winding_consistent != cand.winding_consistent:
+
+def diff_caps(ref: CapResult, cand: CapResult) -> PredicateDiff:
+    ref_loops_canonical = sorted(_canonicalize_loop(loop) for loop in ref.loops)
+    cand_loops_canonical = sorted(_canonicalize_loop(loop) for loop in cand.loops)
+    loops_agree = ref_loops_canonical == cand_loops_canonical
+
+    faces_agree, faces_divergence, _ref_face_canonical, _cand_face_canonical = (
+        _face_set_diff(ref.cap_faces, cand.cap_faces)
+    )
+
+    winding_agrees = ref.winding_consistent == cand.winding_consistent
+
+    first_divergence = None
+    if not loops_agree:
+        first_divergence = (
+            f"loop topology: ref={ref_loops_canonical} cand={cand_loops_canonical}"
+        )
+    elif not faces_agree:
+        first_divergence = faces_divergence
+    elif not winding_agrees:
         first_divergence = f"winding_consistent: ref={ref.winding_consistent} cand={cand.winding_consistent}"
 
-    agrees = first_divergence is None
+    agrees = loops_agree and faces_agree and winding_agrees
+    ref_loop_sizes = [len(loop) for loop in ref.loops]
+    cand_loop_sizes = [len(loop) for loop in cand.loops]
     details = {
+        "loops_agree": loops_agree,
+        "cap_face_set_agrees": faces_agree,
         "ref_loop_count": len(ref.loops),
         "cand_loop_count": len(cand.loops),
         "ref_loop_sizes": ref_loop_sizes,
         "cand_loop_sizes": cand_loop_sizes,
+        "ref_loops_canonical": ref_loops_canonical,
+        "cand_loops_canonical": cand_loops_canonical,
         "ref_winding_consistent": ref.winding_consistent,
         "cand_winding_consistent": cand.winding_consistent,
     }
     return PredicateDiff("extract_cap", agrees, first_divergence, details)
 
 
+def _face_normal_sign(
+    vertices: np.ndarray, face: tuple[int, int, int], hull_centroid: np.ndarray
+) -> int:
+    v0, v1, v2 = vertices[face[0]], vertices[face[1]], vertices[face[2]]
+    normal = np.cross(v1 - v0, v2 - v0)
+    face_centroid = (v0 + v1 + v2) / 3.0
+    dot = float(np.dot(normal, face_centroid - hull_centroid))
+    return 1 if dot >= 0 else -1
+
+
+def _orientation_signs(
+    vertices: np.ndarray, canonical_faces: list[tuple[int, int, int]]
+) -> dict[tuple[int, int, int], int]:
+    if not canonical_faces:
+        return {}
+    used = sorted({idx for face in canonical_faces for idx in face})
+    hull_centroid = vertices[used].mean(axis=0)
+    return {
+        face: _face_normal_sign(vertices, face, hull_centroid)
+        for face in canonical_faces
+    }
+
+
 def diff_hulls(ref: HullResult, cand: HullResult) -> PredicateDiff:
-    ref_face_count = len(ref.faces)
-    cand_face_count = len(cand.faces)
-    rel_volume_diff = abs(ref.volume - cand.volume) / max(abs(ref.volume), 1e-30)
+    faces_agree, faces_divergence, ref_canonical, cand_canonical = _face_set_diff(
+        ref.faces, cand.faces
+    )
+
+    shared_faces = sorted(set(ref_canonical) & set(cand_canonical))
+    ref_signs = _orientation_signs(ref.vertices, shared_faces)
+    cand_signs = _orientation_signs(cand.vertices, shared_faces)
+    orientation_agrees = True
+    orientation_divergence = None
+    for face in shared_faces:
+        if ref_signs[face] != cand_signs[face]:
+            orientation_agrees = False
+            orientation_divergence = (
+                f"face normal orientation {face}: ref sign {ref_signs[face]} "
+                f"vs cand sign {cand_signs[face]}"
+            )
+            break
+
+    rel_volume_diff = abs(ref.volume - cand.volume) / max(abs(ref.volume), 1.0)
+    volume_agrees = rel_volume_diff <= _HULL_VOLUME_REL_TOL
 
     first_divergence = None
-    if ref_face_count != cand_face_count:
-        first_divergence = f"face count: ref={ref_face_count} cand={cand_face_count}"
-    elif ref.outward_consistent != cand.outward_consistent:
-        first_divergence = f"outward_consistent: ref={ref.outward_consistent} cand={cand.outward_consistent}"
-    elif rel_volume_diff > _HULL_VOLUME_REL_TOL:
+    if not faces_agree:
+        first_divergence = faces_divergence
+    elif not orientation_agrees:
+        first_divergence = orientation_divergence
+    elif not volume_agrees:
         first_divergence = (
             f"volume relative diff: {rel_volume_diff} > {_HULL_VOLUME_REL_TOL}"
         )
 
-    agrees = first_divergence is None
+    agrees = faces_agree and orientation_agrees and volume_agrees
     details = {
-        "ref_face_count": ref_face_count,
-        "cand_face_count": cand_face_count,
+        "face_set_agrees": faces_agree,
+        "orientation_agrees": orientation_agrees,
+        "ref_face_count": len(ref.faces),
+        "cand_face_count": len(cand.faces),
         "ref_outward_consistent": ref.outward_consistent,
         "cand_outward_consistent": cand.outward_consistent,
         "ref_volume": ref.volume,

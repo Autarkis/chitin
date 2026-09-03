@@ -1,0 +1,10 @@
+{
+  "call_id": 0,
+  "num_planes": 0,
+  "num_clips": 0,
+  "num_costs": 0,
+  "num_mcts": 0,
+  "num_states": 1,
+  "num_parts": 1,
+  "format": "stream_v3"
+}

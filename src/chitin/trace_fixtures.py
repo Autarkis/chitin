@@ -256,6 +256,199 @@ def high_complexity_mesh(subdivisions: int = 3) -> tuple[np.ndarray, np.ndarray]
     return verts.astype(np.float32), tris
 
 
+def _ear_clip(poly: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
+    """Ear-clipping triangulation for a simple (possibly concave) 2D polygon.
+
+    `poly` must be wound CCW. Returns index triples into `poly`.
+    """
+    n = len(poly)
+    indices = list(range(n))
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    def is_convex(i0, i1, i2):
+        return cross(poly[i0], poly[i1], poly[i2]) > 1e-12
+
+    def point_in_tri(p, a, b, c):
+        d1, d2, d3 = cross(a, b, p), cross(b, c, p), cross(c, a, p)
+        has_neg = d1 < 0 or d2 < 0 or d3 < 0
+        has_pos = d1 > 0 or d2 > 0 or d3 > 0
+        return not (has_neg and has_pos)
+
+    triangles: list[tuple[int, int, int]] = []
+    while len(indices) > 3:
+        m = len(indices)
+        ear_found = False
+        for k in range(m):
+            i0, i1, i2 = indices[(k - 1) % m], indices[k], indices[(k + 1) % m]
+            if not is_convex(i0, i1, i2):
+                continue
+            a, b, c = poly[i0], poly[i1], poly[i2]
+            ear = True
+            for idx in indices:
+                if idx in (i0, i1, i2):
+                    continue
+                if point_in_tri(poly[idx], a, b, c):
+                    ear = False
+                    break
+            if ear:
+                triangles.append((i0, i1, i2))
+                del indices[k]
+                ear_found = True
+                break
+        if not ear_found:
+            # Degenerate/numerically awkward remainder: fan-triangulate as a fallback.
+            for k in range(1, m - 1):
+                triangles.append((indices[0], indices[k], indices[k + 1]))
+            indices = []
+            break
+    if len(indices) == 3:
+        triangles.append((indices[0], indices[1], indices[2]))
+    return triangles
+
+
+def _extrude_polygon(
+    poly2d: list[tuple[float, float]], z0: float, z1: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extrude a CCW-wound simple 2D polygon along z into a watertight solid."""
+    n = len(poly2d)
+    bottom = [(x, y, z0) for x, y in poly2d]
+    top = [(x, y, z1) for x, y in poly2d]
+    vertices = np.array(bottom + top, dtype=np.float32)
+
+    faces = []
+    for i0, i1, i2 in _ear_clip(poly2d):
+        faces.append((i0 + n, i1 + n, i2 + n))  # top cap, outward +z
+        faces.append((i0, i2, i1))  # bottom cap, outward -z
+    for j in range(n):
+        j1 = (j + 1) % n
+        b0, b1, t0, t1 = j, j1, j + n, j1 + n
+        faces.append((b0, b1, t1))
+        faces.append((b0, t1, t0))
+
+    return vertices, np.array(faces, dtype=np.int32)
+
+
+def thin_u_channel_mesh(
+    width: float = 2.0,
+    height: float = 1.0,
+    depth: float = 1.0,
+    wall_thickness: float = 0.03,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Open-top U-channel/gutter — nonconvex, thin-walled, extruded along depth."""
+    hw = width / 2
+    t = wall_thickness
+    profile = [
+        (-hw, 0.0),
+        (hw, 0.0),
+        (hw, height),
+        (hw - t, height),
+        (hw - t, t),
+        (-hw + t, t),
+        (-hw + t, height),
+        (-hw, height),
+    ]
+    return _extrude_polygon(profile, 0.0, depth)
+
+
+def curved_pipe_quarter_mesh(
+    inner_radius: float = 0.5,
+    outer_radius: float = 0.7,
+    thickness: float = 0.2,
+    segments: int = 8,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Quarter-torus pipe-bend wedge — rectangular cross-section swept 90 degrees."""
+    half_t = thickness / 2
+    angles = np.linspace(0.0, np.pi / 2, segments + 1)
+
+    verts = []
+    for a in angles:
+        c, s = np.cos(a), np.sin(a)
+        verts.append([inner_radius * c, inner_radius * s, -half_t])  # 0: inner-bottom
+        verts.append([outer_radius * c, outer_radius * s, -half_t])  # 1: outer-bottom
+        verts.append([outer_radius * c, outer_radius * s, half_t])  # 2: outer-top
+        verts.append([inner_radius * c, inner_radius * s, half_t])  # 3: inner-top
+    vertices = np.array(verts, dtype=np.float32)
+
+    faces = []
+    for i in range(segments):
+        r0, r1 = i * 4, (i + 1) * 4
+        ib0, ob0, ot0, it0 = r0, r0 + 1, r0 + 2, r0 + 3
+        ib1, ob1, ot1, it1 = r1, r1 + 1, r1 + 2, r1 + 3
+        # Outer wall (normal points away from bend axis).
+        faces += [(ob0, ob1, ot1), (ob0, ot1, ot0)]
+        # Inner wall (normal points toward bend axis — concave surface).
+        faces += [(ib0, it0, it1), (ib0, it1, ib1)]
+        # Bottom wall (z = -half_t, normal -z).
+        faces += [(ib0, ob1, ob0), (ib0, ib1, ob1)]
+        # Top wall (z = +half_t, normal +z).
+        faces += [(it0, ot0, ot1), (it0, ot1, it1)]
+
+    # End caps at theta=0 and theta=90 degrees.
+    r0 = 0
+    faces += [(r0, r0 + 2, r0 + 1), (r0, r0 + 3, r0 + 2)]
+    rlast = segments * 4
+    faces += [(rlast, rlast + 1, rlast + 2), (rlast, rlast + 2, rlast + 3)]
+
+    return vertices, np.array(faces, dtype=np.int32)
+
+
+def cross_bracket_mesh(
+    arm_length: float = 1.0,
+    arm_width: float = 0.3,
+    thickness: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Plus/cross (+) shaped bracket extruded along thickness — 4 concave inner corners."""
+    hw = arm_width / 2
+    length = arm_length
+    profile = [
+        (hw, length),
+        (-hw, length),
+        (-hw, hw),
+        (-length, hw),
+        (-length, -hw),
+        (-hw, -hw),
+        (-hw, -length),
+        (hw, -length),
+        (hw, -hw),
+        (length, -hw),
+        (length, hw),
+        (hw, hw),
+    ]
+    return _extrude_polygon(profile, 0.0, thickness)
+
+
+def h_shape_mesh(
+    arm_length: float = 1.0,
+    arm_width: float = 0.3,
+    bar_height: float = 0.4,
+    thickness: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """H-shaped extrusion — two vertical bars joined by a horizontal bar.
+
+    Multiple concavities at bar-arm junctions. Guaranteed watertight via
+    ``_extrude_polygon``.
+    """
+    hw = arm_width / 2
+    bh = bar_height / 2
+    profile = [
+        (-arm_length / 2, -hw),
+        (-arm_length / 2, hw),
+        (-bh, hw),
+        (-bh, arm_length / 2),
+        (bh, arm_length / 2),
+        (bh, hw),
+        (arm_length / 2, hw),
+        (arm_length / 2, -hw),
+        (bh, -hw),
+        (bh, -arm_length / 2),
+        (-bh, -arm_length / 2),
+        (-bh, -hw),
+    ]
+    return _extrude_polygon(profile, 0.0, thickness)
+
+
 # Registry of all fixtures
 FIXTURES = {
     "box": box_mesh,
@@ -264,4 +457,8 @@ FIXTURES = {
     "disconnected": disconnected_mesh,
     "degenerate": degenerate_mesh,
     "high_complexity": high_complexity_mesh,
+    "thin_u_channel": thin_u_channel_mesh,
+    "curved_pipe_quarter": curved_pipe_quarter_mesh,
+    "cross_bracket": cross_bracket_mesh,
+    "h_shape": h_shape_mesh,
 }
