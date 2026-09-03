@@ -16,6 +16,7 @@ class QuantizationPolicy:
     classification_ulp_margin: int = 0
     intersection_snap_bits: int = _UNSET
     winding_check: bool = True
+    ambiguity_fallback: bool = False
 
     def __post_init__(self) -> None:
         if self.intersection_snap_bits == _UNSET:
@@ -49,6 +50,14 @@ class QuantizationPolicy:
 
 
 DEFAULT_POLICY = QuantizationPolicy()
+
+POLICY_0_2_0 = QuantizationPolicy(
+    version="0.2.0",
+    grid_bits=20,
+    classification_ulp_margin=0,
+    intersection_snap_bits=20,
+    ambiguity_fallback=True,
+)
 
 
 def sweep_policies(grid_bits_range: range) -> list[QuantizationPolicy]:
