@@ -55,10 +55,12 @@ regression tier (#118). The three external-tier fixtures and the regression
 tier are **spent** — their digests are in `KNOWN_CORPUS_DIGESTS` in the
 evaluator and will be rejected on reuse.
 
-### Policy 0.2.0 (pending)
+### Policy 0.2.0 (selected, capture pending)
 
 Acceptance criteria frozen in `docs/holdout-protocol-0.2.0.md` (#121).
-Corpus not yet selected. Selection manifest: `docs/holdout-corpus-0.2.0.json`.
+Four fixtures selected: `oblique_gear_prism`, `twisted_notched_column`,
+`skewed_rectangular_torus`, `multiscale_shard_cluster`.
+Selection manifest: `docs/holdout-corpus-0.2.0.json`.
 Capture: `scripts/capture_holdout_corpus.py --manifest <path> --output-dir <dir>`.
 Evaluation: `scripts/evaluate_holdout.py --policy 0.2.0 --corpus-manifest <path>`.
 Output: `docs/holdout-results-0.2.0.json`.

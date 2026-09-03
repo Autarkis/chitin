@@ -10,5 +10,58 @@
     "threshold": 0.05,
     "stream_format": "v3"
   },
-  "fixtures": []
+  "corpus_size_floor": {
+    "min_total_clips": 15000,
+    "note": "If capture proves smaller, corpus is inadequate — do not tune parameters"
+  },
+  "fixtures": [
+    {
+      "name": "oblique_gear_prism",
+      "stratum": "concave-oblique",
+      "rationale": "13 asymmetric teeth, many concave corners, fixed anisotropic transform; produces many candidate cuts",
+      "parameters": {
+        "teeth": 13,
+        "thickness": 0.5,
+        "scale": [1.0, 0.7, 1.3],
+        "rotation_deg": 15
+      },
+      "source_digest": "f0f793df8578930d58566c0d28c45b0bd88eb1ff3776cb4abee91b62a0f39fb1"
+    },
+    {
+      "name": "twisted_notched_column",
+      "stratum": "swept-nonparallel",
+      "rationale": "Concave profile swept with 60-degree twist and 25% taper; oblique, nonparallel faces unlike existing straight extrusions",
+      "parameters": {
+        "height": 2.0,
+        "stations": 24,
+        "total_twist_deg": 60,
+        "taper": 0.25
+      },
+      "source_digest": "f57171daf0b9d0fd72a39597a4a8ea3ddb6202b6e69f6d275bd24c705ded6f52"
+    },
+    {
+      "name": "skewed_rectangular_torus",
+      "stratum": "genus-one",
+      "rationale": "Genus-one solid with inner and outer surfaces; exercises boundary decisions on topology absent from the current corpus",
+      "parameters": {
+        "inner_radius": 0.4,
+        "outer_radius": 0.6,
+        "thickness": 0.2,
+        "segments": 32,
+        "skew": 0.15
+      },
+      "source_digest": "ee1503caa4885292c49ab60118182cab7733008fbac7b1edb04c36040afe2334"
+    },
+    {
+      "name": "multiscale_shard_cluster",
+      "stratum": "multi-component-scale",
+      "rationale": "5 disconnected, differently oriented solids at 1:32 scale range; exercises component and scale interactions",
+      "parameters": {
+        "num_shards": 5,
+        "scale_range": "1:32",
+        "scales": [1.0, 0.5, 0.25, 0.125, 0.03125]
+      },
+      "source_digest": "279cdd87c93b3fd04239ba83b3fefd569889ec13390b4ba373a8a02322bc450c"
+    }
+  ]
 }

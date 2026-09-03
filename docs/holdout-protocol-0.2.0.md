@@ -40,7 +40,7 @@ Declared before corpus selection to prevent outcome-peeking.
 
 - **Selection manifest**: `docs/holdout-corpus-0.2.0.json` — committed before capture,
   declares fixture names, source-geometry digests, capture config, and traced-CoACD identity.
-  Empty `fixtures` array until corpus selection.
+  Declares four holdout fixtures with strata, rationale, parameters, and source digests.
 - **Safe capture**: `scripts/capture_holdout_corpus.py --manifest <path> --output-dir <dir>` —
   verifies source-geometry digests, refuses to overwrite, records trace digests in
   `capture-record.json`.
@@ -50,7 +50,9 @@ Declared before corpus selection to prevent outcome-peeking.
 
 ## Corpus status
 
-No corpus selected. Selection follows this protocol freeze.
+Four fixtures selected: `oblique_gear_prism` (concave-oblique), `twisted_notched_column`
+(swept-nonparallel), `skewed_rectangular_torus` (genus-one), `multiscale_shard_cluster`
+(multi-component-scale). Source-only validity verified. Capture pending.
 
 ## Reference
 

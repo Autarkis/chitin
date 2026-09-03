@@ -449,6 +449,314 @@ def h_shape_mesh(
     return _extrude_polygon(profile, 0.0, thickness)
 
 
+def oblique_gear_prism_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """13-tooth asymmetric gear prism — many concave corners, anisotropic transform."""
+    n_teeth = 13
+    base_r = 0.8
+    tip_r_even = 1.2
+    tip_r_odd = 1.05
+    half_width = 0.06  # half of the 0.12 rad tooth angular width
+
+    centers = [i * 2 * np.pi / n_teeth + 0.05 * np.sin(i * 1.7) for i in range(n_teeth)]
+
+    profile: list[tuple[float, float]] = []
+    for i in range(n_teeth):
+        c = centers[i]
+        tip_r = tip_r_even if i % 2 == 0 else tip_r_odd
+        bl_angle = c - half_width
+        tl_angle = c - half_width / 2
+        tr_angle = c + half_width / 2
+        br_angle = c + half_width
+
+        profile.append((base_r * np.cos(bl_angle), base_r * np.sin(bl_angle)))
+        profile.append((tip_r * np.cos(tl_angle), tip_r * np.sin(tl_angle)))
+        profile.append((tip_r * np.cos(tr_angle), tip_r * np.sin(tr_angle)))
+        profile.append((base_r * np.cos(br_angle), base_r * np.sin(br_angle)))
+
+        next_c = centers[(i + 1) % n_teeth]
+        if i == n_teeth - 1:
+            next_c += 2 * np.pi
+        mid_angle = (c + next_c) / 2
+        profile.append((base_r * np.cos(mid_angle), base_r * np.sin(mid_angle)))
+
+    vertices, faces = _extrude_polygon(profile, 0.0, 0.5)
+
+    scale = np.diag([1.0, 0.7, 1.3]).astype(np.float32)
+    angle = np.radians(15)
+    rot_z = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 0],
+            [np.sin(angle), np.cos(angle), 0],
+            [0, 0, 1],
+        ],
+        dtype=np.float32,
+    )
+    vertices = (rot_z @ scale @ vertices.T).T.astype(np.float32)
+    return vertices, faces
+
+
+def twisted_notched_column_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """Notched rectangle swept with 60° twist and 25% taper — oblique nonparallel faces."""
+    hw, hh = 0.5, 0.4
+    nw, nd = 0.15, 0.2
+    profile_base = [
+        (hw, -hh),
+        (hw, hh),
+        (nw, hh),  # right edge of top notch
+        (nw, hh - nd),  # notch floor
+        (-nw, hh - nd),
+        (-nw, hh),  # left edge of top notch
+        (-hw, hh),
+        (-hw, -hh),
+    ]
+    n_profile = len(profile_base)
+
+    height = 2.0
+    stations = 24
+    total_twist = np.pi / 3
+    taper = 0.25
+
+    station_pts: list[list[tuple[float, float, float]]] = []
+    for k in range(stations + 1):
+        z = k * height / stations
+        twist = total_twist * z / height
+        scale_factor = 1.0 - taper * z / height
+        c, s = np.cos(twist), np.sin(twist)
+        pts = []
+        for x, y in profile_base:
+            xr = x * c - y * s
+            yr = x * s + y * c
+            pts.append((scale_factor * xr, scale_factor * yr, z))
+        station_pts.append(pts)
+
+    vertices = np.array(
+        [pt for station in station_pts for pt in station], dtype=np.float32
+    )
+
+    faces = []
+    for k in range(stations):
+        base_k = k * n_profile
+        base_k1 = (k + 1) * n_profile
+        for j in range(n_profile):
+            j1 = (j + 1) % n_profile
+            b0, b1 = base_k + j, base_k + j1
+            t0, t1 = base_k1 + j, base_k1 + j1
+            faces.append((b0, b1, t1))
+            faces.append((b0, t1, t0))
+
+    # Bottom cap (station 0), outward -Z normal.
+    for i0, i1, i2 in _ear_clip(profile_base):
+        faces.append((i0, i2, i1))
+
+    # Top cap (last station), outward +Z normal.
+    top_offset = stations * n_profile
+    top_profile_2d = [(p[0], p[1]) for p in station_pts[stations]]
+    for i0, i1, i2 in _ear_clip(top_profile_2d):
+        faces.append((i0 + top_offset, i1 + top_offset, i2 + top_offset))
+
+    return vertices, np.array(faces, dtype=np.int32)
+
+
+def skewed_rectangular_torus_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """Rectangular-section torus (genus-one) with skew — exercises boundary topology."""
+    inner_radius = 0.4
+    outer_radius = 0.6
+    thickness = 0.2
+    segments = 32
+    half_t = thickness / 2
+
+    angles = [i * 2 * np.pi / segments for i in range(segments)]
+
+    verts = []
+    for a in angles:
+        c, s = np.cos(a), np.sin(a)
+        verts.append([inner_radius * c, inner_radius * s, -half_t])  # inner-bottom
+        verts.append([outer_radius * c, outer_radius * s, -half_t])  # outer-bottom
+        verts.append([outer_radius * c, outer_radius * s, half_t])  # outer-top
+        verts.append([inner_radius * c, inner_radius * s, half_t])  # inner-top
+    vertices = np.array(verts, dtype=np.float32)
+
+    faces = []
+    for i in range(segments):
+        i1 = (i + 1) % segments
+        r0, r1 = i * 4, i1 * 4
+        ib0, ob0, ot0, it0 = r0, r0 + 1, r0 + 2, r0 + 3
+        ib1, ob1, ot1, it1 = r1, r1 + 1, r1 + 2, r1 + 3
+        # Outer wall.
+        faces += [(ob0, ob1, ot1), (ob0, ot1, ot0)]
+        # Inner wall.
+        faces += [(ib0, it0, it1), (ib0, it1, ib1)]
+        # Bottom wall.
+        faces += [(ib0, ob1, ob0), (ib0, ib1, ob1)]
+        # Top wall.
+        faces += [(it0, ot0, ot1), (it0, ot1, it1)]
+
+    vertices[:, 0] += 0.15 * vertices[:, 2]
+
+    return vertices, np.array(faces, dtype=np.int32)
+
+
+def _orient_convex_faces_outward(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Flip any triangle of a convex point set whose winding faces the centroid."""
+    centroid = vertices.mean(axis=0)
+    faces = faces.copy()
+    for idx in range(len(faces)):
+        i0, i1, i2 = faces[idx]
+        v0, v1, v2 = vertices[i0], vertices[i1], vertices[i2]
+        normal = np.cross(v1 - v0, v2 - v0)
+        face_centroid = (v0 + v1 + v2) / 3.0
+        if np.dot(normal, face_centroid - centroid) < 0:
+            faces[idx] = [i0, i2, i1]
+    return faces
+
+
+def multiscale_shard_cluster_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """5 irregular polyhedra at 1:32 scale range — component and scale interactions."""
+
+    def rot_x(deg: float) -> np.ndarray:
+        a = np.radians(deg)
+        return np.array(
+            [[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]],
+            dtype=np.float32,
+        )
+
+    def rot_y(deg: float) -> np.ndarray:
+        a = np.radians(deg)
+        return np.array(
+            [[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]],
+            dtype=np.float32,
+        )
+
+    def rot_z(deg: float) -> np.ndarray:
+        a = np.radians(deg)
+        return np.array(
+            [[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]],
+            dtype=np.float32,
+        )
+
+    # Shard 1: irregular tetrahedron.
+    v1 = np.array(
+        [[0, 0, 0], [1.2, 0.1, 0.1], [0.3, 1.1, 0.2], [0.1, 0.2, 0.9]],
+        dtype=np.float32,
+    )
+    f1 = np.array([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]], dtype=np.int32)
+
+    # Shard 2: triangular prism/wedge.
+    v2 = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0.3, 0.9, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [0.3, 0.9, 1],
+        ],
+        dtype=np.float32,
+    )
+    f2 = np.array(
+        [
+            [0, 1, 2],
+            [3, 5, 4],
+            [0, 1, 4],
+            [0, 4, 3],
+            [1, 2, 5],
+            [1, 5, 4],
+            [2, 0, 3],
+            [2, 3, 5],
+        ],
+        dtype=np.int32,
+    )
+
+    # Shard 3: skewed box (one corner displaced).
+    hx, hy, hz = 0.5, 0.5, 0.5
+    v3 = np.array(
+        [
+            [-hx, -hy, -hz],
+            [-hx, -hy, hz],
+            [-hx, hy, -hz],
+            [-hx, hy, hz],
+            [hx, -hy, -hz],
+            [hx, -hy, hz],
+            [hx, hy, -hz],
+            [0.9, 0.9, 0.9],  # displaced corner
+        ],
+        dtype=np.float32,
+    )
+    f3 = np.array(
+        [
+            [0, 1, 3],
+            [0, 3, 2],
+            [4, 6, 7],
+            [4, 7, 5],
+            [0, 4, 5],
+            [0, 5, 1],
+            [2, 3, 7],
+            [2, 7, 6],
+            [0, 2, 6],
+            [0, 6, 4],
+            [1, 5, 7],
+            [1, 7, 3],
+        ],
+        dtype=np.int32,
+    )
+
+    # Shard 4: elongated tetrahedron.
+    v4 = np.array(
+        [[0, 0, 0], [3.0, 0.05, 0.05], [0.2, 0.3, 0.1], [0.15, 0.1, 0.4]],
+        dtype=np.float32,
+    )
+    f4 = np.array([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]], dtype=np.int32)
+
+    # Shard 5: flat wedge.
+    v5 = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0.5, 0.8, 0],
+            [0, 0, 0.05],
+            [1, 0, 0.05],
+            [0.5, 0.8, 0.05],
+        ],
+        dtype=np.float32,
+    )
+    f5 = np.array(
+        [
+            [0, 1, 2],
+            [3, 5, 4],
+            [0, 1, 4],
+            [0, 4, 3],
+            [1, 2, 5],
+            [1, 5, 4],
+            [2, 0, 3],
+            [2, 3, 5],
+        ],
+        dtype=np.int32,
+    )
+
+    shards = [
+        (v1, f1, 1.0, np.eye(3, dtype=np.float32), (0.0, 0.0, 0.0)),
+        (v2, f2, 0.5, rot_z(90.0), (5.0, 0.0, 0.0)),
+        (v3, f3, 0.25, rot_x(90.0), (0.0, 5.0, 0.0)),
+        (v4, f4, 0.125, rot_y(45.0), (0.0, 0.0, 5.0)),
+        (v5, f5, 0.03125, rot_y(90.0), (5.0, 5.0, 5.0)),
+    ]
+
+    all_vertices = []
+    all_faces = []
+    vertex_offset = 0
+    for v, f, scale, rot, translate in shards:
+        t = np.array(translate, dtype=np.float32)
+        v_t = ((rot @ (v * scale).T).T + t).astype(np.float32)
+        f_fixed = _orient_convex_faces_outward(v_t, f)
+        all_vertices.append(v_t)
+        all_faces.append(f_fixed + vertex_offset)
+        vertex_offset += len(v_t)
+
+    vertices = np.concatenate(all_vertices).astype(np.float32)
+    faces = np.concatenate(all_faces).astype(np.int32)
+    return vertices, faces
+
+
 # Registry of all fixtures
 FIXTURES = {
     "box": box_mesh,
@@ -461,4 +769,11 @@ FIXTURES = {
     "curved_pipe_quarter": curved_pipe_quarter_mesh,
     "cross_bracket": cross_bracket_mesh,
     "h_shape": h_shape_mesh,
+}
+
+HOLDOUT_FIXTURES = {
+    "oblique_gear_prism": oblique_gear_prism_mesh,
+    "twisted_notched_column": twisted_notched_column_mesh,
+    "skewed_rectangular_torus": skewed_rectangular_torus_mesh,
+    "multiscale_shard_cluster": multiscale_shard_cluster_mesh,
 }

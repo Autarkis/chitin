@@ -24,7 +24,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from chitin.coacd_trace import capture_trace, save_trace
-from chitin.trace_fixtures import FIXTURES
+from chitin.trace_fixtures import HOLDOUT_FIXTURES
 
 SCRIPT_PATH = Path(__file__).resolve()
 
@@ -84,7 +84,7 @@ def _abort(message: str) -> None:
 
 def capture_single(name: str, output_dir: Path) -> None:
     """Capture one fixture (invoked as a subprocess to get fresh DLL state)."""
-    gen = FIXTURES[name]
+    gen = HOLDOUT_FIXTURES[name]
     verts, faces = gen()
     out = output_dir / name
     trace = capture_trace(verts, faces, threshold=0.05)
@@ -177,8 +177,10 @@ def main() -> None:
         expected_digest = entry["source_digest"]
         stratum = entry.get("stratum", "<unknown>")
 
-        if name not in FIXTURES:
-            _abort(f"unknown fixture '{name}' (not in chitin.trace_fixtures.FIXTURES)")
+        if name not in HOLDOUT_FIXTURES:
+            _abort(
+                f"unknown fixture '{name}' (not in chitin.trace_fixtures.HOLDOUT_FIXTURES)"
+            )
 
         fixture_out = output_dir / name
         if fixture_out.exists() and not args.force:
@@ -190,7 +192,7 @@ def main() -> None:
         print(
             f"Verifying source geometry for {name} (stratum={stratum})...", flush=True
         )
-        verts, faces = FIXTURES[name]()
+        verts, faces = HOLDOUT_FIXTURES[name]()
         actual_digest = _sha256_arrays(verts, faces)
         if actual_digest != expected_digest:
             _abort(
