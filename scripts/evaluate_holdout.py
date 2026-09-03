@@ -11,9 +11,10 @@ Usage:
 import argparse
 import hashlib
 import json
+import math
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +48,7 @@ def _sha256_file(path: Path) -> str:
 def _git_head() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception:
+    except (subprocess.CalledProcessError, OSError):
         return "unknown"
 
 
@@ -267,7 +268,7 @@ def main():
     prior_digest = _sha256_file(args.output) if args.output.exists() else None
 
     results = {
-        "evaluation_date": datetime.now(timezone.utc).isoformat(),
+        "evaluation_date": datetime.now(UTC).isoformat(),
         "evaluator_commit": _git_head(),
         "evaluator_digest": evaluator_digest,
         "rerun_reason": "finite-residual aggregation fix",
@@ -317,7 +318,7 @@ def main():
 
     def _sanitize(obj):
         if isinstance(obj, float):
-            if obj != obj or obj == float("inf") or obj == float("-inf"):
+            if math.isnan(obj) or math.isinf(obj):
                 return None
             return obj
         if isinstance(obj, dict):

@@ -101,11 +101,11 @@ class TestGPUCompact:
     def test_none_kept(self, worker):
         values = np.array([1, 2, 3], dtype=np.int32)
         mask = np.array([0, 0, 0], dtype=np.int32)
-        result, count = dispatch_compact(worker, values, mask)
+        _result, count = dispatch_compact(worker, values, mask)
         assert count == 0
 
     def test_empty(self, worker):
-        result, count = dispatch_compact(
+        _result, count = dispatch_compact(
             worker,
             np.array([], dtype=np.int32),
             np.array([], dtype=np.int32),

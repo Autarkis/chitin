@@ -19,7 +19,6 @@ from chitin.gpu.primitives import (
     unique_sorted,
 )
 
-
 # Fixed seed for reproducible "realistic" vectors
 _RNG = np.random.default_rng(seed=0xDEAD_BEEF)
 

@@ -37,12 +37,11 @@ def test_create_buffer() -> None:
 
 @pytest.mark.skipif(not _HAS_WGPU, reason="wgpu not installed")
 def test_capacity_error() -> None:
-    with GPUWorker() as worker:
-        with pytest.raises(CapacityError):
-            worker.create_buffer(
-                size=worker.limits.max_buffer_size + 1,
-                usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
-            )
+    with GPUWorker() as worker, pytest.raises(CapacityError):
+        worker.create_buffer(
+            size=worker.limits.max_buffer_size + 1,
+            usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC,
+        )
 
 
 @pytest.mark.skipif(not _HAS_WGPU, reason="wgpu not installed")

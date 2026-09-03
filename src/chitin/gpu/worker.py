@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from types import TracebackType
+from typing import Self
 
 from chitin.gpu.errors import CapacityError, DeviceLostError, ShaderCompilationError
 
@@ -48,7 +49,7 @@ class GPUWorker:
             return False
         try:
             adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
-        except Exception:
+        except (RuntimeError, OSError):
             return False
         return adapter is not None
 
@@ -174,7 +175,7 @@ class GPUWorker:
     def clear_pipeline_cache(self) -> None:
         self._pipeline_cache.clear()
 
-    def __enter__(self) -> "GPUWorker":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(

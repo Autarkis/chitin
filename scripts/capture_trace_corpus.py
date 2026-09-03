@@ -8,6 +8,7 @@ Saves to tests/fixtures/traces/<name>/
 
 import sys
 from pathlib import Path
+
 import numpy as np
 
 # Add src to path for development
@@ -289,15 +290,15 @@ def make_high_complexity_sphere(subdivisions=3):
         new_faces = []
         midpoint_cache = {}
 
-        def midpoint(i1, i2):
+        def midpoint(i1, i2, _cache=midpoint_cache):
             key = (min(i1, i2), max(i1, i2))
-            if key in midpoint_cache:
-                return midpoint_cache[key]
+            if key in _cache:
+                return _cache[key]
             p = (np.array(verts[i1]) + np.array(verts[i2])) / 2
             p = p / np.linalg.norm(p)
             idx = len(verts)
             verts.append(p)
-            midpoint_cache[key] = idx
+            _cache[key] = idx
             return idx
 
         for f in faces:
@@ -321,7 +322,7 @@ FIXTURES = {
 }
 
 # Import new fixtures from trace_fixtures (single source of truth)
-from chitin.trace_fixtures import FIXTURES as _TF  # noqa: E402
+from chitin.trace_fixtures import FIXTURES as _TF
 
 for _name in (
     "thin_u_channel",
@@ -359,6 +360,7 @@ def main():
             capture_output=True,
             text=True,
             timeout=600,
+            check=False,
         )
         if result.returncode != 0:
             print(f"  FAILED: {result.stderr.strip()}")

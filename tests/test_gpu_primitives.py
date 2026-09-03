@@ -67,11 +67,11 @@ class TestCompact:
     def test_none_selected(self):
         values = np.array([1, 2, 3])
         mask = np.zeros(3, dtype=np.int32)
-        result, count = compact(values, mask)
+        _result, count = compact(values, mask)
         assert count == 0
 
     def test_empty(self):
-        result, count = compact(np.array([]), np.array([]))
+        _result, count = compact(np.array([]), np.array([]))
         assert count == 0
 
     def test_preserves_order(self):
@@ -117,7 +117,7 @@ class TestUnique:
         assert count == 3
 
     def test_empty(self):
-        result, count = unique_sorted(np.array([], dtype=np.int32))
+        _result, count = unique_sorted(np.array([], dtype=np.int32))
         assert count == 0
 
     def test_with_counts(self):

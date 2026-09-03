@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.spatial import ConvexHull, KDTree
+from scipy.spatial import ConvexHull, KDTree, QhullError
 
 from chitin.f32_policy import QuantizationPolicy
 
@@ -345,7 +345,7 @@ def _empty_hull_result(points: np.ndarray) -> HullResult:
 def convex_hull_f64(points: np.ndarray) -> HullResult:
     try:
         hull = ConvexHull(points)
-    except Exception:
+    except QhullError:
         return _empty_hull_result(points)
     vertices = points
     faces = hull.simplices
@@ -362,7 +362,7 @@ def convex_hull_f32(points: np.ndarray, policy: QuantizationPolicy) -> HullResul
 
     try:
         hull = ConvexHull(grid_coords_f32)
-    except Exception:
+    except QhullError:
         return _empty_hull_result(points)
     faces = hull.simplices
     vertices = points
@@ -373,7 +373,7 @@ def convex_hull_f32(points: np.ndarray, policy: QuantizationPolicy) -> HullResul
     try:
         world_hull = ConvexHull(points_f32_world)
         volume = float(world_hull.volume)
-    except Exception:
+    except QhullError:
         volume = 0.0
     return HullResult(vertices, faces, face_normals, outward_consistent, volume)
 
@@ -426,9 +426,11 @@ def _face_set_diff(
     if only_ref or only_cand:
         return (
             False,
-            f"face set: {len(only_ref)} faces only in ref, {len(only_cand)} only in cand"
-            f" (first ref-only={only_ref[0] if only_ref else None},"
-            f" first cand-only={only_cand[0] if only_cand else None})",
+            (
+                f"face set: {len(only_ref)} faces only in ref, {len(only_cand)} only in cand"
+                f" (first ref-only={only_ref[0] if only_ref else None},"
+                f" first cand-only={only_cand[0] if only_cand else None})"
+            ),
             ref_canonical,
             cand_canonical,
         )
@@ -511,7 +513,7 @@ def _match_points_by_position(
 def diff_clips(
     ref: ClipResult, cand: ClipResult, policy: QuantizationPolicy | None = None
 ) -> PredicateDiff:
-    faces_agree, faces_divergence, ref_canonical, cand_canonical = _face_set_diff(
+    faces_agree, faces_divergence, _ref_canonical, _cand_canonical = _face_set_diff(
         ref.faces, cand.faces
     )
     scale = _characteristic_scale(ref.intersection_points, cand.intersection_points)
@@ -557,7 +559,7 @@ def diff_caps(ref: CapResult, cand: CapResult) -> PredicateDiff:
     cand_loops_canonical = sorted(_canonicalize_loop(loop) for loop in cand.loops)
     loops_agree = ref_loops_canonical == cand_loops_canonical
 
-    faces_agree, faces_divergence, ref_face_canonical, cand_face_canonical = (
+    faces_agree, faces_divergence, _ref_face_canonical, _cand_face_canonical = (
         _face_set_diff(ref.cap_faces, cand.cap_faces)
     )
 
@@ -606,7 +608,7 @@ def _orientation_signs(
 ) -> dict[tuple[int, int, int], int]:
     if not canonical_faces:
         return {}
-    used = sorted(set(idx for face in canonical_faces for idx in face))
+    used = sorted({idx for face in canonical_faces for idx in face})
     hull_centroid = vertices[used].mean(axis=0)
     return {
         face: _face_normal_sign(vertices, face, hull_centroid)

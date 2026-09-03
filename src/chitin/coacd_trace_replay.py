@@ -18,11 +18,11 @@ from chitin.f32_predicates import (
     classify_plane_f64,
     clip_mesh_f32,
     clip_mesh_f64,
+    diff_caps,
     diff_classifications,
     diff_clips,
     extract_cap_f32,
     extract_cap_f64,
-    diff_caps,
 )
 
 

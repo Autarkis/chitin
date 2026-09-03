@@ -2,7 +2,7 @@
 
 import pytest
 
-from chitin.gpu.layouts import ALL_LAYOUTS, POINT, PLANE, HULL_HEADER
+from chitin.gpu.layouts import ALL_LAYOUTS, HULL_HEADER, PLANE, POINT
 from chitin.gpu.wgsl_gen import (
     check_drift,
     generate_all_structs,

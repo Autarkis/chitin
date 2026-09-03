@@ -194,9 +194,7 @@ def _is_stream_format(npz) -> bool:
         return False
     if "clip_pos_verts" in npz and "clip_pos_verts_offsets" in npz:
         return True
-    if "state_mesh_verts" in npz and "state_mesh_verts_offsets" in npz:
-        return True
-    return False
+    return "state_mesh_verts" in npz and "state_mesh_verts_offsets" in npz
 
 
 def _load_trace_file(trace_dir: Path, jsonl_path: Path) -> CoACDTrace:

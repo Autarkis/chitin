@@ -8,6 +8,7 @@ lets CI run without the traced DLL.
 import os
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -219,7 +220,7 @@ class TestNoAbsoluteEpsilon:
     # a zero-length plane normal before `normal = n / norm`. Matched by
     # substring rather than line number so the exemption survives minor
     # line drift in coacd_trace_replay.py.
-    ALLOWLISTED_SNIPPETS = [
+    ALLOWLISTED_SNIPPETS: ClassVar[list[str]] = [
         "norm < 1e-15",
     ]
 
