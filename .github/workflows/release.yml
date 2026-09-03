@@ -34,8 +34,8 @@ jobs:
       - name: Create release PR or publish
         uses: changesets/action@fdf536a68c4154480c89b42547f8102cf0d8bc47 # v2.1.1
         with:
-          title: "release: version packages"
-          commit: "release: version packages"
-          publish: bash scripts/changeset-publish.sh
+          pr-title: "release: version packages"
+          commit-message: "release: version packages"
+          publish-script: bash scripts/changeset-publish.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
