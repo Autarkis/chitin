@@ -63,7 +63,13 @@ architecture; 114 connectivity changes do.
 **CI tier** (7 fixtures, ~45 MB, tracked in git): box, icosphere, thin_panel,
 l_shape, thin_u_channel, cross_bracket, staircase.
 
-**External tier** (3 fixtures, ~17.4 GB, holdout): t_shape, curved_pipe_quarter, h_shape.
+**External tier** (3 fixtures, ~17.4 GB, holdout — spent): t_shape,
+curved_pipe_quarter, h_shape.
+
+**Regression tier** (#118, ~12 MB, tracked in git): 114 clips extracted from
+the spent holdout where classification disagreement changed connectivity.
+Per-clip `.npz` at `tests/fixtures/regression/`. Regression test:
+`tests/test_regression_corpus.py`.
 
 Digests: `tests/fixtures/traces/CORPUS_MANIFEST.md`.
 
