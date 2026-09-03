@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Holdout evaluation: f32 predicate gate on external-tier corpus.
 
 Loads external-tier trace fixtures, runs replay + oracle at DEFAULT_POLICY,

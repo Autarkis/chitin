@@ -27,6 +27,22 @@ GOLDEN_SEG_IDS = np.array([0, 0, 0, 1, 1, 1, 2], dtype=np.int32)
 GOLDEN_SEG_RESULT = np.array([0, 1, 3, 0, 10, 30, 0], dtype=np.int32)
 
 
+class TestDispatchContracts:
+    def test_compact_rejects_mismatched_lengths_before_gpu_access(self):
+        with pytest.raises(ValueError, match="equal-length"):
+            dispatch_compact(
+                None, np.array([1], dtype=np.int32), np.array([], dtype=np.int32)
+            )
+
+    def test_segmented_scan_rejects_descending_ids_before_gpu_access(self):
+        with pytest.raises(ValueError, match="non-decreasing"):
+            dispatch_segmented_scan(
+                None,
+                np.array([1, 2], dtype=np.int32),
+                np.array([1, 0], dtype=np.int32),
+            )
+
+
 @pytest.fixture(scope="module")
 def worker():
     if not GPUWorker.available():

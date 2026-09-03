@@ -1,8 +1,8 @@
-"""Deterministic bounded compute primitives.
+"""CPU reference implementations for the WGSL kernels in this package.
 
-CPU reference implementations matching WGSL shader behavior. Each
-primitive operates on bounded arrays and produces bit-identical results
-to its GPU counterpart (verified by golden conformance tests).
+These functions deliberately expose the same fixed-width arithmetic and
+accumulation order as their GPU equivalents. CPU-only helpers belong with the
+host algorithm, not in this GPU conformance surface.
 """
 
 from __future__ import annotations
@@ -11,72 +11,43 @@ from dataclasses import dataclass
 
 import numpy as np
 
+MAX_WORKGROUP_ELEMENTS = 256
 
-@dataclass(frozen=True, slots=True)
-class ScanResult:
-    inclusive: np.ndarray
-    total: int
+
+def _i32_vector(values: np.ndarray, name: str) -> np.ndarray:
+    array = np.asarray(values, dtype=np.int32)
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array")
+    return array
+
+
+def _check_workgroup_size(values: np.ndarray, operation: str) -> None:
+    if len(values) > MAX_WORKGROUP_ELEMENTS:
+        raise ValueError(
+            f"{operation}: {len(values)} elements exceeds workgroup max "
+            f"{MAX_WORKGROUP_ELEMENTS}"
+        )
 
 
 def prefix_sum_exclusive(values: np.ndarray) -> np.ndarray:
-    """Exclusive prefix sum (Blelloch-style). Deterministic."""
-    if len(values) == 0:
-        return np.array([], dtype=values.dtype)
-    result = np.zeros(len(values), dtype=np.int64)
-    acc = np.int64(0)
-    for i in range(len(values)):
-        result[i] = acc
-        acc += np.int64(values[i])
+    """WGSL-equivalent exclusive ``i32`` scan for one 256-lane workgroup."""
+    values_i32 = _i32_vector(values, "values")
+    _check_workgroup_size(values_i32, "prefix_sum")
+    result = np.zeros(len(values_i32), dtype=np.int32)
+    if len(values_i32) > 1:
+        result[1:] = np.cumsum(values_i32[:-1], dtype=np.int32)
     return result
 
 
-def prefix_sum_inclusive(values: np.ndarray) -> ScanResult:
-    """Inclusive prefix sum. Returns partial sums and total."""
-    if len(values) == 0:
-        return ScanResult(np.array([], dtype=np.int64), 0)
-    result = np.cumsum(values, dtype=np.int64)
-    return ScanResult(result, int(result[-1]))
-
-
 def compact(values: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, int]:
-    """Stream compaction: keep elements where mask is nonzero.
-
-    Returns (compacted_array, count). Preserves relative order
-    (stability required for determinism).
-    """
-    if len(values) == 0:
-        return np.array([], dtype=values.dtype), 0
-    selected = values[mask.astype(bool)]
+    """WGSL-equivalent stable ``i32`` stream compaction."""
+    values_i32 = _i32_vector(values, "values")
+    mask_i32 = _i32_vector(mask, "mask")
+    _check_workgroup_size(values_i32, "compact")
+    if len(mask_i32) != len(values_i32):
+        raise ValueError("compact requires values and mask with equal lengths")
+    selected = values_i32[mask_i32 != 0]
     return selected, len(selected)
-
-
-def stable_sort_by_key(
-    keys: np.ndarray, values: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """Stable sort by keys, carrying values. Deterministic ordering.
-
-    Ties are broken by original index (stability guarantee).
-    """
-    if len(keys) == 0:
-        return keys.copy(), values.copy()
-    order = np.argsort(keys, kind="stable")
-    return keys[order], values[order]
-
-
-def unique_sorted(values: np.ndarray) -> tuple[np.ndarray, int]:
-    """Remove duplicates from a sorted array. Returns (unique, count)."""
-    if len(values) == 0:
-        return np.array([], dtype=values.dtype), 0
-    result = np.unique(values)
-    return result, len(result)
-
-
-def unique_with_counts(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Unique values with their counts from a sorted array."""
-    if len(values) == 0:
-        return np.array([], dtype=values.dtype), np.array([], dtype=np.int64)
-    uniq, counts = np.unique(values, return_counts=True)
-    return uniq, counts.astype(np.int64)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,62 +57,42 @@ class ReductionResult:
 
 
 def reduce_sum(values: np.ndarray) -> ReductionResult:
-    """Fixed-tree sum reduction. Deterministic accumulation order.
-
-    Uses pairwise summation (binary tree) for reproducibility.
-    Matches the GPU reduction tree structure.
-    """
-    if len(values) == 0:
+    """WGSL-equivalent fixed 256-lane ``f32`` reduction tree."""
+    values_f32 = np.asarray(values, dtype=np.float32)
+    if values_f32.ndim != 1:
+        raise ValueError("values must be a one-dimensional array")
+    _check_workgroup_size(values_f32, "reduce_sum")
+    if len(values_f32) == 0:
         return ReductionResult(0.0, 0)
-    total = float(_pairwise_sum(values.astype(np.float64)))
-    return ReductionResult(total, len(values))
 
-
-def reduce_min(values: np.ndarray) -> ReductionResult:
-    """Tree-based minimum reduction."""
-    if len(values) == 0:
-        return ReductionResult(float("inf"), 0)
-    return ReductionResult(float(np.min(values)), len(values))
-
-
-def reduce_max(values: np.ndarray) -> ReductionResult:
-    """Tree-based maximum reduction."""
-    if len(values) == 0:
-        return ReductionResult(float("-inf"), 0)
-    return ReductionResult(float(np.max(values)), len(values))
-
-
-def _pairwise_sum(arr: np.ndarray) -> np.float64:
-    """Binary-tree pairwise summation for deterministic accumulation."""
-    n = len(arr)
-    if n == 0:
-        return np.float64(0.0)
-    if n == 1:
-        return np.float64(arr[0])
-    if n <= 8:
-        s = np.float64(0.0)
-        for v in arr:
-            s += np.float64(v)
-        return s
-    mid = n // 2
-    return _pairwise_sum(arr[:mid]) + _pairwise_sum(arr[mid:])
+    shared = np.zeros(MAX_WORKGROUP_ELEMENTS, dtype=np.float32)
+    shared[: len(values_f32)] = values_f32
+    for stride in (128, 64, 32, 16, 8, 4, 2, 1):
+        shared[:stride] = shared[:stride] + shared[stride : 2 * stride]
+    return ReductionResult(float(shared[0]), len(values_f32))
 
 
 def segmented_scan(values: np.ndarray, segment_ids: np.ndarray) -> np.ndarray:
-    """Exclusive prefix sum within segments defined by segment_ids.
+    """WGSL-equivalent exclusive ``i32`` scan within sorted segments."""
+    values_i32 = _i32_vector(values, "values")
+    segment_ids_i32 = _i32_vector(segment_ids, "segment_ids")
+    _check_workgroup_size(values_i32, "segmented_scan")
+    if len(segment_ids_i32) != len(values_i32):
+        raise ValueError(
+            "segmented_scan requires values and segment_ids with equal lengths"
+        )
+    if len(values_i32) == 0:
+        return np.array([], dtype=np.int32)
+    if np.any(segment_ids_i32[1:] < segment_ids_i32[:-1]):
+        raise ValueError("segmented_scan requires non-decreasing segment_ids")
 
-    Each segment restarts the accumulator. segment_ids must be
-    non-decreasing (sorted).
-    """
-    if len(values) == 0:
-        return np.array([], dtype=np.int64)
-    result = np.zeros(len(values), dtype=np.int64)
-    acc = np.int64(0)
-    current_seg = segment_ids[0]
-    for i in range(len(values)):
-        if segment_ids[i] != current_seg:
-            acc = np.int64(0)
-            current_seg = segment_ids[i]
-        result[i] = acc
-        acc += np.int64(values[i])
+    result = np.zeros(len(values_i32), dtype=np.int32)
+    current_segment = segment_ids_i32[0]
+    accumulator = np.int32(0)
+    for index, value in enumerate(values_i32):
+        if segment_ids_i32[index] != current_segment:
+            current_segment = segment_ids_i32[index]
+            accumulator = np.int32(0)
+        result[index] = accumulator
+        accumulator = np.add(accumulator, value, dtype=np.int32)
     return result

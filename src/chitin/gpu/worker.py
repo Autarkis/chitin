@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
-from chitin.gpu.errors import CapacityError, DeviceLostError, ShaderCompilationError
+from chitin.gpu.errors import (
+    CapacityError,
+    DeviceLostError,
+    OperationCancelledError,
+    ShaderCompilationError,
+)
 
 try:
     import wgpu
@@ -41,7 +46,7 @@ class GPUWorker:
         self._device = adapter.request_device_sync()
         self.limits = self._read_limits(self._device)
         self._pipeline_cache: dict[str, object] = {}
-        self._cancelled = False
+        self._operation_generation = 0
 
     @staticmethod
     def available() -> bool:
@@ -72,9 +77,21 @@ class GPUWorker:
         if self._device_lost:
             raise DeviceLostError("GPU device has been lost")
 
-    def _check_cancelled(self) -> None:
-        if self._cancelled:
-            raise RuntimeError("Operation cancelled")
+    def begin_operation(self) -> int:
+        """Return a token invalidated when the current work is superseded."""
+        self._check_alive()
+        return self._operation_generation
+
+    def check_operation(self, token: int) -> None:
+        """Reject results from work cancelled at a command boundary."""
+        self._check_alive()
+        if token != self._operation_generation:
+            raise OperationCancelledError("Operation cancelled or superseded")
+
+    def mark_device_lost(self) -> None:
+        """Mark this worker unusable after a backend device-loss notification."""
+        self._device_lost = True
+        self._pipeline_cache.clear()
 
     def create_buffer(self, size: int, usage: int) -> object:
         self._check_alive()
@@ -86,8 +103,23 @@ class GPUWorker:
         try:
             return self._device.create_buffer(size=size, usage=usage)
         except Exception as exc:
-            if self._device_lost:
-                raise DeviceLostError("GPU device has been lost") from exc
+            if self._device_lost or self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while creating a buffer"
+                ) from exc
+            raise
+
+    def write_buffer(self, buffer: object, data: bytes) -> None:
+        self._check_alive()
+        try:
+            self._device.queue.write_buffer(buffer, 0, data)
+        except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while writing a buffer"
+                ) from exc
             raise
 
     def create_compute_pipeline(
@@ -101,6 +133,11 @@ class GPUWorker:
         try:
             shader = self._device.create_shader_module(code=wgsl_code)
         except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while compiling a shader"
+                ) from exc
             raise ShaderCompilationError(
                 f"failed to compile WGSL shader: {exc}"
             ) from exc
@@ -122,8 +159,16 @@ class GPUWorker:
         self, pipeline: object, group_index: int, entries: list[dict]
     ) -> object:
         self._check_alive()
-        layout = pipeline.get_bind_group_layout(group_index)
-        return self._device.create_bind_group(layout=layout, entries=entries)
+        try:
+            layout = pipeline.get_bind_group_layout(group_index)
+            return self._device.create_bind_group(layout=layout, entries=entries)
+        except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while creating a bind group"
+                ) from exc
+            raise
 
     def dispatch_compute(
         self,
@@ -132,33 +177,56 @@ class GPUWorker:
         workgroup_counts: tuple[int, int, int],
     ) -> None:
         self._check_alive()
-        self._check_cancelled()
-        encoder = self._device.create_command_encoder()
-        compute_pass = encoder.begin_compute_pass()
-        compute_pass.set_pipeline(pipeline)
-        for index, bind_group in enumerate(bind_groups):
-            compute_pass.set_bind_group(index, bind_group)
-        compute_pass.dispatch_workgroups(*workgroup_counts)
-        compute_pass.end()
-        self._device.queue.submit([encoder.finish()])
+        try:
+            encoder = self._device.create_command_encoder()
+            compute_pass = encoder.begin_compute_pass()
+            compute_pass.set_pipeline(pipeline)
+            for index, bind_group in enumerate(bind_groups):
+                compute_pass.set_bind_group(index, bind_group)
+            compute_pass.dispatch_workgroups(*workgroup_counts)
+            compute_pass.end()
+            self._device.queue.submit([encoder.finish()])
+        except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while submitting work"
+                ) from exc
+            raise
         self._check_alive()
 
     def read_buffer(self, buffer: object, size: int) -> bytes:
         self._check_alive()
-        data = self._device.queue.read_buffer(buffer, size=size)
+        try:
+            data = self._device.queue.read_buffer(buffer, size=size)
+        except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while reading a buffer"
+                ) from exc
+            raise
         return bytes(data)
 
     def submit_and_wait(self) -> None:
         self._check_alive()
-        encoder = self._device.create_command_encoder()
-        self._device.queue.submit([encoder.finish()])
+        try:
+            encoder = self._device.create_command_encoder()
+            self._device.queue.submit([encoder.finish()])
+        except Exception as exc:
+            if self._looks_like_device_loss(exc):
+                self.mark_device_lost()
+                raise DeviceLostError(
+                    "GPU device was lost while submitting work"
+                ) from exc
+            raise
         self._check_alive()
 
     def cancel(self) -> None:
-        self._cancelled = True
+        self._operation_generation += 1
 
     def reset_cancel(self) -> None:
-        self._cancelled = False
+        """Compatibility no-op; new operations get a fresh generation token."""
 
     def set_progress_callback(self, callback: object | None) -> None:
         self._progress_callback = callback
@@ -174,6 +242,11 @@ class GPUWorker:
 
     def clear_pipeline_cache(self) -> None:
         self._pipeline_cache.clear()
+
+    @staticmethod
+    def _looks_like_device_loss(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "device" in message and ("lost" in message or "removed" in message)
 
     def __enter__(self) -> Self:
         return self

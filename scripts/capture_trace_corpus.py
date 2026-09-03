@@ -15,6 +15,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from chitin.coacd_trace import capture_trace, save_trace
+from chitin.trace_fixtures import FIXTURES as _TF
 
 CORPUS_DIR = Path(__file__).parent.parent / "tests" / "fixtures" / "traces"
 
@@ -320,9 +321,6 @@ FIXTURES = {
     "staircase": make_staircase,
     "icosphere": make_high_complexity_sphere,
 }
-
-# Import new fixtures from trace_fixtures (single source of truth)
-from chitin.trace_fixtures import FIXTURES as _TF
 
 for _name in (
     "thin_u_channel",

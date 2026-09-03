@@ -1,16 +1,15 @@
-"""GPU buffer struct layouts and bounded arena allocator.
+"""GPU buffer struct layouts.
 
-Struct layouts follow WebGPU std430-like alignment (vec3 padded to vec4,
-scalars 4-byte aligned). Each layout is the authoritative source for
-buffer sizing and field offsets — WGSL struct definitions are generated
-from these, not duplicated.
+Each layout is the authoritative source for NumPy packing, buffer sizing, and
+WGSL field order. The currently supported scalar fields deliberately require
+their declared offsets to match WGSL's natural layout; a future vector/matrix
+extension must add its alignment rule here before it can be used in a shader.
 """
 
 from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from enum import Enum, auto
 
 import numpy as np
 
@@ -34,14 +33,56 @@ class StructLayout:
         self.name = name
         self.fields = {f.name: f for f in fields}
         self.stride = stride
+        self._validate(fields)
+
+    @staticmethod
+    def _field_dtype(field: FieldDef) -> np.dtype:
+        try:
+            return np.dtype({"f": np.float32, "I": np.uint32, "i": np.int32}[field.fmt])
+        except KeyError as exc:
+            raise ValueError(f"Unsupported GPU field format {field.fmt!r}") from exc
+
+    def _validate(self, fields: list[FieldDef]) -> None:
+        if self.stride <= 0 or self.stride % 4:
+            raise ValueError("GPU struct stride must be a positive multiple of 4")
+        if len(self.fields) != len(fields):
+            raise ValueError(f"Struct {self.name!r} has duplicate field names")
+
+        cursor = 0
+        for field in fields:
+            dtype = self._field_dtype(field)
+            if field.count <= 0:
+                raise ValueError(f"Field {field.name!r} must have a positive count")
+            if field.offset != cursor:
+                raise ValueError(
+                    f"Field {field.name!r} offset {field.offset} does not match "
+                    f"WGSL scalar layout offset {cursor}; add an explicit padding field"
+                )
+            cursor += dtype.itemsize * field.count
+
+        if cursor > self.stride:
+            raise ValueError(
+                f"Struct {self.name!r} fields require {cursor} bytes, exceeding "
+                f"stride {self.stride}"
+            )
 
     def dtype(self) -> np.dtype:
-        entries = []
-        for f in self.fields.values():
-            np_fmt = {"f": np.float32, "I": np.uint32, "i": np.int32}[f.fmt]
-            shape = (f.count,) if f.count > 1 else ()
-            entries.append((f.name, np_fmt, shape))
-        return np.dtype(entries)
+        """Return a dtype whose offsets and itemsize exactly match this layout."""
+        fields = list(self.fields.values())
+        formats = [
+            (self._field_dtype(field), (field.count,))
+            if field.count > 1
+            else self._field_dtype(field)
+            for field in fields
+        ]
+        return np.dtype(
+            {
+                "names": [field.name for field in fields],
+                "formats": formats,
+                "offsets": [field.offset for field in fields],
+                "itemsize": self.stride,
+            }
+        )
 
     def buffer_size(self, count: int) -> int:
         return self.stride * count
@@ -140,112 +181,3 @@ ALL_LAYOUTS: dict[str, StructLayout] = {
     "HullHeader": HULL_HEADER,
     "OutputHeader": OUTPUT_HEADER,
 }
-
-
-class ArenaKind(Enum):
-    SINGLE_LARGE = auto()
-    MULTIPART = auto()
-    FRAGMENT_BATCH = auto()
-    TILE = auto()
-
-
-@dataclass
-class ArenaDescriptor:
-    kind: ArenaKind
-    layout: StructLayout
-    max_elements: int
-    label: str = ""
-
-    @property
-    def byte_capacity(self) -> int:
-        return self.layout.buffer_size(self.max_elements)
-
-
-class BoundedArena:
-    """Fixed-capacity GPU buffer arena. No unchecked growth.
-
-    Tracks allocations as (offset, count) pairs. Raises CapacityError
-    on overflow instead of silently growing.
-    """
-
-    def __init__(self, descriptor: ArenaDescriptor):
-        self.descriptor = descriptor
-        self._allocated = 0
-        self._regions: list[tuple[int, int]] = []
-
-    @property
-    def capacity(self) -> int:
-        return self.descriptor.max_elements
-
-    @property
-    def allocated(self) -> int:
-        return self._allocated
-
-    @property
-    def remaining(self) -> int:
-        return self.capacity - self._allocated
-
-    def allocate(self, count: int) -> tuple[int, int]:
-        if count <= 0:
-            raise ValueError(f"Cannot allocate {count} elements")
-        if self._allocated + count > self.capacity:
-            from chitin.gpu.errors import CapacityError
-
-            raise CapacityError(
-                f"Arena {self.descriptor.label!r} overflow: "
-                f"requested {count}, remaining {self.remaining}/{self.capacity}"
-            )
-        offset = self._allocated
-        self._allocated += count
-        self._regions.append((offset, count))
-        return offset, count
-
-    def reset(self) -> None:
-        self._allocated = 0
-        self._regions.clear()
-
-    def byte_offset(self, element_offset: int) -> int:
-        return element_offset * self.descriptor.layout.stride
-
-    def __repr__(self) -> str:
-        return (
-            f"BoundedArena({self.descriptor.label!r}, "
-            f"{self._allocated}/{self.capacity})"
-        )
-
-
-class ArenaSet:
-    """Named collection of arenas for a compute pass."""
-
-    def __init__(self) -> None:
-        self._arenas: dict[str, BoundedArena] = {}
-
-    def add(self, name: str, descriptor: ArenaDescriptor) -> BoundedArena:
-        if name in self._arenas:
-            raise ValueError(f"Arena {name!r} already exists")
-        arena = BoundedArena(descriptor)
-        self._arenas[name] = arena
-        return arena
-
-    def get(self, name: str) -> BoundedArena:
-        return self._arenas[name]
-
-    def reset_all(self) -> None:
-        for arena in self._arenas.values():
-            arena.reset()
-
-    def summary(self) -> dict[str, dict[str, int]]:
-        return {
-            name: {
-                "allocated": a.allocated,
-                "capacity": a.capacity,
-                "bytes": a.byte_offset(a.allocated),
-            }
-            for name, a in self._arenas.items()
-        }
-
-    def __contains__(self, name: str) -> bool:
-        return name in self._arenas
-
-    def __len__(self) -> int:
-        return len(self._arenas)

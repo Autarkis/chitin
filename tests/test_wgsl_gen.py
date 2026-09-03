@@ -39,9 +39,8 @@ class TestLayoutToWGSL:
     def test_unknown_format_raises(self):
         from chitin.gpu.layouts import FieldDef, StructLayout
 
-        bad = StructLayout("Bad", [FieldDef("x", "Q", 0)], stride=8)
-        with pytest.raises(ValueError, match="No WGSL mapping"):
-            layout_to_wgsl(bad)
+        with pytest.raises(ValueError, match="Unsupported GPU field format"):
+            StructLayout("Bad", [FieldDef("x", "Q", 0)], stride=8)
 
 
 class TestGenerateAll:

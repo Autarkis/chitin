@@ -13,3 +13,7 @@ class CapacityError(RuntimeError):
 
 class ShaderCompilationError(RuntimeError):
     """Raised when a WGSL shader module fails to compile."""
+
+
+class OperationCancelledError(RuntimeError):
+    """Raised when an operation is superseded at a GPU command boundary."""
