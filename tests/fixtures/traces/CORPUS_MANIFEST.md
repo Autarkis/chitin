@@ -47,10 +47,19 @@ Total: ~12 MB, 114 clips.
 
 ## Holdout protocol
 
-The original holdout evaluation (Policy 0.1.0) ran once, recorded an immutable
-FAIL result (`docs/holdout-results.json`), and the 114 failing clips were
-promoted to the regression tier (#118). Those clips are **spent** — Policy 0.2.0
-evaluation (#115) requires a fresh, disjoint holdout corpus.
+### Policy 0.1.0 (spent)
+
+The original holdout evaluation ran once, recorded an immutable FAIL result
+(`docs/holdout-results.json`), and the 114 failing clips were promoted to the
+regression tier (#118). The three external-tier fixtures and the regression
+tier are **spent** — their digests are in `KNOWN_CORPUS_DIGESTS` in the
+evaluator and will be rejected on reuse.
+
+### Policy 0.2.0 (pending)
+
+Acceptance criteria frozen in `docs/holdout-protocol-0.2.0.md` (#121).
+Corpus not yet selected. Evaluation: `scripts/evaluate_holdout.py --policy 0.2.0`.
+Output: `docs/holdout-results-0.2.0.json`.
 
 ## Integrity check
 

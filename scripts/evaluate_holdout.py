@@ -26,7 +26,7 @@ from chitin.coacd_trace_replay import (
     replay_classifications,
     replay_clip,
 )
-from chitin.f32_policy import DEFAULT_POLICY
+from chitin.f32_policy import DEFAULT_POLICY, QuantizationPolicy
 
 EXTERNAL_FIXTURES = ["t_shape", "curved_pipe_quarter", "h_shape"]
 
@@ -34,6 +34,15 @@ DLL_DIGEST = "dd295d37ad6579545f1017c7125bfe8daab65b52a9ff1853a104b8a2851853d3"
 
 TOPOLOGY_SAMPLE_RATE = 0.10
 TOPOLOGY_SAMPLE_MIN = 500
+
+KNOWN_CORPUS_DIGESTS = {
+    # External tier — Policy 0.1.0 holdout (spent)
+    "293790274a89a0c7549f6d86394017a2620fa95ccb71dbe7e52a26c85d10b202",  # t_shape
+    "dce6de15b4b3560df0cb799803e84beaead93b1eafb8f55dc288a8e49c41ef14",  # curved_pipe_quarter
+    "b42e20807a3cf4fc2b6d8048dfc434e83f13f137c4658951de5471a290fa6972",  # h_shape
+    # Regression tier — calibration (spent)
+    "c2311cfc0c026ee3e870c35ed8b295b1a455c1b1525e24e4b348db511d0ee92b",  # manifest.json
+}
 
 
 def _sha256_file(path: Path) -> str:
@@ -51,19 +60,24 @@ def _git_head() -> str:
         return "unknown"
 
 
-def _evaluate_fixture(name: str, traces_dir: Path) -> dict:
+def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -> dict:
     trace_dir = traces_dir / name
     if not trace_dir.exists():
         return {"fixture": name, "error": f"directory not found: {trace_dir}"}
 
     npz = trace_dir / "arrays.npz"
     corpus_digest = _sha256_file(npz) if npz.exists() else "missing"
+    if corpus_digest in KNOWN_CORPUS_DIGESTS:
+        raise SystemExit(
+            f"REJECTED: fixture '{name}' digest {corpus_digest[:16]}… matches known corpus"
+            " — holdout requires unseen data"
+        )
 
     trace = load_saved_trace(trace_dir)
     num_clips = len(trace.clips)
 
     # Pass 1: classification only (fast, O(n) per clip)
-    cls_report = replay_classifications(trace, DEFAULT_POLICY)
+    cls_report = replay_classifications(trace, policy)
 
     # Identify disagreement clip indices
     disagree_indices = set()
@@ -102,7 +116,7 @@ def _evaluate_fixture(name: str, traces_dir: Path) -> dict:
     # Pass 2: full topology on targeted clips
     topology_reports = []
     for idx in sorted(topology_indices):
-        result = replay_clip(trace.clips[idx], idx, DEFAULT_POLICY)
+        result = replay_clip(trace.clips[idx], idx, policy)
         if result is not None:
             topology_reports.append(result)
 
@@ -110,7 +124,7 @@ def _evaluate_fixture(name: str, traces_dir: Path) -> dict:
     oracle_agree = 0
     oracle_total = 0
     for i, clip in enumerate(trace.clips):
-        result = compare_oracle(clip, i, DEFAULT_POLICY)
+        result = compare_oracle(clip, i, policy)
         if result is None:
             continue
         oracle_agree += result.num_agree
@@ -249,7 +263,7 @@ def _evaluate_fixture(name: str, traces_dir: Path) -> dict:
     }
 
 
-def main():
+def _parse_args():
     parser = argparse.ArgumentParser(description="f32 holdout evaluation")
     parser.add_argument(
         "--traces-dir",
@@ -259,9 +273,34 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("docs/holdout-results.json"),
+        default=None,
+    )
+    parser.add_argument(
+        "--policy",
+        choices=["0.1.0", "0.2.0"],
+        default="0.1.0",
     )
     args = parser.parse_args()
+
+    if args.policy == "0.2.0":
+        from chitin.f32_policy import POLICY_0_2_0
+
+        policy = POLICY_0_2_0
+    else:
+        policy = DEFAULT_POLICY
+
+    if args.output is None:
+        args.output = (
+            Path(f"docs/holdout-results-{args.policy}.json")
+            if args.policy != "0.1.0"
+            else Path("docs/holdout-results.json")
+        )
+
+    return args, policy
+
+
+def main():
+    args, policy = _parse_args()
 
     evaluator_digest = _sha256_file(Path(__file__).resolve())
     prior_digest = _sha256_file(args.output) if args.output.exists() else None
@@ -270,19 +309,23 @@ def main():
         "evaluation_date": datetime.now(UTC).isoformat(),
         "evaluator_commit": _git_head(),
         "evaluator_digest": evaluator_digest,
-        "rerun_reason": "finite-residual aggregation fix",
         "supersedes_result_digest": prior_digest,
         "dll_digest": DLL_DIGEST,
         "policy": {
-            "grid_bits": DEFAULT_POLICY.grid_bits,
-            "grid_scale": DEFAULT_POLICY.grid_scale,
+            "version": policy.version,
+            "grid_bits": policy.grid_bits,
+            "grid_scale": policy.grid_scale,
+            "classification_ulp_margin": policy.classification_ulp_margin,
+            "intersection_snap_bits": policy.intersection_snap_bits,
+            "winding_check": policy.winding_check,
+            "ambiguity_fallback": policy.ambiguity_fallback,
         },
         "fixtures": [],
     }
 
     for name in EXTERNAL_FIXTURES:
         print(f"Evaluating {name}...", flush=True)
-        fixture_result = _evaluate_fixture(name, args.traces_dir)
+        fixture_result = _evaluate_fixture(name, args.traces_dir, policy)
         results["fixtures"].append(fixture_result)
         if "error" not in fixture_result:
             cls = fixture_result["classification"]
