@@ -63,11 +63,20 @@ KNOWN_CORPUS_DIGESTS = {
     "8be6ff2923d1116bce2b6f44f5bd5655d90f59c109a78c1702cb21b24b92ac82",  # twisted_notched_column
     "545e231435cf1d44989b98ba3822ed8640f7d5a49aa1df8cd627981e18d56272",  # skewed_rectangular_torus
     "c8d75526975637539f89748061ba56341240302b224b8321f3ebe911882ceaf0",  # multiscale_shard_cluster
+    # Holdout tier -- Policy 0.3.0 holdout (spent)
+    "2d60bc6601afeaf85cadc830c19345bf557a1579adafba5d82323251fffad3a2",  # barbed_helix_prism
+    "9bfd7decee7f204c2ab7190a671971b4c4dfbf82b3aa0495bc2d0b6916af804e",  # fluted_twist_column
+    "59d8fe3e993f1cd68f9bcdfc3f02b1e0257fffcf3f731ad5874e63f1feda0d6f",  # ridged_torus
+    "a4a04ea72b63c3128a26b669ca604cc308fa525e4bb1432c6e85389e7b6bc67d",  # interlocked_frame
+    "f9ff8968dfb2ce9385ff912c91c77801d0a0f58e043920b28d34e225bf2cc0b7",  # barbed_helix_prism_offset
+    "5717678e35a74b05b37c503bcaa2fcc73bb4a50817bd9c14f97022b2e9b0821c",  # fluted_twist_column_offset
+    "6b52d2003793afe7fb42d20ba28bff46c40e414c8862bf8cbe0c02c5f06014b4",  # ridged_torus_offset
 }
 
 KNOWN_MANIFEST_DIGESTS = {
     # Spent corpus manifests — must not be reused for new evaluations
     "cb30015d74f743fbcb86a22d01cf787c7c7548e7659f8104a2528fa570a6bd37",  # holdout-corpus-0.2.0.json
+    "92c9b11f19cc07a19004781a877dbdbea0959f310adf16dd6911339eda66d701",  # holdout-corpus-0.3.0.json
 }
 
 

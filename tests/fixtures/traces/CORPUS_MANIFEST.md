@@ -67,6 +67,16 @@ Raw corpus archived as `holdout-corpus-0.2.0.tar.gz`
 (SHA-256: `ef865ebcb73dabef5a3a29637850dd10a0aa9fb5446a282c6cf8d8fcf73e027f`, 200 MiB).
 S3: `s3://chitin-assets/holdout/holdout-corpus-0.2.0.tar.gz`.
 
+### Policy 0.3.0 (spent — PASS)
+
+Acceptance criteria frozen in `docs/holdout-protocol-0.3.0.md` (#122).
+Seven fixtures across two strata: `barbed_helix_prism`, `fluted_twist_column`,
+`ridged_torus`, `interlocked_frame` (ordinary); `barbed_helix_prism_offset`,
+`fluted_twist_column_offset`, `ridged_torus_offset` (large-offset).
+585,061 clips captured, 583,188 replayed, 1,873 skipped. Evaluated once (`57fe416`): **PASS**.
+Evidence: `docs/holdout-results-0.3.0.json` (immutable).
+Zero genuine arithmetic disagreements. 752 precision-loss clips (ordinary), 201 (large-offset).
+
 ## Integrity check
 
 CI verifies corpus digests via `tests/conftest.py::verify_corpus_integrity`.

@@ -112,3 +112,30 @@ Every criterion above is evaluated independently within each stratum. Overall ve
 - On-plane oracle contract (#123): tie-breaking convention, not a precision defect
 - Corpus digests: `tests/fixtures/traces/CORPUS_MANIFEST.md`
 - Safe capture CLI: `scripts/capture_holdout_corpus.py`
+
+## Outcome (post-evaluation record)
+
+**Verdict: PASS** — evaluated once at `57fe416`, result immutable at
+`docs/holdout-results-0.3.0.json`.
+
+| Metric | Ordinary | Large-offset |
+|--------|----------|--------------|
+| Clips captured | 309,779 | 275,282 |
+| Clips replayed | 308,708 | 274,480 |
+| Clips skipped | 1,071 | 802 |
+| Classification agreement | 100.0% | 100.0% |
+| Oracle agreement | 99.99999% | 99.99998% |
+| Invalid geometry | 0 | 0 |
+| Precision-loss clips | 752 | 201 |
+| Genuine arithmetic disagreements | 0 | 0 |
+
+Zero genuine arithmetic disagreements across 583,188 replayed clips. The f32
+canonical contract holds: after canonicalization, f32 classification matches
+f64 reference on every clip in both strata.
+
+Precision-loss composition: ordinary-stratum matched fixtures contribute 218
+precision-loss clips; `interlocked_frame` (ordinary-only) contributes 534.
+Large-offset matched fixtures contribute 201. Precision loss is reported, not
+counted as failure per the 0.3 contract.
+
+Result digest: `7663195704846a9533da776d4275dc39fe5bea74316f9397cf3d616597370b7b`.
