@@ -52,7 +52,38 @@ Declared before corpus selection to prevent outcome-peeking.
 
 Four fixtures selected: `oblique_gear_prism` (concave-oblique), `twisted_notched_column`
 (swept-nonparallel), `skewed_rectangular_torus` (genus-one), `multiscale_shard_cluster`
-(multi-component-scale). Source-only validity verified. Capture pending.
+(multi-component-scale). 60,810 clips captured and evaluated.
+
+## Result — FAIL
+
+Evaluated 2026-09-04 (`0d56ee4`). Immutable evidence: `docs/holdout-results-0.2.0.json`.
+
+| Criterion | Threshold | Measured | Result |
+|-----------|-----------|----------|--------|
+| Classification agreement | ≥ 99% | 99.977% | PASS |
+| Oracle agreement | ≥ 99.99% | 99.964% | **FAIL** |
+| Zero invalid geometry (NaN/Inf) | 0 | 14 Inf | **FAIL** |
+| Topology on disagreements | 100% face-set | 0% (14 clips) | **FAIL** |
+| Stratified topology sample | ≥ 99% | 99.77% | PASS |
+
+### Diagnosis
+
+Two independent failure clusters:
+
+**Cluster 1 — 14 classification failures** (twisted_notched_column: 12, multiscale_shard_cluster: 2).
+All on grid-boundary planes where f32 quantization moves vertices to a different side than f64.
+Failures come in consecutive pairs on centroid-axis planes (z=0.5, z=1/3). Produces the 14
+Inf residuals (14 Inf, 0 NaN) and the 0% disagree-topology. One causal cluster, one fix needed.
+Diagnostic clips extracted to `tests/fixtures/traces/holdout_failures_0_2_0/`.
+
+**Cluster 2 — 1,646 oracle vertex disagreements** (skewed_rectangular_torus: 1,414,
+twisted_notched_column: 230, oblique_gear_prism: 1, multiscale_shard_cluster: 1).
+All near-plane (max dot product < 10^-6). Vertices sit exactly on the clipping plane
+(dot ≈ machine epsilon). C++ CoACD returns side=0 (on-plane), Python f32 classifier
+returns side=+1 (positive). On-plane tie-breaking contract mismatch, not a classifier
+defect. Does not cause classification failures — only oracle-rate failure.
+
+Neither cluster is vertex welding (#120).
 
 ## Reference
 

@@ -55,15 +55,17 @@ regression tier (#118). The three external-tier fixtures and the regression
 tier are **spent** — their digests are in `KNOWN_CORPUS_DIGESTS` in the
 evaluator and will be rejected on reuse.
 
-### Policy 0.2.0 (selected, capture pending)
+### Policy 0.2.0 (spent — FAIL)
 
 Acceptance criteria frozen in `docs/holdout-protocol-0.2.0.md` (#121).
-Four fixtures selected: `oblique_gear_prism`, `twisted_notched_column`,
+Four fixtures: `oblique_gear_prism`, `twisted_notched_column`,
 `skewed_rectangular_torus`, `multiscale_shard_cluster`.
-Selection manifest: `docs/holdout-corpus-0.2.0.json`.
-Capture: `scripts/capture_holdout_corpus.py --manifest <path> --output-dir <dir>`.
-Evaluation: `scripts/evaluate_holdout.py --policy 0.2.0 --corpus-manifest <path>`.
-Output: `docs/holdout-results-0.2.0.json`.
+60,810 clips captured. Evaluated once (`0d56ee4`): **FAIL**.
+Evidence: `docs/holdout-results-0.2.0.json` (immutable).
+14 classifier-failure clips extracted to `tests/fixtures/traces/holdout_failures_0_2_0/`.
+Raw corpus archived as `holdout-corpus-0.2.0.tar.gz`
+(SHA-256: `ef865ebcb73dabef5a3a29637850dd10a0aa9fb5446a282c6cf8d8fcf73e027f`, 200 MiB).
+S3: `s3://chitin-assets/holdout/holdout-corpus-0.2.0.tar.gz`.
 
 ## Integrity check
 
