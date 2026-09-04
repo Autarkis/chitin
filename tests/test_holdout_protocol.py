@@ -178,9 +178,9 @@ class TestOverwriteProtection:
 
     def test_canonical_path_immutable(self):
         """Canonical output path cannot be overwritten even with --force."""
-        # Create the canonical file
         canonical = Path("docs/holdout-results-0.2.0.json")
         canonical.parent.mkdir(parents=True, exist_ok=True)
+        pre_existing = canonical.read_bytes() if canonical.exists() else None
         canonical.write_text("{}")
         try:
             with (
@@ -199,8 +199,10 @@ class TestOverwriteProtection:
             ):
                 evaluate_holdout.main()
         finally:
-            # Clean up — don't leave a fake canonical file
-            canonical.unlink(missing_ok=True)
+            if pre_existing is not None:
+                canonical.write_bytes(pre_existing)
+            else:
+                canonical.unlink(missing_ok=True)
 
 
 class TestManifestLoading:

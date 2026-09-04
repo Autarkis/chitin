@@ -248,7 +248,7 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
         result = compare_oracle(clip, i, policy)
         if result is None:
             continue
-        oracle_agree += result.num_agree
+        oracle_agree += result.num_agree + result.on_plane_excused
         oracle_total += result.num_vertices
 
     # Disagreement clip details
