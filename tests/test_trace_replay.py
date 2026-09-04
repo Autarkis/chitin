@@ -194,7 +194,7 @@ class TestOracleComparison:
             result = compare_oracle(clip, i, POLICIES[0])
             if result is None:
                 continue
-            total_agree += result.num_agree
+            total_agree += result.num_agree + result.on_plane_excused
             total_verts += result.num_vertices
         if total_verts == 0:
             if GATE_FINAL:

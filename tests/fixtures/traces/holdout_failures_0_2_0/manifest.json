@@ -1,0 +1,220 @@
+{
+  "source": "holdout-corpus-0.2.0",
+  "evaluator_commit": "c99c4a1cdeeaea76fc1fdda3447bf5c717d05dd6",
+  "result_commit": "0d56ee4",
+  "results_digest": "39f87937d290c0b4cff1c676e8feb3efe8b130e3778e37967cd4ff58e849a7f7",
+  "extraction_date": "2026-09-04T00:52:15.794377+00:00",
+  "policy_version": "0.2.0",
+  "clips": [
+    {
+      "file": "multiscale_shard_cluster_000825.npz",
+      "fixture": "multiscale_shard_cluster",
+      "clip_index": 825,
+      "component_id": 0,
+      "plane": {
+        "a": 1.0,
+        "b": 0.0,
+        "c": 0.0,
+        "d": 0.9011812401180537
+      },
+      "num_vertices": 26,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "f297c3dbe9c0e1316e587ac10e59e27d0c8cf6ad7af52d12e2f5499e41c92e37"
+    },
+    {
+      "file": "multiscale_shard_cluster_003848.npz",
+      "fixture": "multiscale_shard_cluster",
+      "clip_index": 3848,
+      "component_id": 3,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.9051707756353147
+      },
+      "num_vertices": 16,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "8a9890db40aac328011a3a8064237e4d7277c2f395e42492ae6b54ef01b4902f"
+    },
+    {
+      "file": "twisted_notched_column_000124.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 124,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5000000000000001
+      },
+      "num_vertices": 161,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "dbb759374b7a0a9a84bdf31b96bacb17ed5de923a3af9b120143100057455f33"
+    },
+    {
+      "file": "twisted_notched_column_000125.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 125,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5000000000000001
+      },
+      "num_vertices": 161,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "dbb759374b7a0a9a84bdf31b96bacb17ed5de923a3af9b120143100057455f33"
+    },
+    {
+      "file": "twisted_notched_column_000151.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 151,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 148,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "b1ead0f65054516bb8e2f7c3b7951b03faa5fb1552eee5b14cc56d8a97b2b2fd"
+    },
+    {
+      "file": "twisted_notched_column_000152.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 152,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 148,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "b1ead0f65054516bb8e2f7c3b7951b03faa5fb1552eee5b14cc56d8a97b2b2fd"
+    },
+    {
+      "file": "twisted_notched_column_000187.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 187,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 150,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "92153d4970ca0c438217520d316ab042f9526554c19206f4a69e3a30518fd25d"
+    },
+    {
+      "file": "twisted_notched_column_000188.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 188,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 150,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "92153d4970ca0c438217520d316ab042f9526554c19206f4a69e3a30518fd25d"
+    },
+    {
+      "file": "twisted_notched_column_000277.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 277,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 156,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "b121f43936bd6426b7f086fc9fb90cafa9df11afe53b0ac6f08654295759e5c2"
+    },
+    {
+      "file": "twisted_notched_column_000278.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 278,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 156,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "b121f43936bd6426b7f086fc9fb90cafa9df11afe53b0ac6f08654295759e5c2"
+    },
+    {
+      "file": "twisted_notched_column_000511.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 511,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 134,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "7ed7175d46c809988b29370d6e60c6e5ab67984fe2bd339871e3699fe979af67"
+    },
+    {
+      "file": "twisted_notched_column_000512.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 512,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.5
+      },
+      "num_vertices": 134,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "7ed7175d46c809988b29370d6e60c6e5ab67984fe2bd339871e3699fe979af67"
+    },
+    {
+      "file": "twisted_notched_column_000673.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 673,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.3333333134651185
+      },
+      "num_vertices": 201,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "d77c248806d734ebc8a53c00def9bbd692b51988dec17bb91d7e600285b1953b"
+    },
+    {
+      "file": "twisted_notched_column_000674.npz",
+      "fixture": "twisted_notched_column",
+      "clip_index": 674,
+      "component_id": 0,
+      "plane": {
+        "a": 0.0,
+        "b": 0.0,
+        "c": 1.0,
+        "d": 0.3333333134651185
+      },
+      "num_vertices": 201,
+      "failure_type": "classification_disagreement",
+      "npz_sha256": "d77c248806d734ebc8a53c00def9bbd692b51988dec17bb91d7e600285b1953b"
+    }
+  ]
+}

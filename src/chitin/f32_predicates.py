@@ -18,6 +18,9 @@ class PlaneClassification:
     positive_count: int
     negative_count: int
     on_plane_count: int
+    fast_path_count: int = 0
+    ambiguity_path_count: int = 0
+    signed_distances: np.ndarray | None = None
 
 
 @dataclass
@@ -59,6 +62,70 @@ def _count_signs(signs: np.ndarray) -> tuple[int, int, int]:
     return positive_count, negative_count, on_plane_count
 
 
+def _grid_quantization_bound(grid_normal_f32: np.ndarray) -> float:
+    """Max dot-product error from ±0.5 grid-cell quantization of vertex and plane point."""
+    return float(np.sum(np.abs(grid_normal_f32)))
+
+
+def _classify_with_fallback(
+    grid_dot: np.ndarray,
+    grid_normal_f32: np.ndarray,
+    world_vertices: np.ndarray,
+    world_plane_point: np.ndarray,
+    world_plane_normal: np.ndarray,
+    policy: QuantizationPolicy,
+) -> tuple[np.ndarray, int, int, np.ndarray | None]:
+    """Grid classification with unquantized-f32 fallback for ambiguous vertices.
+
+    Returns (signs, fast_path_count, ambiguity_path_count, signed_distances).
+    signed_distances is the array of world-frame f32 dot products when the
+    ambiguity path is active, None otherwise.
+    """
+    signs = policy.classify_sign(grid_dot)
+    n = len(signs)
+
+    if not policy.ambiguity_fallback:
+        return signs, n, 0, None
+
+    bound = _grid_quantization_bound(grid_normal_f32)
+    ambiguous = np.abs(grid_dot) <= bound
+    amb_count = int(np.sum(ambiguous))
+
+    v32 = world_vertices.astype(np.float32)
+    p32 = world_plane_point.astype(np.float32)
+    n32 = world_plane_normal.astype(np.float32)
+    world_dot = np.sum((v32 - p32) * n32, axis=1)
+
+    if amb_count > 0:
+        amb_idx = np.nonzero(ambiguous)[0]
+        signs[amb_idx] = np.sign(world_dot[amb_idx]).astype(np.int8)
+
+    return signs, n - amb_count, amb_count, world_dot
+
+
+def canonicalize_inputs_f32(
+    vertices: np.ndarray,
+    plane_point: np.ndarray,
+    plane_normal: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        vertices.astype(np.float32).astype(np.float64),
+        plane_point.astype(np.float32).astype(np.float64),
+        plane_normal.astype(np.float32).astype(np.float64),
+    )
+
+
+def categorize_disagreements(
+    raw_ref_signs: np.ndarray,
+    canon_ref_signs: np.ndarray,
+    canon_cand_signs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-vertex precision-loss and genuine-arithmetic boolean arrays."""
+    precision_loss = raw_ref_signs != canon_ref_signs
+    genuine_arithmetic = canon_ref_signs != canon_cand_signs
+    return precision_loss, genuine_arithmetic
+
+
 def classify_plane_f64(
     vertices: np.ndarray, plane_point: np.ndarray, plane_normal: np.ndarray
 ) -> PlaneClassification:
@@ -85,6 +152,10 @@ def classify_plane_f32(
     plane_normal: np.ndarray,
     policy: QuantizationPolicy,
 ) -> PlaneClassification:
+    if policy.canonical_f32_inputs:
+        vertices, plane_point, plane_normal = canonicalize_inputs_f32(
+            vertices, plane_point, plane_normal
+        )
     grid_vertices, grid_plane_point, _centroid, scale_factor = _to_grid_frame(
         vertices, plane_point, policy
     )
@@ -94,9 +165,19 @@ def classify_plane_f32(
         * grid_normal_f32,
         axis=1,
     )
-    signs = policy.classify_sign(dot)
+    signs, fast_count, amb_count, signed_distances = _classify_with_fallback(
+        dot, grid_normal_f32, vertices, plane_point, plane_normal, policy
+    )
     positive_count, negative_count, on_plane_count = _count_signs(signs)
-    return PlaneClassification(signs, positive_count, negative_count, on_plane_count)
+    return PlaneClassification(
+        signs,
+        positive_count,
+        negative_count,
+        on_plane_count,
+        fast_path_count=fast_count,
+        ambiguity_path_count=amb_count,
+        signed_distances=signed_distances,
+    )
 
 
 def _clip_edge_intersection(
@@ -116,6 +197,7 @@ def _clip_mesh_generic(
 ) -> ClipResult:
     classification = classify_fn(vertices, plane_point, plane_normal)
     signs = classification.signs
+    distances = classification.signed_distances
 
     out_vertices = [vertices[i] for i in range(len(vertices))]
     out_faces: list[list[int]] = []
@@ -143,9 +225,15 @@ def _clip_mesh_generic(
             if sign_a >= 0:
                 poly.append(idx_a)
             if sign_a * sign_b < 0:
-                point = _clip_edge_intersection(
-                    vertices[idx_a], vertices[idx_b], plane_point, plane_normal
-                )
+                if distances is not None:
+                    d_a = float(distances[idx_a])
+                    d_b = float(distances[idx_b])
+                    t = d_a / (d_a - d_b)
+                    point = vertices[idx_a] + t * (vertices[idx_b] - vertices[idx_a])
+                else:
+                    point = _clip_edge_intersection(
+                        vertices[idx_a], vertices[idx_b], plane_point, plane_normal
+                    )
                 new_index = len(out_vertices)
                 out_vertices.append(point)
                 new_points.append(point)
@@ -195,6 +283,10 @@ def clip_mesh_f32(
     plane_normal: np.ndarray,
     policy: QuantizationPolicy,
 ) -> ClipResult:
+    if policy.canonical_f32_inputs:
+        vertices, plane_point, plane_normal = canonicalize_inputs_f32(
+            vertices, plane_point, plane_normal
+        )
     grid_vertices, grid_plane_point, centroid, scale_factor = _to_grid_frame(
         vertices, plane_point, policy
     )
@@ -206,10 +298,18 @@ def clip_mesh_f32(
         dot = np.sum(
             (grid_vertices_f32 - grid_plane_point_f32) * grid_normal_f32, axis=1
         )
-        signs = policy.classify_sign(dot)
+        signs, fast_count, amb_count, signed_distances = _classify_with_fallback(
+            dot, grid_normal_f32, vertices, plane_point, plane_normal, policy
+        )
         positive_count, negative_count, on_plane_count = _count_signs(signs)
         return PlaneClassification(
-            signs, positive_count, negative_count, on_plane_count
+            signs,
+            positive_count,
+            negative_count,
+            on_plane_count,
+            fast_path_count=fast_count,
+            ambiguity_path_count=amb_count,
+            signed_distances=signed_distances,
         )
 
     snap_scale = 2.0 ** (policy.intersection_snap_bits - policy.grid_bits)

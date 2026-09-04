@@ -30,11 +30,52 @@ Too large for git. Stored as release artifacts or CAS.
 
 Total: ~17.4 GB, 25,170 clips.
 
+## Regression tier (#118, tracked in git)
+
+Extracted from the external-tier holdout after Policy 0.1.0's FAIL verdict
+(`scripts/extract_regression_corpus.py`). 114 clips where f32 classification
+disagreement changed clip face-set topology. Per-clip compressed `.npz` files
+at `tests/fixtures/regression/`, with `manifest.json` carrying per-clip
+SHA-256 digests.
+
+| Source fixture | Clips | Size | manifest.json SHA-256 |
+|----------------|-------|------|-----------------------|
+| t_shape | 2 | 575,326 | `c2311cfc0c026ee3e870c35ed8b295b1a455c1b1525e24e4b348db511d0ee92b` |
+| h_shape | 112 | 11,494,642 | (same manifest) |
+
+Total: ~12 MB, 114 clips.
+
 ## Holdout protocol
 
-External-tier fixtures are holdout candidates. They must not influence regression
-floor tuning. The holdout evaluation runs once, records an immutable result, and
-issues the final PASS/FAIL verdict before #108/#101 close.
+### Policy 0.1.0 (spent)
+
+The original holdout evaluation ran once, recorded an immutable FAIL result
+(`docs/holdout-results.json`), and the 114 failing clips were promoted to the
+regression tier (#118). The three external-tier fixtures and the regression
+tier are **spent** — their digests are in `KNOWN_CORPUS_DIGESTS` in the
+evaluator and will be rejected on reuse.
+
+### Policy 0.2.0 (spent — FAIL)
+
+Acceptance criteria frozen in `docs/holdout-protocol-0.2.0.md` (#121).
+Four fixtures: `oblique_gear_prism`, `twisted_notched_column`,
+`skewed_rectangular_torus`, `multiscale_shard_cluster`.
+60,810 clips captured. Evaluated once (`0d56ee4`): **FAIL**.
+Evidence: `docs/holdout-results-0.2.0.json` (immutable).
+14 classifier-failure clips extracted to `tests/fixtures/traces/holdout_failures_0_2_0/`.
+Raw corpus archived as `holdout-corpus-0.2.0.tar.gz`
+(SHA-256: `ef865ebcb73dabef5a3a29637850dd10a0aa9fb5446a282c6cf8d8fcf73e027f`, 200 MiB).
+S3: `s3://chitin-assets/holdout/holdout-corpus-0.2.0.tar.gz`.
+
+### Policy 0.3.0 (spent — PASS)
+
+Acceptance criteria frozen in `docs/holdout-protocol-0.3.0.md` (#122).
+Seven fixtures across two strata: `barbed_helix_prism`, `fluted_twist_column`,
+`ridged_torus`, `interlocked_frame` (ordinary); `barbed_helix_prism_offset`,
+`fluted_twist_column_offset`, `ridged_torus_offset` (large-offset).
+585,061 clips captured, 583,188 replayed, 1,873 skipped. Evaluated once (`57fe416`): **PASS**.
+Evidence: `docs/holdout-results-0.3.0.json` (immutable).
+Zero genuine arithmetic disagreements. 752 precision-loss clips (ordinary), 201 (large-offset).
 
 ## Integrity check
 

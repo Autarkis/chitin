@@ -14,6 +14,7 @@ import numpy as np
 from chitin.coacd_trace import CoACDTrace, TracedClip
 from chitin.f32_policy import DEFAULT_POLICY, QuantizationPolicy
 from chitin.f32_predicates import (
+    canonicalize_inputs_f32,
     classify_plane_f32,
     classify_plane_f64,
     clip_mesh_f32,
@@ -160,13 +161,18 @@ def replay_clip(
     # Plane eq: n.p + d = 0 => p = -d * n / |n|^2
     point = -(plane.d / norm) * normal
 
+    if policy.canonical_f32_inputs:
+        ref_v, ref_p, ref_n = canonicalize_inputs_f32(vertices, point, normal)
+    else:
+        ref_v, ref_p, ref_n = vertices, point, normal
+
     # 1. Classification
-    ref_cls = classify_plane_f64(vertices, point, normal)
+    ref_cls = classify_plane_f64(ref_v, ref_p, ref_n)
     cand_cls = classify_plane_f32(vertices, point, normal, policy)
     cls_diff = diff_classifications(ref_cls, cand_cls)
 
     # 2. Clip
-    ref_clip = clip_mesh_f64(vertices, faces, point, normal)
+    ref_clip = clip_mesh_f64(ref_v, faces, ref_p, ref_n)
     cand_clip = clip_mesh_f32(vertices, faces, point, normal, policy)
     clip_diff = diff_clips(ref_clip, cand_clip, policy=policy)
 
@@ -198,6 +204,17 @@ def replay_clip(
     )
 
 
+def replay_clip_canonical(
+    clip: TracedClip,
+    clip_index: int,
+    policy: QuantizationPolicy = DEFAULT_POLICY,
+) -> TraceReplayReport | None:
+    """Replay with canonical f32 inputs (convenience: forces canonical_f32_inputs)."""
+    from dataclasses import replace as dc_replace
+
+    return replay_clip(clip, clip_index, dc_replace(policy, canonical_f32_inputs=True))
+
+
 @dataclass
 class OracleComparison:
     """Result of comparing f32 classification against C++ oracle decisions."""
@@ -205,13 +222,21 @@ class OracleComparison:
     clip_index: int
     num_vertices: int
     num_agree: int
-    num_disagree: int
-    near_plane_disagree: int  # disagreements where |dot| < threshold
-    far_plane_disagree: int  # disagreements where |dot| >= threshold
-    max_dot_at_disagree: float  # largest |dot product| at a disagreement
+    num_disagree: int  # genuine only (both nonzero, different signs)
+    on_plane_excused: int  # oracle=0, f32≠0 (convention, not error)
+    near_plane_disagree: int  # genuine disagrees where |dot| < threshold
+    far_plane_disagree: int  # genuine disagrees where |dot| >= threshold
+    max_dot_at_disagree: float  # max |dot| at genuine disagrees
 
     @property
     def agreement_rate(self) -> float:
+        """Agreement rate excusing on-plane convention differences."""
+        effective = self.num_agree + self.on_plane_excused
+        return effective / self.num_vertices if self.num_vertices > 0 else 1.0
+
+    @property
+    def strict_agreement_rate(self) -> float:
+        """Agreement rate counting on-plane differences as disagreements."""
         return self.num_agree / self.num_vertices if self.num_vertices > 0 else 1.0
 
 
@@ -240,25 +265,44 @@ def compare_oracle(
     f32_sides = f32_result.signs
     oracle_sides = clip.oracle_sides.astype(np.int8)
 
-    agree_mask = f32_sides == oracle_sides
-    num_agree = int(np.sum(agree_mask))
-    num_disagree = len(vertices) - num_agree
+    exact_agree = f32_sides == oracle_sides
+    oracle_on_plane = oracle_sides == 0
 
-    # Compute dot products to characterize disagreements
+    # f64 signed distances for distance guard and disagreement characterization
     dots = np.dot(vertices - point, normal)
-    disagree_dots = np.abs(dots[~agree_mask]) if num_disagree > 0 else np.array([])
+
+    # Distance guard: only excuse oracle_side=0 within f32 error bound.
+    # Bound: c * eps_f32 * |v - p|, c=8 (Higham 3D dot product + safety).
+    f32_eps = float(np.finfo(np.float32).eps)
+    vertex_distances = np.linalg.norm(vertices - point, axis=1)
+    on_plane_bound = 8.0 * f32_eps * np.maximum(vertex_distances, 1.0)
+    plausibly_on_plane = np.abs(dots) <= on_plane_bound
+
+    excused = oracle_on_plane & plausibly_on_plane & ~exact_agree
+    genuine_disagree = ~exact_agree & ~excused
+
+    num_agree = int(np.sum(exact_agree))
+    on_plane_excused = int(np.sum(excused))
+    num_genuine_disagree = int(np.sum(genuine_disagree))
+
+    genuine_dots = (
+        np.abs(dots[genuine_disagree]) if num_genuine_disagree > 0 else np.array([])
+    )
 
     near_plane = (
-        int(np.sum(disagree_dots < near_plane_threshold)) if num_disagree > 0 else 0
+        int(np.sum(genuine_dots < near_plane_threshold))
+        if num_genuine_disagree > 0
+        else 0
     )
-    far_plane = num_disagree - near_plane
-    max_dot = float(np.max(disagree_dots)) if num_disagree > 0 else 0.0
+    far_plane = num_genuine_disagree - near_plane
+    max_dot = float(np.max(genuine_dots)) if num_genuine_disagree > 0 else 0.0
 
     return OracleComparison(
         clip_index=clip_index,
         num_vertices=len(vertices),
         num_agree=num_agree,
-        num_disagree=num_disagree,
+        num_disagree=num_genuine_disagree,
+        on_plane_excused=on_plane_excused,
         near_plane_disagree=near_plane,
         far_plane_disagree=far_plane,
         max_dot_at_disagree=max_dot,
@@ -348,7 +392,12 @@ def replay_classifications(
         normal = n / norm
         point = -(plane.d / norm) * normal
 
-        ref_cls = classify_plane_f64(vertices, point, normal)
+        if policy.canonical_f32_inputs:
+            ref_v, ref_p, ref_n = canonicalize_inputs_f32(vertices, point, normal)
+        else:
+            ref_v, ref_p, ref_n = vertices, point, normal
+
+        ref_cls = classify_plane_f64(ref_v, ref_p, ref_n)
         cand_cls = classify_plane_f32(vertices, point, normal, policy)
         cls_diff = diff_classifications(ref_cls, cand_cls)
 

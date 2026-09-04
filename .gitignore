@@ -47,3 +47,7 @@ tools/*.so
 tools/**/*.so
 tools/*.dylib
 tools/**/*.dylib
+
+# Holdout corpus — 861 MiB raw, durable copy in S3
+holdout-corpus-0.2.0/
+holdout-corpus-0.2.0.tar.gz
