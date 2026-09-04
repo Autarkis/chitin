@@ -50,7 +50,7 @@ class TestOracleOnPlaneContract:
     """On-plane vertices (oracle_side=0) excused only within f32 error bound."""
 
     # Markers scaled to 0.1 (not 1.0): classify_plane_f32's default policy
-    # (DEFAULT_POLICY, grid_bits=20, no ambiguity fallback) resolves signs
+    # (DEFAULT_POLICY, grid_bits=20, with ambiguity fallback) resolves signs
     # from a grid quantized to the clip's own vertex extent. A near-plane
     # offset only survives that quantization — and stays within the f32
     # distance-guard bound (~9.5e-7 at unit scale) — when the clip's extent

@@ -2,16 +2,9 @@
 
 Every clip in this corpus changed clip connectivity under Policy 0.1.0
 (f32 classification disagreement → face-set topology mismatch).
-The regression test asserts per-clip topology match — no aggregate
-floors — so Policy 0.2.0 must recover every single clip.
 
-Under Policy 0.1.0 the topology assertions are xfail(strict=True):
-strict catches both an unexpected fix (corpus stale) and a corpus that
-never actually reproduced the regression.
-
-Classification (f32 vs C++ oracle_sides) is NOT xfailed — it agrees
-even under 0.1.0 because both sides use f32. The topology divergence
-comes from the clip/cap face-set construction, not vertex classification.
+The current default must recover every clip: both oracle classification and
+face-set topology are asserted per clip, with no aggregate acceptance floor.
 """
 
 import hashlib
@@ -79,13 +72,6 @@ REGRESSION_CLIPS = _build_clip_params()
 REGRESSION_IDS = [f"{fix}-clip{idx}" for fix, idx in REGRESSION_CLIPS]
 
 
-xfail_topology_0_1_0 = pytest.mark.xfail(
-    DEFAULT_POLICY.version == "0.1.0",
-    reason="Known regression: Policy 0.1.0 fails near-plane ambiguity (#101)",
-    strict=True,
-)
-
-
 @pytest.mark.parametrize(
     "fixture,clip_index",
     REGRESSION_CLIPS,
@@ -103,7 +89,6 @@ def test_regression_classification(fixture, clip_index):
     )
 
 
-@xfail_topology_0_1_0
 @pytest.mark.parametrize(
     "fixture,clip_index",
     REGRESSION_CLIPS,

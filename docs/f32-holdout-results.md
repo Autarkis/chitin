@@ -4,7 +4,7 @@ Immutable evidence record. Generated from `docs/holdout-results.json`.
 
 **Verdict: FAIL — Policy 0.1.0** (see `docs/f32-gate-results.md`)
 
-**Policy:** DEFAULT_POLICY (grid_bits=20)
+**Policy:** Policy 0.1.0 (the default when evaluated; grid_bits=20)
 **Date:** 2026-09-02
 **DLL:** traced CoACD v1.0.14 (`dd295d37...51853d3`)
 **Evaluator:** `scripts/evaluate_holdout.py`

@@ -6,9 +6,9 @@ Acceptance protocol for the f32 predicate gate (#108/#101). Frozen before holdou
 
 | Parameter | Value |
 |-----------|-------|
-| Grid bits | 20 (DEFAULT_POLICY) |
+| Grid bits | 20 (Policy 0.1.0, the default when frozen) |
 | Sweep range | 20–23 (regression tests) |
-| Holdout evaluation | DEFAULT_POLICY only |
+| Holdout evaluation | Policy 0.1.0 (the default when frozen) |
 
 ## Regression floors (CI)
 

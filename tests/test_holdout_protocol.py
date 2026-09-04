@@ -113,10 +113,10 @@ class TestPolicyFlag:
         with patch("sys.argv", ["evaluate_holdout.py", *args]):
             return evaluate_holdout._parse_args()
 
-    def test_default_policy_is_0_1_0(self):
-        _args, policy = self._parse_args()
-        assert policy.version == "0.1.0"
-        assert not policy.ambiguity_fallback
+    def test_default_policy_is_0_3_0(self):
+        _args, policy = self._parse_args("--corpus-manifest", "manifest.json")
+        assert policy.version == "0.3.0"
+        assert policy.ambiguity_fallback
 
     def test_policy_0_2_0_selected(self):
         _args, policy = self._parse_args(
@@ -143,8 +143,12 @@ class TestOutputPath:
         with patch("sys.argv", ["evaluate_holdout.py", *args]):
             return evaluate_holdout._parse_args()
 
-    def test_0_1_0_default_path(self):
-        args, _ = self._parse_args()
+    def test_default_path_is_0_3_0(self):
+        args, _ = self._parse_args("--corpus-manifest", "manifest.json")
+        assert args.output == Path("docs/holdout-results-0.3.0.json")
+
+    def test_0_1_0_explicit_path(self):
+        args, _ = self._parse_args("--policy", "0.1.0")
         assert args.output == Path("docs/holdout-results.json")
 
     def test_0_2_0_versioned_path(self):
@@ -160,7 +164,9 @@ class TestOutputPath:
         assert args.output == Path("docs/holdout-results-0.3.0.json")
 
     def test_explicit_output_overrides(self):
-        args, _ = self._parse_args("--output", "custom.json")
+        args, _ = self._parse_args(
+            "--output", "custom.json", "--corpus-manifest", "manifest.json"
+        )
         assert args.output == Path("custom.json")
 
     def test_explicit_output_with_policy(self):
@@ -207,7 +213,16 @@ class TestOverwriteProtection:
         output = tmp_path / "existing.json"
         output.write_text("{}")
         with (
-            patch("sys.argv", ["evaluate_holdout.py", "--output", str(output)]),
+            patch(
+                "sys.argv",
+                [
+                    "evaluate_holdout.py",
+                    "--policy",
+                    "0.1.0",
+                    "--output",
+                    str(output),
+                ],
+            ),
             pytest.raises(SystemExit, match="already exists"),
         ):
             evaluate_holdout.main()
@@ -216,7 +231,15 @@ class TestOverwriteProtection:
         output = tmp_path / "existing.json"
         output.write_text("{}")
         with patch(
-            "sys.argv", ["evaluate_holdout.py", "--output", str(output), "--force"]
+            "sys.argv",
+            [
+                "evaluate_holdout.py",
+                "--policy",
+                "0.1.0",
+                "--output",
+                str(output),
+                "--force",
+            ],
         ):
             with pytest.raises(SystemExit) as exc_info:
                 evaluate_holdout.main()
