@@ -50,7 +50,7 @@ class QuantizationPolicy:
         return result
 
 
-DEFAULT_POLICY = QuantizationPolicy()
+POLICY_0_1_0 = QuantizationPolicy()
 
 POLICY_0_2_0 = QuantizationPolicy(
     version="0.2.0",
@@ -69,6 +69,9 @@ POLICY_0_3_0 = QuantizationPolicy(
     ambiguity_fallback=True,
     canonical_f32_inputs=True,
 )
+
+# Rollback: set DEFAULT_POLICY = POLICY_0_1_0 to restore pre-promotion behavior.
+DEFAULT_POLICY = POLICY_0_3_0
 
 
 def sweep_policies(grid_bits_range: range) -> list[QuantizationPolicy]:

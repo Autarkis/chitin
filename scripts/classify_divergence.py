@@ -5,7 +5,7 @@ for each one, runs three f32 predicate variants against the f64 reference
 (classification -> clip -> cap): ``raw_f32`` (plain float32 arithmetic, no
 grid frame at all), ``grid_no_snap`` (grid-frame quantization with
 intersection snapping effectively disabled), and ``policy_0_1_0`` (the
-shipped default policy, grid quantization plus intersection snapping).
+historical Policy 0.1.0 behavior, grid quantization plus intersection snapping).
 
 For each variant and each clip this records the earliest stage at which it
 disagrees with the f64 reference, and for classification disagreements the
@@ -24,7 +24,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from chitin.f32_policy import DEFAULT_POLICY, QuantizationPolicy
+from chitin.f32_policy import POLICY_0_1_0, QuantizationPolicy
 from chitin.f32_predicates import (
     PlaneClassification,
     _clip_mesh_generic,
@@ -258,7 +258,7 @@ def _process_clip(fixture: str, clip_index: int) -> dict:
             faces,
             point,
             normal,
-            DEFAULT_POLICY,
+            POLICY_0_1_0,
             ref_cls,
             ref_clip,
             ref_cap,
@@ -328,7 +328,7 @@ def main() -> int:
     report = {
         "version": "1.0",
         "date": datetime.now(UTC).isoformat(),
-        "policy": DEFAULT_POLICY.version,
+        "policy": POLICY_0_1_0.version,
         "total_clips": len(clips),
         "summary": summary,
         "primary_divergence_class": _primary_divergence_class(clips),

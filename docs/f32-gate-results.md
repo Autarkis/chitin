@@ -2,7 +2,7 @@
 
 **Issues**: #101, #108
 **Date**: 2026-09-02 (evaluated), 2026-09-02 (verdict updated)
-**Policy tested**: `DEFAULT_POLICY` (grid_bits=20, classification_ulp_margin=0, intersection_snap_bits=20)
+**Policy tested**: Policy 0.1.0 (the default when evaluated; grid_bits=20, classification_ulp_margin=0, intersection_snap_bits=20)
 **Oracle**: CoACD 1.0.14, instrumented DLL (v2), 5 C++ trace hooks
 **Build contract**: `tools/BUILD_CONTRACT.md`
 **Evaluator**: `scripts/evaluate_holdout.py`

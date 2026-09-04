@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from chitin.coacd_trace import load_saved_trace
 from chitin.coacd_trace_replay import compare_oracle
-from chitin.f32_policy import DEFAULT_POLICY
+from chitin.f32_policy import POLICY_0_1_0
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACES_DIR = REPO_ROOT / "tests" / "fixtures" / "traces"
@@ -261,7 +261,7 @@ def main() -> int:
 
             npz_digest = _sha256_file(npz_path)
 
-            comparison = compare_oracle(clip, clip_index, DEFAULT_POLICY)
+            comparison = compare_oracle(clip, clip_index, POLICY_0_1_0)
             num_disagree = comparison.num_disagree if comparison else -1
             near_plane = comparison.near_plane_disagree if comparison else -1
             max_dot = comparison.max_dot_at_disagree if comparison else -1.0

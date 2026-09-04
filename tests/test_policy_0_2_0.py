@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chitin.f32_policy import DEFAULT_POLICY, POLICY_0_2_0
+from chitin.f32_policy import POLICY_0_1_0, POLICY_0_2_0
 from chitin.f32_predicates import (
     _grid_quantization_bound,
     _to_grid_frame,
@@ -142,7 +142,7 @@ def test_policy_0_1_0_has_no_ambiguity_counts():
     point = np.array([0.0, 0.0, 0.0])
     normal = np.array([0.0, 0.0, 1.0])
 
-    result = classify_plane_f32(vertices, point, normal, DEFAULT_POLICY)
+    result = classify_plane_f32(vertices, point, normal, POLICY_0_1_0)
     assert result.fast_path_count == len(vertices)
     assert result.ambiguity_path_count == 0
 

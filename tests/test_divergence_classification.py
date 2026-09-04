@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chitin.f32_policy import DEFAULT_POLICY
+from chitin.f32_policy import POLICY_0_1_0
 from chitin.f32_predicates import (
     PlaneClassification,
     _clip_mesh_generic,
@@ -73,7 +73,7 @@ def test_first_divergence_is_classification(fixture, clip_index):
     point, normal = _plane_point_normal(npz["plane"])
 
     ref_cls = classify_plane_f64(verts, point, normal)
-    cand_cls = classify_plane_f32(verts, point, normal, DEFAULT_POLICY)
+    cand_cls = classify_plane_f32(verts, point, normal, POLICY_0_1_0)
     cls_diff = diff_classifications(ref_cls, cand_cls)
 
     assert not cls_diff.agrees, (

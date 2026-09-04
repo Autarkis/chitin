@@ -1,7 +1,7 @@
 """Holdout evaluation: f32 predicate gate on external-tier corpus.
 
-Loads external-tier trace fixtures, runs replay + oracle at DEFAULT_POLICY,
-emits holdout-results.json with per-fixture and aggregate statistics.
+Loads external-tier trace fixtures, runs replay and oracle comparison with the
+selected policy, and emits per-fixture and aggregate statistics.
 
 Usage:
     python scripts/evaluate_holdout.py [--traces-dir DIR] [--output PATH]
@@ -28,7 +28,12 @@ from chitin.coacd_trace_replay import (
     replay_classifications,
     replay_clip,
 )
-from chitin.f32_policy import DEFAULT_POLICY, POLICY_0_3_0, QuantizationPolicy
+from chitin.f32_policy import (
+    POLICY_0_1_0,
+    POLICY_0_2_0,
+    POLICY_0_3_0,
+    QuantizationPolicy,
+)
 from chitin.f32_predicates import (
     canonicalize_inputs_f32,
     categorize_disagreements,
@@ -572,7 +577,7 @@ def _parse_args():
     parser.add_argument(
         "--policy",
         choices=["0.1.0", "0.2.0", "0.3.0"],
-        default="0.1.0",
+        default="0.3.0",
     )
     parser.add_argument(
         "--corpus-manifest",
@@ -587,14 +592,12 @@ def _parse_args():
     )
     args = parser.parse_args()
 
-    if args.policy == "0.2.0":
-        from chitin.f32_policy import POLICY_0_2_0
-
-        policy = POLICY_0_2_0
-    elif args.policy == "0.3.0":
-        policy = POLICY_0_3_0
-    else:
-        policy = DEFAULT_POLICY
+    policies = {
+        "0.1.0": POLICY_0_1_0,
+        "0.2.0": POLICY_0_2_0,
+        "0.3.0": POLICY_0_3_0,
+    }
+    policy = policies[args.policy]
 
     if args.output is None:
         args.output = (

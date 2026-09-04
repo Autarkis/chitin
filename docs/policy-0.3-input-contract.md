@@ -75,9 +75,9 @@ adjustment. Policy 0.3.0 does not adopt any of them.
 
 | Policy | Input contract | Ambiguity fallback | Status |
 |--------|---------------|--------------------|--------|
-| 0.1.0  | Raw source precision (implicit) | No | DEFAULT_POLICY |
+| 0.1.0  | Raw source precision (implicit) | No | Historical default (`POLICY_0_1_0`) |
 | 0.2.0  | Raw source precision (implicit) | Yes (unquantized-f32) | Holdout FAIL |
-| 0.3.0  | Canonical f32 (explicit) | Yes (unquantized-f32) | Defined |
+| 0.3.0  | Canonical f32 (explicit) | Yes (unquantized-f32) | Current default (`DEFAULT_POLICY`) |
 
 Policy 0.3.0 does not change the mechanical parameters (grid_bits, snap_bits,
 ambiguity band). It changes what the reference comparison means: the f64 oracle

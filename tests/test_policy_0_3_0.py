@@ -248,9 +248,10 @@ class TestCanonicalReplaySelection:
         )
         assert not policy.canonical_f32_inputs
 
-    def test_0_1_0_retains_raw_policy(self):
-        _args, policy = self._parse_args()
-        assert not policy.canonical_f32_inputs
+    def test_no_flag_selects_default_policy(self):
+        """No --policy flag selects Policy 0.3.0 with canonical inputs."""
+        _args, policy = self._parse_args("--corpus-manifest", "manifest.json")
+        assert policy.canonical_f32_inputs
 
     def test_canonical_replay_resolves_precision_loss(self):
         """Diagnostic clip disagrees under raw replay, agrees under canonical."""
@@ -305,10 +306,10 @@ class TestCanonicalReplaySelection:
         )
 
 
-class TestBackwardCompatibility:
+class TestPolicyConfiguration:
     def test_policy_constants(self):
-        assert DEFAULT_POLICY.version == "0.1.0"
-        assert not DEFAULT_POLICY.canonical_f32_inputs
+        assert DEFAULT_POLICY.version == "0.3.0"
+        assert DEFAULT_POLICY.canonical_f32_inputs
         assert POLICY_0_2_0.version == "0.2.0"
         assert not POLICY_0_2_0.canonical_f32_inputs
         assert POLICY_0_3_0.version == "0.3.0"
@@ -326,11 +327,11 @@ class TestBackwardCompatibility:
         assert POLICY_0_3_0.ambiguity_fallback == POLICY_0_2_0.ambiguity_fallback
         assert POLICY_0_3_0.winding_check == POLICY_0_2_0.winding_check
 
-    def test_default_policy_unchanged(self):
-        assert DEFAULT_POLICY.version == "0.1.0"
+    def test_default_policy_is_0_3_0(self):
+        assert DEFAULT_POLICY.version == "0.3.0"
         assert DEFAULT_POLICY.grid_bits == 20
-        assert not DEFAULT_POLICY.ambiguity_fallback
-        assert not DEFAULT_POLICY.canonical_f32_inputs
+        assert DEFAULT_POLICY.ambiguity_fallback
+        assert DEFAULT_POLICY.canonical_f32_inputs
 
 
 class TestPredicateCanonicalContract:
