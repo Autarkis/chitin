@@ -52,6 +52,7 @@ class DifferentialResult:
     """Exact, f64, and policy classifications for one case."""
 
     exact_signs: np.ndarray
+    f32_input_exact_signs: np.ndarray
     f64_signs: np.ndarray
     f32_signs: np.ndarray
     fast_path_count: int
@@ -59,7 +60,18 @@ class DifferentialResult:
 
     @property
     def f32_exact_mismatch(self) -> np.ndarray:
+        """Policy differs from the exact sign of the original supplied inputs."""
         return self.f32_signs != self.exact_signs
+
+    @property
+    def input_precision_loss(self) -> np.ndarray:
+        """Casting inputs to f32 changes their exact mathematical sign."""
+        return self.f32_input_exact_signs != self.exact_signs
+
+    @property
+    def f32_arithmetic_mismatch(self) -> np.ndarray:
+        """Policy differs from exact arithmetic over canonical f32 inputs."""
+        return self.f32_signs != self.f32_input_exact_signs
 
     @property
     def f64_exact_mismatch(self) -> np.ndarray:
@@ -120,10 +132,18 @@ def evaluate_case(
     point = case.plane_point.astype(np.float64, copy=False)
     normal = case.plane_normal.astype(np.float64, copy=False)
     exact = classify_plane_exact(case)
+    f32_input_case = PlaneCase(
+        vertices.astype(np.float32).astype(np.float64),
+        point.astype(np.float32).astype(np.float64),
+        normal.astype(np.float32).astype(np.float64),
+        label=f"{case.label}:f32-inputs",
+    )
+    f32_input_exact = classify_plane_exact(f32_input_case)
     f64 = np.sign(np.dot(vertices - point, normal)).astype(np.int8)
     candidate = classify_plane_f32(vertices, point, normal, policy)
     return DifferentialResult(
         exact_signs=exact,
+        f32_input_exact_signs=f32_input_exact,
         f64_signs=f64,
         f32_signs=candidate.signs,
         fast_path_count=candidate.fast_path_count,
@@ -328,8 +348,10 @@ def search_adversaries(
         case = generator(rng, index)
         result = evaluate_case(case, policy)
         failures: list[str] = []
-        if result.num_f32_exact_mismatch:
-            failures.append("f32_exact")
+        if np.any(result.input_precision_loss):
+            failures.append("f32_input_precision_loss")
+        if np.any(result.f32_arithmetic_mismatch):
+            failures.append("f32_arithmetic")
         if result.num_f64_exact_mismatch:
             failures.append("f64_exact")
         failures.extend(_metamorphic_failures(case, result, rng, policy))

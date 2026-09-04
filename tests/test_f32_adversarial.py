@@ -86,6 +86,9 @@ class TestExactInputOracle:
         result = evaluate_case(case)
         np.testing.assert_array_equal(result.exact_signs, result.f64_signs)
         assert result.num_f32_exact_mismatch > 0
+        mismatch = result.f32_exact_mismatch
+        assert np.all(result.input_precision_loss[mismatch])
+        assert not np.any(result.f32_arithmetic_mismatch[mismatch])
 
 
 class TestBoundaryGenerator:
@@ -101,6 +104,8 @@ class TestBoundaryGenerator:
         result = evaluate_case(case)
         assert result.num_f32_exact_mismatch > 0
         assert result.num_f64_exact_mismatch == 0
+        assert np.any(result.input_precision_loss)
+        assert not np.any(result.f32_arithmetic_mismatch)
 
 
 class TestMetamorphicTransforms:

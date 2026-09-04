@@ -17,6 +17,12 @@ cell, and compares three answers:
 2. The ordinary NumPy f64 dot-product sign.
 3. The selected Chitin f32 policy.
 
+The report distinguishes two materially different outcomes: information loss
+when the original inputs are canonicalized to f32, and arithmetic disagreement
+between the policy and exact evaluation of those already-canonical f32 inputs.
+Only the latter demonstrates a defect that f32 arithmetic can repair without
+carrying additional source precision.
+
 The exact-input oracle does not claim that a source model represents ideal
 real-number geometry. It establishes the exact sign of the binary numbers that
 actually reached the predicate, avoiding the assumption that f64 is infallible
