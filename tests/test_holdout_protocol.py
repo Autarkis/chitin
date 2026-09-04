@@ -91,11 +91,15 @@ class TestPolicyFlag:
 
     def test_invalid_policy_rejected(self):
         with pytest.raises(SystemExit):
-            self._parse_args("--policy", "0.3.0")
+            self._parse_args("--policy", "0.99.0")
 
     def test_manifest_required_for_0_2_0(self):
         with pytest.raises(SystemExit, match="--corpus-manifest is required"):
             self._parse_args("--policy", "0.2.0")
+
+    def test_manifest_required_for_0_3_0(self):
+        with pytest.raises(SystemExit, match="--corpus-manifest is required"):
+            self._parse_args("--policy", "0.3.0")
 
 
 class TestOutputPath:

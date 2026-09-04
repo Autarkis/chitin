@@ -13,6 +13,7 @@ import json
 import math
 import subprocess
 import sys
+from dataclasses import replace as dc_replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,7 +27,13 @@ from chitin.coacd_trace_replay import (
     replay_classifications,
     replay_clip,
 )
-from chitin.f32_policy import DEFAULT_POLICY, QuantizationPolicy
+from chitin.f32_policy import DEFAULT_POLICY, POLICY_0_3_0, QuantizationPolicy
+from chitin.f32_predicates import (
+    canonicalize_inputs_f32,
+    categorize_disagreements,
+    classify_plane_f32,
+    classify_plane_f64,
+)
 
 EXTERNAL_FIXTURES = ["t_shape", "curved_pipe_quarter", "h_shape"]
 
@@ -200,6 +207,48 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
     # Pass 1: classification only (fast, O(n) per clip)
     cls_report = replay_classifications(trace, policy)
 
+    precision_loss_data = None
+    if policy.canonical_f32_inputs:
+        raw_policy = dc_replace(policy, canonical_f32_inputs=False)
+        precision_loss_clips = 0
+        genuine_arithmetic_clips = 0
+        total_raw_disagree = 0
+
+        for clip in trace.clips:
+            if clip.input_vertices is None or clip.input_faces is None:
+                continue
+            vertices = clip.input_vertices.astype(np.float64)
+            plane = clip.plane
+            n = np.array([plane.a, plane.b, plane.c], dtype=np.float64)
+            norm = np.linalg.norm(n)
+            if norm < 1e-15:
+                continue
+            normal = n / norm
+            point = -(plane.d / norm) * normal
+
+            raw_ref = classify_plane_f64(vertices, point, normal)
+            cv, cp, cn = canonicalize_inputs_f32(vertices, point, normal)
+            canon_ref = classify_plane_f64(cv, cp, cn)
+            canon_cand = classify_plane_f32(cv, cp, cn, raw_policy)
+
+            prec_loss, genuine = categorize_disagreements(
+                raw_ref.signs, canon_ref.signs, canon_cand.signs
+            )
+
+            raw_cand = classify_plane_f32(vertices, point, normal, raw_policy)
+            if np.any(raw_ref.signs != raw_cand.signs):
+                total_raw_disagree += 1
+            if np.any(prec_loss):
+                precision_loss_clips += 1
+            if np.any(genuine):
+                genuine_arithmetic_clips += 1
+
+        precision_loss_data = {
+            "precision_loss_clips": precision_loss_clips,
+            "genuine_arithmetic_disagree_clips": genuine_arithmetic_clips,
+            "total_raw_disagree_clips": total_raw_disagree,
+        }
+
     # Identify disagreement clip indices
     disagree_indices = set()
     for r in cls_report.reports:
@@ -244,12 +293,14 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
     # Oracle comparison (runs on all clips, classification-level cost)
     oracle_agree = 0
     oracle_total = 0
+    oracle_on_plane_excused = 0
     for i, clip in enumerate(trace.clips):
         result = compare_oracle(clip, i, policy)
         if result is None:
             continue
         oracle_agree += result.num_agree + result.on_plane_excused
         oracle_total += result.num_vertices
+        oracle_on_plane_excused += result.on_plane_excused
 
     # Disagreement clip details
     disagree_clips = []
@@ -332,7 +383,7 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
         absolute = {}
         scale_relative = {}
 
-    return {
+    fixture_result = {
         "fixture": name,
         "corpus_digest": corpus_digest,
         "num_clips": num_clips,
@@ -370,6 +421,7 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
             "agree": oracle_agree,
             "total": oracle_total,
             "rate": oracle_agree / max(1, oracle_total),
+            "on_plane_excused": oracle_on_plane_excused,
         },
         "intersection_error": {
             "absolute": absolute,
@@ -382,6 +434,9 @@ def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -
         },
         "classification_disagreements": disagree_clips,
     }
+    if precision_loss_data:
+        fixture_result["precision_loss"] = precision_loss_data
+    return fixture_result
 
 
 def _parse_args():
@@ -398,14 +453,14 @@ def _parse_args():
     )
     parser.add_argument(
         "--policy",
-        choices=["0.1.0", "0.2.0"],
+        choices=["0.1.0", "0.2.0", "0.3.0"],
         default="0.1.0",
     )
     parser.add_argument(
         "--corpus-manifest",
         type=Path,
         default=None,
-        help="JSON manifest for holdout corpus (required for --policy 0.2.0)",
+        help="JSON manifest for holdout corpus (required for --policy 0.2.0+)",
     )
     parser.add_argument(
         "--force",
@@ -418,6 +473,8 @@ def _parse_args():
         from chitin.f32_policy import POLICY_0_2_0
 
         policy = POLICY_0_2_0
+    elif args.policy == "0.3.0":
+        policy = POLICY_0_3_0
     else:
         policy = DEFAULT_POLICY
 
@@ -428,8 +485,8 @@ def _parse_args():
             else Path("docs/holdout-results.json")
         )
 
-    if args.policy == "0.2.0" and args.corpus_manifest is None:
-        raise SystemExit("--corpus-manifest is required for --policy 0.2.0")
+    if args.policy in ("0.2.0", "0.3.0") and args.corpus_manifest is None:
+        raise SystemExit(f"--corpus-manifest is required for --policy {args.policy}")
 
     return args, policy
 
@@ -440,6 +497,7 @@ def main():
     CANONICAL_OUTPUTS = {
         "0.1.0": Path("docs/holdout-results.json"),
         "0.2.0": Path("docs/holdout-results-0.2.0.json"),
+        "0.3.0": Path("docs/holdout-results-0.3.0.json"),
     }
     if args.output.exists():
         canonical = CANONICAL_OUTPUTS.get(policy.version)
@@ -470,6 +528,7 @@ def main():
             "intersection_snap_bits": policy.intersection_snap_bits,
             "winding_check": policy.winding_check,
             "ambiguity_fallback": policy.ambiguity_fallback,
+            "canonical_f32_inputs": policy.canonical_f32_inputs,
         },
         "fixtures": [],
     }
@@ -552,6 +611,25 @@ def main():
         "total_clips": total_cls,
         "total_oracle_vertices": total_oracle,
     }
+
+    total_oracle_excused = sum(
+        f.get("oracle", {}).get("on_plane_excused", 0)
+        for f in results["fixtures"]
+        if "error" not in f
+    )
+    results["aggregate"]["oracle_on_plane_excused"] = total_oracle_excused
+
+    if policy.canonical_f32_inputs:
+        results["aggregate"]["precision_loss_clips"] = sum(
+            f.get("precision_loss", {}).get("precision_loss_clips", 0)
+            for f in results["fixtures"]
+            if "error" not in f
+        )
+        results["aggregate"]["genuine_arithmetic_disagree_clips"] = sum(
+            f.get("precision_loss", {}).get("genuine_arithmetic_disagree_clips", 0)
+            for f in results["fixtures"]
+            if "error" not in f
+        )
 
     if policy.version != "0.1.0":
         verdict_result = _compute_verdict(results)

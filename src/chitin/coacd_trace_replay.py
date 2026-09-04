@@ -14,6 +14,7 @@ import numpy as np
 from chitin.coacd_trace import CoACDTrace, TracedClip
 from chitin.f32_policy import DEFAULT_POLICY, QuantizationPolicy
 from chitin.f32_predicates import (
+    canonicalize_inputs_f32,
     classify_plane_f32,
     classify_plane_f64,
     clip_mesh_f32,
@@ -160,13 +161,18 @@ def replay_clip(
     # Plane eq: n.p + d = 0 => p = -d * n / |n|^2
     point = -(plane.d / norm) * normal
 
+    if policy.canonical_f32_inputs:
+        ref_v, ref_p, ref_n = canonicalize_inputs_f32(vertices, point, normal)
+    else:
+        ref_v, ref_p, ref_n = vertices, point, normal
+
     # 1. Classification
-    ref_cls = classify_plane_f64(vertices, point, normal)
+    ref_cls = classify_plane_f64(ref_v, ref_p, ref_n)
     cand_cls = classify_plane_f32(vertices, point, normal, policy)
     cls_diff = diff_classifications(ref_cls, cand_cls)
 
     # 2. Clip
-    ref_clip = clip_mesh_f64(vertices, faces, point, normal)
+    ref_clip = clip_mesh_f64(ref_v, faces, ref_p, ref_n)
     cand_clip = clip_mesh_f32(vertices, faces, point, normal, policy)
     clip_diff = diff_clips(ref_clip, cand_clip, policy=policy)
 
@@ -196,6 +202,17 @@ def replay_clip(
         cap_detail=cap_diff.first_divergence or "",
         cap_face_set_agrees=cap_diff.details.get("cap_face_set_agrees", True),
     )
+
+
+def replay_clip_canonical(
+    clip: TracedClip,
+    clip_index: int,
+    policy: QuantizationPolicy = DEFAULT_POLICY,
+) -> TraceReplayReport | None:
+    """Replay with canonical f32 inputs (convenience: forces canonical_f32_inputs)."""
+    from dataclasses import replace as dc_replace
+
+    return replay_clip(clip, clip_index, dc_replace(policy, canonical_f32_inputs=True))
 
 
 @dataclass
@@ -375,7 +392,12 @@ def replay_classifications(
         normal = n / norm
         point = -(plane.d / norm) * normal
 
-        ref_cls = classify_plane_f64(vertices, point, normal)
+        if policy.canonical_f32_inputs:
+            ref_v, ref_p, ref_n = canonicalize_inputs_f32(vertices, point, normal)
+        else:
+            ref_v, ref_p, ref_n = vertices, point, normal
+
+        ref_cls = classify_plane_f64(ref_v, ref_p, ref_n)
         cand_cls = classify_plane_f32(vertices, point, normal, policy)
         cls_diff = diff_classifications(ref_cls, cand_cls)
 

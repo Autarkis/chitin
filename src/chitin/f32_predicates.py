@@ -103,6 +103,29 @@ def _classify_with_fallback(
     return signs, n - amb_count, amb_count, world_dot
 
 
+def canonicalize_inputs_f32(
+    vertices: np.ndarray,
+    plane_point: np.ndarray,
+    plane_normal: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        vertices.astype(np.float32).astype(np.float64),
+        plane_point.astype(np.float32).astype(np.float64),
+        plane_normal.astype(np.float32).astype(np.float64),
+    )
+
+
+def categorize_disagreements(
+    raw_ref_signs: np.ndarray,
+    canon_ref_signs: np.ndarray,
+    canon_cand_signs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-vertex precision-loss and genuine-arithmetic boolean arrays."""
+    precision_loss = raw_ref_signs != canon_ref_signs
+    genuine_arithmetic = canon_ref_signs != canon_cand_signs
+    return precision_loss, genuine_arithmetic
+
+
 def classify_plane_f64(
     vertices: np.ndarray, plane_point: np.ndarray, plane_normal: np.ndarray
 ) -> PlaneClassification:
@@ -129,6 +152,10 @@ def classify_plane_f32(
     plane_normal: np.ndarray,
     policy: QuantizationPolicy,
 ) -> PlaneClassification:
+    if policy.canonical_f32_inputs:
+        vertices, plane_point, plane_normal = canonicalize_inputs_f32(
+            vertices, plane_point, plane_normal
+        )
     grid_vertices, grid_plane_point, _centroid, scale_factor = _to_grid_frame(
         vertices, plane_point, policy
     )
@@ -256,6 +283,10 @@ def clip_mesh_f32(
     plane_normal: np.ndarray,
     policy: QuantizationPolicy,
 ) -> ClipResult:
+    if policy.canonical_f32_inputs:
+        vertices, plane_point, plane_normal = canonicalize_inputs_f32(
+            vertices, plane_point, plane_normal
+        )
     grid_vertices, grid_plane_point, centroid, scale_factor = _to_grid_frame(
         vertices, plane_point, policy
     )

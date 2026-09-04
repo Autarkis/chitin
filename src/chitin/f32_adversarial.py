@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-from chitin.f32_policy import POLICY_0_2_0, QuantizationPolicy
-from chitin.f32_predicates import classify_plane_f32
+from chitin.f32_policy import POLICY_0_2_0, POLICY_0_3_0, QuantizationPolicy
+from chitin.f32_predicates import canonicalize_inputs_f32, classify_plane_f32
 
 
 @dataclass(frozen=True)
@@ -149,6 +149,17 @@ def evaluate_case(
         fast_path_count=candidate.fast_path_count,
         ambiguity_path_count=candidate.ambiguity_path_count,
     )
+
+
+def evaluate_case_canonical(
+    case: PlaneCase, policy: QuantizationPolicy = POLICY_0_3_0
+) -> DifferentialResult:
+    """Evaluate under canonical-f32 contract: canonicalize inputs first."""
+    canonical = PlaneCase(
+        *canonicalize_inputs_f32(case.vertices, case.plane_point, case.plane_normal),
+        label=f"{case.label}:canonical",
+    )
+    return evaluate_case(canonical, policy)
 
 
 def generate_boundary_case(rng: np.random.Generator, index: int) -> PlaneCase:

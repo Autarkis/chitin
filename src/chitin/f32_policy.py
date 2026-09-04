@@ -17,6 +17,7 @@ class QuantizationPolicy:
     intersection_snap_bits: int = _UNSET
     winding_check: bool = True
     ambiguity_fallback: bool = False
+    canonical_f32_inputs: bool = False
 
     def __post_init__(self) -> None:
         if self.intersection_snap_bits == _UNSET:
@@ -57,6 +58,16 @@ POLICY_0_2_0 = QuantizationPolicy(
     classification_ulp_margin=0,
     intersection_snap_bits=20,
     ambiguity_fallback=True,
+)
+
+POLICY_0_3_0 = QuantizationPolicy(
+    version="0.3.0",
+    grid_bits=20,
+    classification_ulp_margin=0,
+    intersection_snap_bits=20,
+    winding_check=True,
+    ambiguity_fallback=True,
+    canonical_f32_inputs=True,
 )
 
 
