@@ -133,6 +133,10 @@ Zero genuine arithmetic disagreements across 583,188 replayed clips. The f32
 canonical contract holds: after canonicalization, f32 classification matches
 f64 reference on every clip in both strata.
 
+This PASS supports Policy 0.3.0 as Chitin's current `DEFAULT_POLICY`. It closes
+the plane-classification portability gate; clip/cap implementation and
+end-to-end WebGPU admission remain separate gates.
+
 Precision-loss composition: ordinary-stratum matched fixtures contribute 218
 precision-loss clips; `interlocked_frame` (ordinary-only) contributes 534.
 Large-offset matched fixtures contribute 201. Precision loss is reported, not

@@ -1,7 +1,7 @@
 """Capture holdout corpus from a selection manifest.
 
 Usage:
-    python scripts/capture_holdout_corpus.py --manifest docs/holdout-corpus-0.2.0.json --output-dir /path/to/holdout
+    python scripts/capture_holdout_corpus.py --manifest MANIFEST --output-dir DIR
 
 Unlike scripts/capture_trace_corpus.py (which captures the CI-tier fixture
 set into the established tests/fixtures/traces tree and must not be

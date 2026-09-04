@@ -1,5 +1,9 @@
 # f32 Predicate Disproof Gate — Results
 
+> **Historical result.** The FAIL below applies to Policy 0.1.0. Policy 0.3.0
+> subsequently passed its frozen holdout and is the current default; see the
+> [Policy 0.3 outcome](holdout-protocol-0.3.0.md#outcome-post-evaluation-record).
+
 **Issues**: #101, #108
 **Date**: 2026-09-02 (evaluated), 2026-09-02 (verdict updated)
 **Policy tested**: Policy 0.1.0 (the default when evaluated; grid_bits=20, classification_ulp_margin=0, intersection_snap_bits=20)
@@ -160,8 +164,8 @@ python scripts/capture_trace_corpus.py
 # Run gate tests (uses saved corpus, no DLL needed)
 python -m pytest tests/test_trace_replay.py -v -s
 
-# Run holdout evaluation
-python scripts/evaluate_holdout.py
+# Reproduce the historical Policy 0.1.0 evaluation path
+python scripts/evaluate_holdout.py --policy 0.1.0
 
 # Run with integrity check
 CHITIN_GATE_FINAL=1 python -m pytest tests/test_trace_replay.py -v -s

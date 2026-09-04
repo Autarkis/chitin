@@ -67,11 +67,17 @@ is one persistent runtime that can serve three workload classes:
 - batches created by committed fracture/topology-change events; and
 - spatial tiles reconstructed from captured Gaussian or point data.
 
-See the [Frontier Labs](docs/frontier-labs.md),
-[adoption strategy](docs/adoption-strategy.md), and
-[WebGPU implementation plan](docs/webgpu-decomposition.md). Public performance
-claims wait for trace correctness, the stage continuation gate, complete output,
-and end-to-end vendor admission.
+The first portability gate is complete: Policy 0.3.0 is the default plane-
+classification contract, with canonical f32 inputs and a filtered ambiguity
+path. It passed the frozen ordinary and large-offset holdout with zero genuine
+arithmetic disagreements across 583,188 replayed clips. This establishes the
+predicate contract; it does not mean end-to-end WebGPU decomposition ships.
+
+See the [architecture](docs/architecture.md), [Policy 0.3 input
+contract](docs/policy-0.3-input-contract.md), and [adversarial predicate
+testing](docs/adversarial-predicate-testing.md). Public performance claims wait
+for the remaining stage-continuation, complete-output, and end-to-end vendor
+admission gates.
 
 ## Install
 

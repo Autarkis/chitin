@@ -2,6 +2,10 @@
 
 Immutable evidence record. Generated from `docs/holdout-results.json`.
 
+> **Historical result.** This is the spent Policy 0.1.0 holdout. For the
+> current default, see the
+> [Policy 0.3 PASS record](holdout-protocol-0.3.0.md#outcome-post-evaluation-record).
+
 **Verdict: FAIL — Policy 0.1.0** (see `docs/f32-gate-results.md`)
 
 **Policy:** Policy 0.1.0 (the default when evaluated; grid_bits=20)

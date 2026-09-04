@@ -2,6 +2,11 @@
 
 Acceptance protocol for the f32 predicate gate (#108/#101). Frozen before holdout evaluation.
 
+> **Historical protocol.** This document records the Policy 0.1.0 gate. The
+> current default is Policy 0.3.0; see
+> [its input contract](policy-0.3-input-contract.md) and
+> [PASS record](holdout-protocol-0.3.0.md#outcome-post-evaluation-record).
+
 ## Frozen policy
 
 | Parameter | Value |

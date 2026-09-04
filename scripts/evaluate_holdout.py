@@ -4,7 +4,8 @@ Loads external-tier trace fixtures, runs replay and oracle comparison with the
 selected policy, and emits per-fixture and aggregate statistics.
 
 Usage:
-    python scripts/evaluate_holdout.py [--traces-dir DIR] [--output PATH]
+    python scripts/evaluate_holdout.py --policy VERSION \
+        --corpus-manifest MANIFEST [--traces-dir DIR] [--output PATH]
 """
 
 import argparse

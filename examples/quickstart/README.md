@@ -13,12 +13,13 @@ the operating system's reduced-motion preference.
 The demo runs against the local package builds while Chitin remains
 unpublished. It does not upload the selected asset.
 
-Collider Lab is also the maintained shell for Chitin's
-[Frontier Labs](../../docs/frontier-labs.md). The current release demonstrates
-the completed-GLB/WASM path. Future admitted stages extend this same surface
-with backend comparison, a persistent compiler session, fragment batches,
-progressive capture tiles, and atomic Rapier replacement. They do not create a
-parallel demo or imply that WebGPU already ships.
+Collider Lab is also the maintained shell for Chitin's experimental browser
+work. The current release demonstrates the completed-GLB/WASM path. Future
+admitted stages extend this same surface with backend comparison, a persistent
+compiler session, fragment batches, progressive capture tiles, and atomic
+Rapier replacement. They do not create a parallel demo or imply that WebGPU
+already ships. See the repository [direction](../../README.md#direction) for
+the current admission status.
 
 Do not open `index.html` directly: the browser's `file://` mode cannot run the
 module Worker or load WebAssembly. On Windows, double-click `START_DEMO.cmd` in

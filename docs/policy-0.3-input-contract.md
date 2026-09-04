@@ -9,6 +9,11 @@ IEEE-754 binary32 (f32) geometry. Vertices, plane points, and plane normals are
 evaluated as their nearest f32 representable values. Any sign information present
 only in higher-precision source inputs is explicitly outside the contract.
 
+Policy 0.3.0 is the current `DEFAULT_POLICY`. Its frozen holdout replayed
+583,188 clips across ordinary and large-offset strata with zero genuine
+arithmetic disagreements. The evidence and acceptance criteria are recorded in
+[the Policy 0.3 holdout protocol](holdout-protocol-0.3.0.md).
+
 ## Rationale
 
 The Policy 0.2.0 holdout (FAIL, commit `0d56ee4`) produced 14 failing clips

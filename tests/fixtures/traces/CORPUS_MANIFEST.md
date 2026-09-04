@@ -76,6 +76,7 @@ Seven fixtures across two strata: `barbed_helix_prism`, `fluted_twist_column`,
 585,061 clips captured, 583,188 replayed, 1,873 skipped. Evaluated once (`57fe416`): **PASS**.
 Evidence: `docs/holdout-results-0.3.0.json` (immutable).
 Zero genuine arithmetic disagreements. 752 precision-loss clips (ordinary), 201 (large-offset).
+Policy 0.3.0 is now Chitin's `DEFAULT_POLICY`.
 
 ## Integrity check
 

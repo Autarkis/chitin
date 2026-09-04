@@ -6,6 +6,11 @@ format is versioned independently and noted where it changes.
 
 ## [Unreleased]
 
+- **Changed:** the default f32 plane-classification policy is now Policy 0.3.0:
+  canonical f32 inputs plus the filtered grid-boundary ambiguity path. The
+  frozen ordinary and large-offset holdout replayed 583,188 clips with zero
+  genuine arithmetic disagreements. Historical behavior remains available as
+  `POLICY_0_1_0`; the `.phys` format is unchanged.
 - **Fixed:** direct mesh inputs containing disconnected, overlapping solids
   were passed to CoACD as one triangle soup. Each solid could be watertight,
   while their concatenation was not one valid boundary; this made both normal
