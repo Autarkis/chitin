@@ -232,6 +232,32 @@ def main() -> None:
             }
         )
 
+    fixture_strata = {
+        entry["name"]: entry.get("stratum", "ordinary") for entry in fixtures
+    }
+    strata_counts: dict[str, int] = {}
+    for rec in records:
+        s = fixture_strata[rec["name"]]
+        strata_counts[s] = strata_counts.get(s, 0) + rec["clips"]
+
+    expected_strata = {"ordinary", "large-offset"}
+    actual_strata = set(strata_counts.keys())
+    if actual_strata != expected_strata:
+        _abort(f"Unexpected strata: expected {expected_strata}, got {actual_strata}")
+
+    corpus_floor = manifest.get("corpus_size_floor", {}).get(
+        "min_clips_per_stratum", 30000
+    )
+    corpus_floor_met = all(count >= corpus_floor for count in strata_counts.values())
+    if not corpus_floor_met:
+        for stratum, count in strata_counts.items():
+            if count < corpus_floor:
+                print(
+                    f"WARNING: stratum '{stratum}' has {count} clips, "
+                    f"below floor {corpus_floor} — corpus is inadequate for evaluation",
+                    file=sys.stderr,
+                )
+
     capture_record = {
         "capture_date": datetime.now(UTC).isoformat(),
         "manifest_path": str(manifest_path),
@@ -242,6 +268,9 @@ def main() -> None:
             "dll_digest": actual_dll_digest if dll_path else None,
             "dll_verified": dll_path is not None,
         },
+        "strata_clip_counts": strata_counts,
+        "corpus_floor": corpus_floor,
+        "corpus_floor_met": corpus_floor_met,
     }
     record_path = output_dir / "capture-record.json"
     with open(record_path, "w") as f:

@@ -13,6 +13,7 @@ import json
 import math
 import subprocess
 import sys
+from collections import defaultdict
 from dataclasses import replace as dc_replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,6 +58,16 @@ KNOWN_CORPUS_DIGESTS = {
     "1b1223a253fedc2a86e6c000d6a5d873bf586aab0bbdf04f5175bcae9bb36e40",  # thin_u_channel
     "fa2e275d0da0bc8c539b0b772e0795d3818f883af9a91c3b2a810544f174593e",  # cross_bracket
     "9f9be026aecacccb40891d0c60b1874b70fbcdbc9c8d972c4d9300fb4b0760c5",  # staircase
+    # Holdout tier -- Policy 0.2.0 holdout (spent)
+    "6ef89492d200bbccdfbf3b9e60ae00d0d46ad8ff67b029792d49a7ea1650ac32",  # oblique_gear_prism
+    "8be6ff2923d1116bce2b6f44f5bd5655d90f59c109a78c1702cb21b24b92ac82",  # twisted_notched_column
+    "545e231435cf1d44989b98ba3822ed8640f7d5a49aa1df8cd627981e18d56272",  # skewed_rectangular_torus
+    "c8d75526975637539f89748061ba56341240302b224b8321f3ebe911882ceaf0",  # multiscale_shard_cluster
+}
+
+KNOWN_MANIFEST_DIGESTS = {
+    # Spent corpus manifests — must not be reused for new evaluations
+    "cb30015d74f743fbcb86a22d01cf787c7c7548e7659f8104a2528fa570a6bd37",  # holdout-corpus-0.2.0.json
 }
 
 
@@ -89,6 +100,12 @@ def _load_corpus_manifest(path: Path) -> dict:
     for entry in fixtures:
         if "name" not in entry:
             raise SystemExit(f"Manifest fixture entry missing 'name': {entry}")
+    manifest_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if manifest_digest in KNOWN_MANIFEST_DIGESTS:
+        raise SystemExit(
+            f"REJECTED: manifest {path} digest {manifest_digest[:16]}… matches a spent "
+            "corpus manifest — holdout requires a fresh corpus"
+        )
     return manifest
 
 
@@ -111,6 +128,47 @@ def _load_capture_record(traces_dir: Path, manifest_path: Path) -> dict:
             f"record={recorded_manifest_digest} actual={actual_manifest_digest}"
         )
     return record
+
+
+def _verify_corpus_adequacy(manifest: dict, capture_record: dict) -> None:
+    """Verify corpus adequacy for Policy 0.3.0 stratified evaluation.
+
+    Reads the floor from the committed manifest (source of truth), verifies
+    the capture record's floor matches, and directly checks every stratum
+    count against the manifest floor.  Never trusts capture_record's
+    corpus_floor_met flag.
+    """
+    manifest_floor = manifest.get("corpus_size_floor", {}).get("min_clips_per_stratum")
+    if manifest_floor is None:
+        raise SystemExit(
+            "Manifest missing corpus_size_floor.min_clips_per_stratum — "
+            "cannot verify corpus adequacy"
+        )
+    strata_counts = capture_record.get("strata_clip_counts")
+    if not strata_counts:
+        raise SystemExit(
+            "Capture record missing strata_clip_counts — "
+            "re-capture with updated capture_holdout_corpus.py"
+        )
+    record_floor = capture_record.get("corpus_floor")
+    if record_floor != manifest_floor:
+        raise SystemExit(
+            f"Capture record floor ({record_floor}) != manifest floor "
+            f"({manifest_floor}) — capture and manifest disagree"
+        )
+    expected_strata = {"ordinary", "large-offset"}
+    actual_strata = set(strata_counts.keys())
+    if actual_strata != expected_strata:
+        raise SystemExit(
+            f"Capture record strata mismatch: "
+            f"expected {sorted(expected_strata)}, got {sorted(actual_strata)}"
+        )
+    undersized = {s: c for s, c in strata_counts.items() if c < manifest_floor}
+    if undersized:
+        raise SystemExit(
+            f"Corpus inadequate: {undersized} below manifest floor "
+            f"{manifest_floor} — do not evaluate; capture more data"
+        )
 
 
 ACCEPTANCE_CRITERIA_0_2_0 = {
@@ -186,6 +244,57 @@ def _compute_verdict(results: dict) -> dict:
 
     verdict = "PASS" if all(c["pass"] for c in checks.values()) else "FAIL"
     return {"verdict": verdict, "checks": checks}
+
+
+def _build_stratum_output(stratum_fixtures: list) -> dict:
+    """Aggregate, verdict, and precision-loss rollup for one stratum's fixtures."""
+    total_cls_agree = sum(
+        f["classification"]["agree"] for f in stratum_fixtures if "error" not in f
+    )
+    total_cls = sum(
+        f["classification"]["total"] for f in stratum_fixtures if "error" not in f
+    )
+    total_oracle_agree = sum(
+        f["oracle"]["agree"] for f in stratum_fixtures if "error" not in f
+    )
+    total_oracle = sum(
+        f["oracle"]["total"] for f in stratum_fixtures if "error" not in f
+    )
+    total_oracle_excused = sum(
+        f.get("oracle", {}).get("on_plane_excused", 0)
+        for f in stratum_fixtures
+        if "error" not in f
+    )
+    aggregate = {
+        "classification_rate": total_cls_agree / max(1, total_cls),
+        "oracle_rate": total_oracle_agree / max(1, total_oracle),
+        "total_clips": total_cls,
+        "total_oracle_vertices": total_oracle,
+        "oracle_on_plane_excused": total_oracle_excused,
+    }
+
+    precision_loss_clips = sum(
+        f.get("precision_loss", {}).get("precision_loss_clips", 0)
+        for f in stratum_fixtures
+        if "error" not in f
+    )
+    genuine_arithmetic_clips = sum(
+        f.get("precision_loss", {}).get("genuine_arithmetic_disagree_clips", 0)
+        for f in stratum_fixtures
+        if "error" not in f
+    )
+
+    verdict_result = _compute_verdict(
+        {"fixtures": stratum_fixtures, "aggregate": aggregate}
+    )
+
+    return {
+        "fixtures": stratum_fixtures,
+        "aggregate": aggregate,
+        "verdict": verdict_result,
+        "precision_loss_clips": precision_loss_clips,
+        "genuine_arithmetic_clips": genuine_arithmetic_clips,
+    }
 
 
 def _evaluate_fixture(name: str, traces_dir: Path, policy: QuantizationPolicy) -> dict:
@@ -536,6 +645,10 @@ def main():
     if args.corpus_manifest:
         manifest = _load_corpus_manifest(args.corpus_manifest)
         fixture_names = [entry["name"] for entry in manifest["fixtures"]]
+        fixture_strata = {
+            entry["name"]: entry.get("stratum", "ordinary")
+            for entry in manifest["fixtures"]
+        }
         results["corpus_manifest"] = str(args.corpus_manifest)
         results["corpus_manifest_digest"] = _sha256_file(args.corpus_manifest)
         # Verify capture record chain-of-custody
@@ -571,8 +684,12 @@ def main():
                 f"  evaluator:      {DLL_DIGEST}"
             )
         results["capture_record_verified"] = True
+
+        if policy.version == "0.3.0":
+            _verify_corpus_adequacy(manifest, capture_record)
     else:
         fixture_names = EXTERNAL_FIXTURES
+        fixture_strata = {name: "ordinary" for name in EXTERNAL_FIXTURES}
 
     for name in fixture_names:
         print(f"Evaluating {name}...", flush=True)
@@ -592,53 +709,85 @@ def main():
                 f"clip_points={clip['points_rate']:.1%}"
             )
 
-    # Aggregate
-    total_cls_agree = sum(
-        f["classification"]["agree"] for f in results["fixtures"] if "error" not in f
-    )
-    total_cls = sum(
-        f["classification"]["total"] for f in results["fixtures"] if "error" not in f
-    )
-    total_oracle_agree = sum(
-        f["oracle"]["agree"] for f in results["fixtures"] if "error" not in f
-    )
-    total_oracle = sum(
-        f["oracle"]["total"] for f in results["fixtures"] if "error" not in f
-    )
-    results["aggregate"] = {
-        "classification_rate": total_cls_agree / max(1, total_cls),
-        "oracle_rate": total_oracle_agree / max(1, total_oracle),
-        "total_clips": total_cls,
-        "total_oracle_vertices": total_oracle,
-    }
+    if policy.version == "0.3.0":
+        # Stratum-aware verdict: group fixture results by stratum, compute
+        # verdict per stratum independently, and require all strata to pass.
+        strata_fixtures = defaultdict(list)
+        for fixture_result in results["fixtures"]:
+            stratum = fixture_strata.get(fixture_result["fixture"], "ordinary")
+            strata_fixtures[stratum].append(fixture_result)
 
-    total_oracle_excused = sum(
-        f.get("oracle", {}).get("on_plane_excused", 0)
-        for f in results["fixtures"]
-        if "error" not in f
-    )
-    results["aggregate"]["oracle_on_plane_excused"] = total_oracle_excused
+        strata_output = {}
+        all_pass = True
+        for stratum, stratum_fixtures in strata_fixtures.items():
+            stratum_output = _build_stratum_output(stratum_fixtures)
+            strata_output[stratum] = stratum_output
+            if stratum_output["verdict"]["verdict"] != "PASS":
+                all_pass = False
 
-    if policy.canonical_f32_inputs:
-        results["aggregate"]["precision_loss_clips"] = sum(
-            f.get("precision_loss", {}).get("precision_loss_clips", 0)
+            print(
+                f"\nStratum '{stratum}' verdict: {stratum_output['verdict']['verdict']}"
+            )
+            for check_name, check in stratum_output["verdict"]["checks"].items():
+                status = "PASS" if check["pass"] else "FAIL"
+                print(f"  {check_name}: {status} ({check['value']})")
+
+        del results["fixtures"]
+        results["strata"] = strata_output
+        results["overall_verdict"] = "PASS" if all_pass else "FAIL"
+        print(f"\nOverall verdict: {results['overall_verdict']}")
+    else:
+        # Aggregate
+        total_cls_agree = sum(
+            f["classification"]["agree"]
             for f in results["fixtures"]
             if "error" not in f
         )
-        results["aggregate"]["genuine_arithmetic_disagree_clips"] = sum(
-            f.get("precision_loss", {}).get("genuine_arithmetic_disagree_clips", 0)
+        total_cls = sum(
+            f["classification"]["total"]
             for f in results["fixtures"]
             if "error" not in f
         )
+        total_oracle_agree = sum(
+            f["oracle"]["agree"] for f in results["fixtures"] if "error" not in f
+        )
+        total_oracle = sum(
+            f["oracle"]["total"] for f in results["fixtures"] if "error" not in f
+        )
+        results["aggregate"] = {
+            "classification_rate": total_cls_agree / max(1, total_cls),
+            "oracle_rate": total_oracle_agree / max(1, total_oracle),
+            "total_clips": total_cls,
+            "total_oracle_vertices": total_oracle,
+        }
 
-    if policy.version != "0.1.0":
-        verdict_result = _compute_verdict(results)
-        results["verdict"] = verdict_result["verdict"]
-        results["verdict_checks"] = verdict_result["checks"]
-        print(f"\nVerdict: {verdict_result['verdict']}")
-        for check_name, check in verdict_result["checks"].items():
-            status = "PASS" if check["pass"] else "FAIL"
-            print(f"  {check_name}: {status} ({check['value']})")
+        total_oracle_excused = sum(
+            f.get("oracle", {}).get("on_plane_excused", 0)
+            for f in results["fixtures"]
+            if "error" not in f
+        )
+        results["aggregate"]["oracle_on_plane_excused"] = total_oracle_excused
+
+        if policy.canonical_f32_inputs:
+            results["aggregate"]["precision_loss_clips"] = sum(
+                f.get("precision_loss", {}).get("precision_loss_clips", 0)
+                for f in results["fixtures"]
+                if "error" not in f
+            )
+            results["aggregate"]["genuine_arithmetic_disagree_clips"] = sum(
+                f.get("precision_loss", {}).get("genuine_arithmetic_disagree_clips", 0)
+                for f in results["fixtures"]
+                if "error" not in f
+            )
+
+        if policy.version != "0.1.0":
+            verdict_result = _compute_verdict(results)
+            results["verdict"] = verdict_result["verdict"]
+            results["verdict_checks"] = verdict_result["checks"]
+            print(f"\nVerdict: {verdict_result['verdict']}")
+            for check_name, check in verdict_result["checks"].items():
+                status = "PASS" if check["pass"] else "FAIL"
+                print(f"  {check_name}: {status} ({check['value']})")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -658,6 +807,8 @@ def main():
     print(f"\nResults written to {args.output}")
     if "verdict" in results:
         print(f"Verdict: {results['verdict']}")
+    elif "overall_verdict" in results:
+        print(f"Overall verdict: {results['overall_verdict']}")
 
 
 if __name__ == "__main__":

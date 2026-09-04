@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "0.3.0",
+  "protocol": "docs/holdout-protocol-0.3.0.md",
+  "traced_coacd": {
+    "version": "1.0.14",
+    "dll_digest": "dd295d37ad6579545f1017c7125bfe8daab65b52a9ff1853a104b8a2851853d3"
+  },
+  "capture": {
+    "threshold": 0.05,
+    "stream_format": "v3"
+  },
+  "corpus_size_floor": {
+    "min_clips_per_stratum": 30000,
+    "note": "If any stratum captures fewer clips, corpus is inadequate — do not tune parameters"
+  },
+  "fixtures": [
+    {
+      "name": "barbed_helix_prism",
+      "stratum": "ordinary",
+      "rationale": "10 asymmetric barbs with deep concavities; exercises oblique near-plane vertices",
+      "parameters": {},
+      "source_digest": "44d5d02879091c1ecb37996037f91ecaed5e84158935dd63eeddc0d9d33a2b9f"
+    },
+    {
+      "name": "fluted_twist_column",
+      "stratum": "ordinary",
+      "rationale": "6-flute twisted+tapered column; 28-station sweep with 40-degree twist exercises dense near-plane distribution",
+      "parameters": {},
+      "source_digest": "ace97e84cf8857b0c3a6f45efc81f8b496fc1d633f8a2331f2275734443c4607"
+    },
+    {
+      "name": "ridged_torus",
+      "stratum": "ordinary",
+      "rationale": "genus-1 torus with 12 longitudinal ridges; exercises non-simply-connected topology and ridge concavities",
+      "parameters": {},
+      "source_digest": "3a243824825d886a3e3df8e65f6973f8c7f15d5a1f4ef4ce7fc095af316c8b22"
+    },
+    {
+      "name": "interlocked_frame",
+      "stratum": "ordinary",
+      "rationale": "3 rectangular frames in orthogonal planes; multi-component coverage with 12 disconnected convex subsets",
+      "parameters": {},
+      "source_digest": "21e266bcbd8460a7ff2bb63b18e8d7f4ac90da915f470fb3a3ddf6c3505eb74d"
+    },
+    {
+      "name": "barbed_helix_prism_offset",
+      "stratum": "large-offset",
+      "rationale": "barbed_helix_prism translated to [1e7, 5e6, 3e6]; matched pair for precision-loss isolation",
+      "parameters": {},
+      "source_digest": "44b98134ce0817392357ddd8f035557afe760a020e1e77070971510d5eba0f30"
+    },
+    {
+      "name": "fluted_twist_column_offset",
+      "stratum": "large-offset",
+      "rationale": "fluted_twist_column translated to [1e7, 5e6, 3e6]; matched pair for precision-loss isolation",
+      "parameters": {},
+      "source_digest": "2e98699b912313da87a24cfaa380d35aaf8168a3ebd52735eb12717dcc1954d6"
+    },
+    {
+      "name": "ridged_torus_offset",
+      "stratum": "large-offset",
+      "rationale": "ridged_torus translated to [1e7, 5e6, 3e6]; matched pair for precision-loss isolation",
+      "parameters": {},
+      "source_digest": "195c93c4adb2e11d523150cbb21d3f4b6c20e80803c0c71c4f9f3f0290838b2a"
+    }
+  ]
+}

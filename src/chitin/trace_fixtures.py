@@ -6,6 +6,8 @@ decomposition scenario. No external assets, no license concerns.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 
 
@@ -757,6 +759,246 @@ def multiscale_shard_cluster_mesh() -> tuple[np.ndarray, np.ndarray]:
     return vertices, faces
 
 
+def barbed_helix_prism_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """10 asymmetric hooked barbs extruded — deep concavities, anisotropic transform."""
+    n_barbs = 10
+    base_r = 0.7
+    half_width = 0.13  # half of the barb's shoulder angular width
+
+    centers = [i * 2 * np.pi / n_barbs for i in range(n_barbs)]
+
+    profile: list[tuple[float, float]] = []
+    for i in range(n_barbs):
+        c = centers[i]
+        hook_r = 1.35 if i % 2 == 0 else 1.05
+        bl_angle = c - half_width
+        tl_angle = c - half_width * 0.35
+        tr_angle = c + half_width * 0.65
+        br_angle = c + half_width
+
+        profile.append((base_r * np.cos(bl_angle), base_r * np.sin(bl_angle)))
+        profile.append((hook_r * np.cos(tl_angle), hook_r * np.sin(tl_angle)))
+        profile.append(
+            (0.8 * hook_r * np.cos(tr_angle), 0.8 * hook_r * np.sin(tr_angle))
+        )
+        profile.append((base_r * np.cos(br_angle), base_r * np.sin(br_angle)))
+
+        next_c = centers[(i + 1) % n_barbs]
+        if i == n_barbs - 1:
+            next_c += 2 * np.pi
+        mid_angle = (c + next_c) / 2
+        profile.append(
+            (0.55 * base_r * np.cos(mid_angle), 0.55 * base_r * np.sin(mid_angle))
+        )
+
+    vertices, faces = _extrude_polygon(profile, 0.0, 0.6)
+
+    scale = np.diag([1.0, 0.85, 1.15]).astype(np.float32)
+    angle = np.radians(22)
+    rot_z = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 0],
+            [np.sin(angle), np.cos(angle), 0],
+            [0, 0, 1],
+        ],
+        dtype=np.float32,
+    )
+    vertices = (rot_z @ scale @ vertices.T).T.astype(np.float32)
+    return vertices, faces
+
+
+def fluted_twist_column_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """6-flute column (deep semicircular grooves) swept with 40° twist and 20% taper."""
+    n_flutes = 6
+    outer_r = 0.5
+    groove_depth = 0.28
+    sector = 2 * np.pi / n_flutes
+    land_frac = 0.15  # fraction of each sector left as a flat land between flutes
+
+    profile_base: list[tuple[float, float]] = []
+    for i in range(n_flutes):
+        c = i * sector
+        land_span = sector * land_frac
+        groove_start = c + land_span / 2
+        groove_end = c + sector - land_span / 2
+
+        # 5 outer-arc points across the land before the groove.
+        for k in range(5):
+            a = c - land_span / 2 + k * (land_span / 5)
+            profile_base.append((outer_r * np.cos(a), outer_r * np.sin(a)))
+
+        # 5 groove points: a concave semicircular-ish dip back to the outer radius.
+        # Half-open like the land sampling above — t never reaches 1, so the last
+        # groove sample never lands exactly on the next flute's first land point
+        # (both would otherwise sit at radius outer_r, angle groove_end).
+        for k in range(5):
+            t = k / 5
+            a = groove_start + t * (groove_end - groove_start)
+            r = outer_r - groove_depth * np.sin(np.pi * t)
+            profile_base.append((r * np.cos(a), r * np.sin(a)))
+
+    n_profile = len(profile_base)
+
+    height = 2.5
+    stations = 28
+    total_twist = np.radians(40)
+    taper = 0.2
+
+    station_pts: list[list[tuple[float, float, float]]] = []
+    for k in range(stations + 1):
+        z = k * height / stations
+        twist = total_twist * z / height
+        scale_factor = 1.0 - taper * z / height
+        c, s = np.cos(twist), np.sin(twist)
+        pts = []
+        for x, y in profile_base:
+            xr = x * c - y * s
+            yr = x * s + y * c
+            pts.append((scale_factor * xr, scale_factor * yr, z))
+        station_pts.append(pts)
+
+    vertices = np.array(
+        [pt for station in station_pts for pt in station], dtype=np.float32
+    )
+
+    faces = []
+    for k in range(stations):
+        base_k = k * n_profile
+        base_k1 = (k + 1) * n_profile
+        for j in range(n_profile):
+            j1 = (j + 1) % n_profile
+            b0, b1 = base_k + j, base_k + j1
+            t0, t1 = base_k1 + j, base_k1 + j1
+            faces.append((b0, b1, t1))
+            faces.append((b0, t1, t0))
+
+    # Bottom cap (station 0), outward -Z normal.
+    for i0, i1, i2 in _ear_clip(profile_base):
+        faces.append((i0, i2, i1))
+
+    # Top cap (last station), outward +Z normal.
+    top_offset = stations * n_profile
+    top_profile_2d = [(p[0], p[1]) for p in station_pts[stations]]
+    for i0, i1, i2 in _ear_clip(top_profile_2d):
+        faces.append((i0 + top_offset, i1 + top_offset, i2 + top_offset))
+
+    return vertices, np.array(faces, dtype=np.int32)
+
+
+def ridged_torus_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """Torus with 12 longitudinal ridges (genus-one) and a shear transform."""
+    major_r = 1.2
+    minor_r = 0.3
+    ridge_r = 0.45
+    n_major = 48
+    n_minor = 24
+
+    def idx(i: int, j: int) -> int:
+        return i * n_minor + j
+
+    verts = np.zeros((n_major * n_minor, 3), dtype=np.float32)
+    for i in range(n_major):
+        theta = 2 * np.pi * i / n_major
+        ct, st = np.cos(theta), np.sin(theta)
+        for j in range(n_minor):
+            phi = 2 * np.pi * j / n_minor
+            # Every 2nd of the 24 minor-profile vertices is a ridge (12 ridges total).
+            rr = ridge_r if j % 2 == 0 else minor_r
+            local_r = major_r + rr * np.cos(phi)
+            verts[idx(i, j)] = [local_r * ct, local_r * st, rr * np.sin(phi)]
+
+    faces = []
+    for i in range(n_major):
+        i1 = (i + 1) % n_major
+        for j in range(n_minor):
+            j1 = (j + 1) % n_minor
+            a, b, c, d = idx(i, j), idx(i1, j), idx(i1, j1), idx(i, j1)
+            faces.append((a, b, c))
+            faces.append((a, c, d))
+
+    vertices = verts.copy()
+    vertices[:, 0] += 0.15 * verts[:, 2]
+    vertices[:, 1] += 0.1 * verts[:, 2]
+
+    return vertices.astype(np.float32), np.array(faces, dtype=np.int32)
+
+
+def _rect_frame_bars(
+    outer_w: float, outer_h: float, bar_t: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """4 overlapping boxes forming a rectangular ring in the local XY plane."""
+    bar_specs = [
+        ((outer_w, bar_t, bar_t), (0.0, (outer_h - bar_t) / 2, 0.0)),
+        ((outer_w, bar_t, bar_t), (0.0, -(outer_h - bar_t) / 2, 0.0)),
+        ((bar_t, outer_h, bar_t), (-(outer_w - bar_t) / 2, 0.0, 0.0)),
+        ((bar_t, outer_h, bar_t), ((outer_w - bar_t) / 2, 0.0, 0.0)),
+    ]
+    all_v = []
+    all_f = []
+    vertex_offset = 0
+    for extents, center in bar_specs:
+        v, f = box_mesh(extents)
+        v = v + np.array(center, dtype=np.float32)
+        all_v.append(v)
+        all_f.append(f + vertex_offset)
+        vertex_offset += len(v)
+    return np.concatenate(all_v).astype(np.float32), np.concatenate(all_f).astype(
+        np.int32
+    )
+
+
+def interlocked_frame_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """3 interlocked rectangular frames (gimbal cage) — 12-box multi-component mesh."""
+
+    def rot_x(deg: float) -> np.ndarray:
+        a = np.radians(deg)
+        return np.array(
+            [[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]],
+            dtype=np.float32,
+        )
+
+    def rot_y(deg: float) -> np.ndarray:
+        a = np.radians(deg)
+        return np.array(
+            [[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]],
+            dtype=np.float32,
+        )
+
+    # Frame 1: XY plane.
+    v1, f1 = _rect_frame_bars(2.0, 1.5, 0.15)
+    # Frame 2: XZ plane.
+    v2, f2 = _rect_frame_bars(1.8, 1.6, 0.12)
+    v2 = (rot_x(90.0) @ v2.T).T.astype(np.float32)
+    # Frame 3: YZ plane.
+    v3, f3 = _rect_frame_bars(1.6, 1.4, 0.18)
+    v3 = (rot_y(90.0) @ v3.T).T.astype(np.float32)
+
+    all_vertices = [v1, v2, v3]
+    all_faces = [f1]
+    vertex_offset = len(v1)
+    all_faces.append(f2 + vertex_offset)
+    vertex_offset += len(v2)
+    all_faces.append(f3 + vertex_offset)
+
+    vertices = np.concatenate(all_vertices).astype(np.float32)
+    faces = np.concatenate(all_faces).astype(np.int32)
+    return vertices, faces
+
+
+def _translate_mesh(
+    gen_fn: Callable[[], tuple[np.ndarray, np.ndarray]],
+    offset: tuple[float, float, float],
+) -> Callable[[], tuple[np.ndarray, np.ndarray]]:
+    """Wrap a generator to translate its output by a constant offset."""
+
+    def translated() -> tuple[np.ndarray, np.ndarray]:
+        v, f = gen_fn()
+        v = v.astype(np.float64) + np.array(offset, dtype=np.float64)
+        return v, f
+
+    return translated
+
+
 # Registry of all fixtures
 FIXTURES = {
     "box": box_mesh,
@@ -772,8 +1014,15 @@ FIXTURES = {
 }
 
 HOLDOUT_FIXTURES = {
-    "oblique_gear_prism": oblique_gear_prism_mesh,
-    "twisted_notched_column": twisted_notched_column_mesh,
-    "skewed_rectangular_torus": skewed_rectangular_torus_mesh,
-    "multiscale_shard_cluster": multiscale_shard_cluster_mesh,
+    "barbed_helix_prism": barbed_helix_prism_mesh,
+    "fluted_twist_column": fluted_twist_column_mesh,
+    "ridged_torus": ridged_torus_mesh,
+    "interlocked_frame": interlocked_frame_mesh,
+    "barbed_helix_prism_offset": _translate_mesh(
+        barbed_helix_prism_mesh, (1e7, 5e6, 3e6)
+    ),
+    "fluted_twist_column_offset": _translate_mesh(
+        fluted_twist_column_mesh, (1e7, 5e6, 3e6)
+    ),
+    "ridged_torus_offset": _translate_mesh(ridged_torus_mesh, (1e7, 5e6, 3e6)),
 }

@@ -22,7 +22,7 @@ evaluate_holdout = importlib.import_module("evaluate_holdout")
 
 class TestKnownDigestRejection:
     def test_known_digests_populated(self):
-        assert len(evaluate_holdout.KNOWN_CORPUS_DIGESTS) >= 11
+        assert len(evaluate_holdout.KNOWN_CORPUS_DIGESTS) >= 15
 
     def test_spent_external_tier_rejected(self):
         for digest in [
@@ -50,6 +50,15 @@ class TestKnownDigestRejection:
         ]:
             assert digest in evaluate_holdout.KNOWN_CORPUS_DIGESTS
 
+    def test_holdout_0_2_tier_rejected(self):
+        for digest in [
+            "6ef89492d200bbccdfbf3b9e60ae00d0d46ad8ff67b029792d49a7ea1650ac32",  # oblique_gear_prism
+            "8be6ff2923d1116bce2b6f44f5bd5655d90f59c109a78c1702cb21b24b92ac82",  # twisted_notched_column
+            "545e231435cf1d44989b98ba3822ed8640f7d5a49aa1df8cd627981e18d56272",  # skewed_rectangular_torus
+            "c8d75526975637539f89748061ba56341240302b224b8321f3ebe911882ceaf0",  # multiscale_shard_cluster
+        ]:
+            assert digest in evaluate_holdout.KNOWN_CORPUS_DIGESTS
+
     def test_evaluate_fixture_rejects_known_digest(self, tmp_path):
         import numpy as np
 
@@ -70,6 +79,33 @@ class TestKnownDigestRejection:
                 evaluate_holdout._evaluate_fixture(
                     "fake_fixture", tmp_path, DEFAULT_POLICY
                 )
+
+
+class TestKnownManifestDigestRejection:
+    def test_known_manifest_digests_populated(self):
+        assert len(evaluate_holdout.KNOWN_MANIFEST_DIGESTS) >= 1
+
+    def test_spent_0_2_manifest_rejected(self):
+        assert (
+            "cb30015d74f743fbcb86a22d01cf787c7c7548e7659f8104a2528fa570a6bd37"
+            in evaluate_holdout.KNOWN_MANIFEST_DIGESTS
+        )
+
+    def test_load_rejects_spent_manifest(self, tmp_path):
+        """A manifest whose content hash matches a spent digest is rejected."""
+        # Read the actual 0.2 manifest to get its exact bytes
+        manifest_0_2 = (
+            Path(__file__).resolve().parent.parent
+            / "docs"
+            / "holdout-corpus-0.2.0.json"
+        )
+        if not manifest_0_2.exists():
+            pytest.skip("0.2 manifest not present")
+        # Copy it to tmp to test rejection
+        spent_copy = tmp_path / "spent.json"
+        spent_copy.write_bytes(manifest_0_2.read_bytes())
+        with pytest.raises(SystemExit, match="REJECTED.*spent corpus manifest"):
+            evaluate_holdout._load_corpus_manifest(spent_copy)
 
 
 class TestPolicyFlag:
@@ -116,6 +152,12 @@ class TestOutputPath:
             "--policy", "0.2.0", "--corpus-manifest", "manifest.json"
         )
         assert args.output == Path("docs/holdout-results-0.2.0.json")
+
+    def test_0_3_0_versioned_path(self):
+        args, _ = self._parse_args(
+            "--policy", "0.3.0", "--corpus-manifest", "manifest.json"
+        )
+        assert args.output == Path("docs/holdout-results-0.3.0.json")
 
     def test_explicit_output_overrides(self):
         args, _ = self._parse_args("--output", "custom.json")
@@ -396,3 +438,58 @@ class TestCaptureRecordVerification:
         )
         result = evaluate_holdout._load_capture_record(tmp_path, manifest)
         assert result["manifest_digest"] == manifest_digest
+
+
+class TestCorpusAdequacyGate:
+    """Test _verify_corpus_adequacy rejection paths."""
+
+    def _manifest(self, floor=30000):
+        return {"corpus_size_floor": {"min_clips_per_stratum": floor}}
+
+    def _record(self, counts=None, floor=30000):
+        return {
+            "strata_clip_counts": counts or {"ordinary": 35000, "large-offset": 35000},
+            "corpus_floor": floor,
+            "corpus_floor_met": True,
+        }
+
+    def test_passes_when_adequate(self):
+        evaluate_holdout._verify_corpus_adequacy(self._manifest(), self._record())
+
+    def test_rejects_undersized_despite_floor_met_true(self):
+        record = self._record(
+            counts={"ordinary": 35000, "large-offset": 100}, floor=30000
+        )
+        record["corpus_floor_met"] = True
+        with pytest.raises(SystemExit, match="Corpus inadequate"):
+            evaluate_holdout._verify_corpus_adequacy(self._manifest(), record)
+
+    def test_rejects_floor_mismatch(self):
+        with pytest.raises(SystemExit, match="capture and manifest disagree"):
+            evaluate_holdout._verify_corpus_adequacy(
+                self._manifest(floor=30000), self._record(floor=50000)
+            )
+
+    def test_rejects_missing_strata_counts(self):
+        record = self._record()
+        del record["strata_clip_counts"]
+        with pytest.raises(SystemExit, match="missing strata_clip_counts"):
+            evaluate_holdout._verify_corpus_adequacy(self._manifest(), record)
+
+    def test_rejects_unexpected_strata(self):
+        record = self._record(
+            counts={"ordinary": 35000, "large-offset": 35000, "exotic": 50000}
+        )
+        with pytest.raises(SystemExit, match="strata mismatch"):
+            evaluate_holdout._verify_corpus_adequacy(self._manifest(), record)
+
+    def test_rejects_missing_stratum(self):
+        record = self._record(counts={"ordinary": 35000})
+        with pytest.raises(SystemExit, match="strata mismatch"):
+            evaluate_holdout._verify_corpus_adequacy(self._manifest(), record)
+
+    def test_rejects_manifest_without_floor(self):
+        with pytest.raises(SystemExit, match="Manifest missing"):
+            evaluate_holdout._verify_corpus_adequacy(
+                {"corpus_size_floor": {}}, self._record()
+            )
