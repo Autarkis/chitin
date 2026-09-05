@@ -211,6 +211,29 @@ INTERSECTION_RECORD = StructLayout(
     stride=32,
 )
 
+NORM_PARAMS = StructLayout(
+    "NormParams",
+    [
+        FieldDef("centroid_x", "f", 0),
+        FieldDef("centroid_y", "f", 4),
+        FieldDef("centroid_z", "f", 8),
+        FieldDef("scale_factor", "f", 12),
+        FieldDef("grid_plane_x", "i", 16),
+        FieldDef("grid_plane_y", "i", 20),
+        FieldDef("grid_plane_z", "i", 24),
+        FieldDef("ambiguity_bound", "f", 28),
+        FieldDef("grid_normal_x", "f", 32),
+        FieldDef("grid_normal_y", "f", 36),
+        FieldDef("grid_normal_z", "f", 40),
+        FieldDef("grid_bits", "I", 44),
+        FieldDef("vertex_count", "I", 48),
+        FieldDef("_pad0", "I", 52),
+        FieldDef("_pad1", "I", 56),
+        FieldDef("_pad2", "I", 60),
+    ],
+    stride=64,
+)
+
 ALL_LAYOUTS: dict[str, StructLayout] = {
     "Point": POINT,
     "Triangle": TRIANGLE,
@@ -222,4 +245,5 @@ ALL_LAYOUTS: dict[str, StructLayout] = {
     "ClipPlane": CLIP_PLANE,
     "EdgeKey": EDGE_KEY,
     "IntersectionRecord": INTERSECTION_RECORD,
+    "NormParams": NORM_PARAMS,
 }
