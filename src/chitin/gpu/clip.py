@@ -98,7 +98,7 @@ def _empty_result() -> ClipEmitResult:
     )
 
 
-def dispatch_clip_emit_reference(
+def dispatch_clip_emit(
     worker: GPUWorker,
     vertices: np.ndarray,
     faces: np.ndarray,

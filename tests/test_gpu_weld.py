@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from chitin.gpu.clip import ClipEmitResult
-from chitin.gpu.weld import WeldResult, weld_intersections_reference
+from chitin.gpu.weld import WeldResult, weld_intersections
 
 
 def _make_emit(
@@ -76,7 +76,7 @@ def worker():
         yield w
 
 
-class TestWeldIntersectionsReference:
+class TestWeldIntersections:
     def test_no_intersections(self):
         emit = _make_emit(
             pos_faces=[[0, 1, 2]],
@@ -87,7 +87,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0],
             neg_ancestry=[0],
         )
-        result = weld_intersections_reference(emit, vertex_count=6)
+        result = weld_intersections(emit, vertex_count=6)
 
         assert isinstance(result, WeldResult)
         assert result.intersection_count_raw == 0
@@ -107,7 +107,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0],
             neg_ancestry=[0],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         assert result.intersection_count_raw == 2
         assert result.intersection_count_welded == 2
@@ -134,7 +134,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0, 1],
             neg_ancestry=[0, 1],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         assert result.intersection_count_raw == 4
         assert result.intersection_count_welded == 3
@@ -166,7 +166,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0, 1],
             neg_ancestry=[0, 1],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         # Source vertex indices (< V) are never modified by welding.
         src_mask = result.positive_faces < 4
@@ -195,7 +195,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0, 1],
             neg_ancestry=[0, 1],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         np.testing.assert_array_equal(result.positive_ancestry, [0, 1])
         np.testing.assert_array_equal(result.negative_ancestry, [0, 1])
@@ -216,7 +216,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[0, 1],
             neg_ancestry=[0, 1],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         assert result.intersection_count_welded <= result.intersection_count_raw
 
@@ -232,7 +232,7 @@ class TestWeldIntersectionsReference:
             pos_ancestry=[],
             neg_ancestry=[],
         )
-        result = weld_intersections_reference(emit, vertex_count=4)
+        result = weld_intersections(emit, vertex_count=4)
 
         assert result.intersection_count_welded == 1
         assert len(result.positive_faces) == 0
@@ -241,7 +241,7 @@ class TestWeldIntersectionsReference:
     def test_gpu_end_to_end(self, worker):
         """Classify + clip + weld on a real mesh."""
         from chitin.gpu.classify import dispatch_classify
-        from chitin.gpu.clip import dispatch_clip_emit_reference
+        from chitin.gpu.clip import dispatch_clip_emit
 
         # Two triangles sharing edge (v0, v1); v0 is above the plane and
         # v1 is below, so that shared edge is cut by both triangles.
@@ -259,8 +259,8 @@ class TestWeldIntersectionsReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = dispatch_classify(worker, vertices, plane_point, plane_normal)
-        emit = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
-        result = weld_intersections_reference(emit, vertex_count=len(vertices))
+        emit = dispatch_clip_emit(worker, vertices, faces, signs, dots)
+        result = weld_intersections(emit, vertex_count=len(vertices))
 
         # Both triangles cut the shared edge (v0, v1) -> EdgeKey (0, 1)
         # appears twice among the raw intersections -> welding should

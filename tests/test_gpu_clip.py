@@ -5,7 +5,7 @@ import pytest
 
 from chitin.f32_policy import DEFAULT_POLICY
 from chitin.f32_predicates import classify_plane_f32
-from chitin.gpu.clip import ClipEmitResult, dispatch_clip_emit_reference
+from chitin.gpu.clip import ClipEmitResult, dispatch_clip_emit
 from chitin.gpu.worker import GPUWorker
 
 
@@ -28,7 +28,7 @@ def _cpu_classify(vertices, plane_point, plane_normal):
     return result.signs.astype(np.int32), result.signed_distances.astype(np.float32)
 
 
-class TestGPUClipEmitReference:
+class TestGPUClipEmit:
     def test_all_positive(self, worker):
         vertices = np.array(
             [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 1.0]],
@@ -39,7 +39,7 @@ class TestGPUClipEmitReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert isinstance(result, ClipEmitResult)
         assert result.total_positive_faces == 1
@@ -59,7 +59,7 @@ class TestGPUClipEmitReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert result.total_negative_faces == 1
         assert result.total_positive_faces == 0
@@ -82,7 +82,7 @@ class TestGPUClipEmitReference:
         assert signs[1] == -1
         assert signs[2] == -1
 
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert result.total_positive_faces == 1
         assert result.total_negative_faces == 2
@@ -113,7 +113,7 @@ class TestGPUClipEmitReference:
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
         assert all(s == 0 for s in signs)
 
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert result.total_positive_faces == 1
         assert result.total_negative_faces == 1
@@ -139,7 +139,7 @@ class TestGPUClipEmitReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert result.total_positive_faces == 2
         assert result.total_negative_faces == 4
@@ -176,7 +176,7 @@ class TestGPUClipEmitReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         # Every source face must appear in exactly one of the ancestry
         # arrays for each output triangle it produced, and every face
@@ -205,7 +205,7 @@ class TestGPUClipEmitReference:
         v_count = len(vertices)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         for tri in result.positive_faces:
             for vi in tri:
@@ -222,7 +222,7 @@ class TestGPUClipEmitReference:
         signs = np.zeros(0, dtype=np.int32)
         dots = np.zeros(0, dtype=np.float32)
 
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         assert result.total_positive_faces == 0
         assert result.total_negative_faces == 0
@@ -243,7 +243,7 @@ class TestGPUClipEmitReference:
         plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 
         signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
-        result = dispatch_clip_emit_reference(worker, vertices, faces, signs, dots)
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
 
         v_count = len(vertices)
 

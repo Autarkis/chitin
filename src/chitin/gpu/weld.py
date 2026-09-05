@@ -34,9 +34,7 @@ def _remap_ixn(arr: np.ndarray, v_count: int, weld_map: np.ndarray) -> np.ndarra
     return out
 
 
-def weld_intersections_reference(
-    emit_result: ClipEmitResult, vertex_count: int
-) -> WeldResult:
+def weld_intersections(emit_result: ClipEmitResult, vertex_count: int) -> WeldResult:
     """Deduplicate intersection vertices by EdgeKey and rewrite indices.
 
     Two triangles that cut the same source edge produce two raw
