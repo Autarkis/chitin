@@ -578,7 +578,10 @@ def _winding_consistent(vertices: np.ndarray, cap_faces: np.ndarray) -> bool:
 
 
 def extract_cap_f64(clip_result: ClipResult) -> CapResult:
-    loops = _extract_loops(clip_result.boundary_edges)
+    try:
+        loops = _extract_loops(clip_result.boundary_edges)
+    except ValueError:
+        return CapResult([], np.zeros((0, 3), dtype=np.int64), False)
     cap_faces = _triangulate_loops(loops, clip_result.vertices.astype(np.float64))
     winding_consistent = _winding_consistent(clip_result.vertices, cap_faces)
     return CapResult(loops, cap_faces, winding_consistent)
@@ -586,7 +589,10 @@ def extract_cap_f64(clip_result: ClipResult) -> CapResult:
 
 def extract_cap_f32(clip_result: ClipResult, policy: QuantizationPolicy) -> CapResult:
     _ = policy
-    loops = _extract_loops(clip_result.boundary_edges)
+    try:
+        loops = _extract_loops(clip_result.boundary_edges)
+    except ValueError:
+        return CapResult([], np.zeros((0, 3), dtype=np.int64), False)
     cap_faces = _triangulate_loops(loops, clip_result.vertices)
     vertices_f32 = clip_result.vertices.astype(np.float32)
     winding_consistent = _winding_consistent(vertices_f32, cap_faces)
