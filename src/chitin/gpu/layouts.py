@@ -172,6 +172,45 @@ OUTPUT_HEADER = StructLayout(
     stride=16,
 )
 
+CLIP_PLANE = StructLayout(
+    "ClipPlane",
+    [
+        FieldDef("point_x", "f", 0),
+        FieldDef("point_y", "f", 4),
+        FieldDef("point_z", "f", 8),
+        FieldDef("_pad0", "I", 12),
+        FieldDef("normal_x", "f", 16),
+        FieldDef("normal_y", "f", 20),
+        FieldDef("normal_z", "f", 24),
+        FieldDef("_pad1", "I", 28),
+    ],
+    stride=32,
+)
+
+EDGE_KEY = StructLayout(
+    "EdgeKey",
+    [
+        FieldDef("v_lo", "I", 0),
+        FieldDef("v_hi", "I", 4),
+    ],
+    stride=8,
+)
+
+INTERSECTION_RECORD = StructLayout(
+    "IntersectionRecord",
+    [
+        FieldDef("x", "f", 0),
+        FieldDef("y", "f", 4),
+        FieldDef("z", "f", 8),
+        FieldDef("_pad0", "I", 12),
+        FieldDef("v_lo", "I", 16),
+        FieldDef("v_hi", "I", 20),
+        FieldDef("_pad1", "I", 24),
+        FieldDef("_pad2", "I", 28),
+    ],
+    stride=32,
+)
+
 ALL_LAYOUTS: dict[str, StructLayout] = {
     "Point": POINT,
     "Triangle": TRIANGLE,
@@ -180,4 +219,7 @@ ALL_LAYOUTS: dict[str, StructLayout] = {
     "IntersectionPoint": INTERSECTION_POINT,
     "HullHeader": HULL_HEADER,
     "OutputHeader": OUTPUT_HEADER,
+    "ClipPlane": CLIP_PLANE,
+    "EdgeKey": EDGE_KEY,
+    "IntersectionRecord": INTERSECTION_RECORD,
 }

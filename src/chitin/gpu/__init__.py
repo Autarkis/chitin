@@ -6,6 +6,11 @@ from chitin.gpu.dispatch import (
     dispatch_reduce_sum,
     dispatch_segmented_scan,
 )
+from chitin.gpu.dispatch_multi import (
+    dispatch_compact_multi,
+    dispatch_prefix_sum_exclusive_multi,
+    dispatch_reduce_sum_multi,
+)
 from chitin.gpu.errors import (
     CapacityError,
     DeviceLostError,
@@ -37,8 +42,11 @@ __all__ = [
     "check_drift",
     "compact",
     "dispatch_compact",
+    "dispatch_compact_multi",
     "dispatch_prefix_sum_exclusive",
+    "dispatch_prefix_sum_exclusive_multi",
     "dispatch_reduce_sum",
+    "dispatch_reduce_sum_multi",
     "dispatch_segmented_scan",
     "generate_all_structs",
     "layout_to_wgsl",

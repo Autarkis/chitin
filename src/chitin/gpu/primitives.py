@@ -96,3 +96,39 @@ def segmented_scan(values: np.ndarray, segment_ids: np.ndarray) -> np.ndarray:
         result[index] = accumulator
         accumulator = np.add(accumulator, value, dtype=np.int32)
     return result
+
+
+def prefix_sum_exclusive_multi(values: np.ndarray) -> tuple[np.ndarray, int]:
+    """Unbounded exclusive i32 prefix sum — CPU reference for multi-workgroup kernel."""
+    values_i32 = _i32_vector(values, "values")
+    if len(values_i32) == 0:
+        return np.array([], dtype=np.int32), 0
+    result = np.zeros(len(values_i32), dtype=np.int32)
+    acc = np.int32(0)
+    for i in range(len(values_i32)):
+        result[i] = acc
+        acc = np.int32(acc + values_i32[i])
+    return result, int(acc)
+
+
+def compact_multi(values: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, int]:
+    """Unbounded stable i32 stream compaction — CPU reference for multi-workgroup kernel."""
+    values_i32 = _i32_vector(values, "values")
+    mask_i32 = _i32_vector(mask, "mask")
+    if len(mask_i32) != len(values_i32):
+        raise ValueError("compact_multi requires values and mask with equal lengths")
+    selected = values_i32[mask_i32 != 0]
+    return selected, len(selected)
+
+
+def reduce_sum_multi(values: np.ndarray) -> ReductionResult:
+    """Unbounded f32 reduction — CPU reference for multi-workgroup kernel."""
+    values_f32 = np.asarray(values, dtype=np.float32)
+    if values_f32.ndim != 1:
+        raise ValueError("values must be a one-dimensional array")
+    if len(values_f32) == 0:
+        return ReductionResult(0.0, 0)
+    total = np.float32(0.0)
+    for v in values_f32:
+        total = np.float32(total + v)
+    return ReductionResult(float(total), len(values_f32))
