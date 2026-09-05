@@ -42,6 +42,7 @@ class ExtractionResult:
     # Populated when Config(trace=True); typed loosely (not TraceRecorder) to
     # avoid coupling the result type to the trace module.
     trace: object | None = None
+    build_identity: dict | None = None
 
     def to_json(self, path: str | Path) -> None:
         from chitin.exporters.json import export_json
