@@ -34,6 +34,29 @@ def _remap_ixn(arr: np.ndarray, v_count: int, weld_map: np.ndarray) -> np.ndarra
     return out
 
 
+def _dedupe_boundary_by_parity(boundary: np.ndarray) -> np.ndarray:
+    """Cancel boundary edges emitted an even number of times.
+
+    The clip_count/clip_emit shaders emit a boundary edge for every
+    on-plane edge (both endpoints sign 0) of a zero-cut, non-negative
+    triangle -- per triangle, with no notion of the mesh's other
+    incident triangle across that edge. A pre-existing mesh edge shared
+    by two *kept* triangles (e.g. two triangles fanning a flat face that
+    lies exactly on the clipping plane) is interior to the retained
+    surface, not a cap boundary, and gets emitted once per incident
+    triangle -- twice total (even), while a genuine boundary (kept next
+    to discarded, or a freshly cut interior chord unique to one
+    triangle) is emitted an odd number of times (typically once).
+    Filtering to odd-count edges recovers the correct boundary set
+    without needing per-triangle adjacency info.
+    """
+    if len(boundary) == 0:
+        return boundary
+    keys = np.sort(boundary, axis=1)
+    uniq, counts = np.unique(keys, axis=0, return_counts=True)
+    return uniq[counts % 2 == 1].astype(np.uint32)
+
+
 def weld_intersections(emit_result: ClipEmitResult, vertex_count: int) -> WeldResult:
     """Deduplicate intersection vertices by EdgeKey and rewrite indices.
 
@@ -48,7 +71,7 @@ def weld_intersections(emit_result: ClipEmitResult, vertex_count: int) -> WeldRe
             negative_faces=emit_result.negative_faces.copy(),
             welded_positions=np.zeros((0, 3), dtype=np.float32),
             welded_edge_keys=np.zeros((0, 2), dtype=np.uint32),
-            boundary_edges=emit_result.boundary_edges.copy(),
+            boundary_edges=_dedupe_boundary_by_parity(emit_result.boundary_edges),
             positive_ancestry=emit_result.positive_ancestry.copy(),
             negative_ancestry=emit_result.negative_ancestry.copy(),
             intersection_count_raw=0,
@@ -85,6 +108,7 @@ def weld_intersections(emit_result: ClipEmitResult, vertex_count: int) -> WeldRe
     pos_faces = _remap_ixn(emit_result.positive_faces, vertex_count, weld_map)
     neg_faces = _remap_ixn(emit_result.negative_faces, vertex_count, weld_map)
     boundary = _remap_ixn(emit_result.boundary_edges, vertex_count, weld_map)
+    boundary = _dedupe_boundary_by_parity(boundary)
 
     return WeldResult(
         positive_faces=pos_faces,

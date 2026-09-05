@@ -50,6 +50,13 @@ fn main(
         if (!has_pos) {
             neg = 1;
         }
+        // On-plane edges are boundary edges (lie on the clipping plane).
+        // Guard against degenerate (zero-area) triangles with a repeated
+        // vertex index -- a self-pair is not a real edge.
+        let on01 = u32(s0 == 0 && s1 == 0 && tri.i0 != tri.i1);
+        let on12 = u32(s1 == 0 && s2 == 0 && tri.i1 != tri.i2);
+        let on20 = u32(s2 == 0 && s0 == 0 && tri.i2 != tri.i0);
+        bnd = i32(on01 + on12 + on20);
     } else if (cut_e == 2u) {
         // Two vertices on one side, one on the other.
         if (num_pos >= 2u) {

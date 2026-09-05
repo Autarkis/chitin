@@ -87,6 +87,29 @@ fn main(
             out_arena[base + 3u] = 0u;
             out_arena[params.neg_ancestry_base + u32(neg_off)] = idx;
         }
+
+        // On-plane edges are boundary edges (lie on the clipping plane).
+        // Guard against degenerate (zero-area) triangles with a repeated
+        // vertex index -- a self-pair is not a real edge.
+        var bw: u32 = 0u;
+        if (s0 == 0 && s1 == 0 && vi0 != vi1) {
+            let bbase = params.bnd_base + (u32(bnd_off) + bw) * 2u;
+            out_arena[bbase] = min(vi0, vi1);
+            out_arena[bbase + 1u] = max(vi0, vi1);
+            bw++;
+        }
+        if (s1 == 0 && s2 == 0 && vi1 != vi2) {
+            let bbase = params.bnd_base + (u32(bnd_off) + bw) * 2u;
+            out_arena[bbase] = min(vi1, vi2);
+            out_arena[bbase + 1u] = max(vi1, vi2);
+            bw++;
+        }
+        if (s2 == 0 && s0 == 0 && vi2 != vi0) {
+            let bbase = params.bnd_base + (u32(bnd_off) + bw) * 2u;
+            out_arena[bbase] = min(vi2, vi0);
+            out_arena[bbase + 1u] = max(vi2, vi0);
+            bw++;
+        }
         return;
     }
 

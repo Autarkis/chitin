@@ -204,11 +204,32 @@ def _clip_mesh_generic(
     new_points: list[np.ndarray] = []
     boundary_edges: list[list[int]] = []
     edge_cache: dict[tuple[int, int], int] = {}
+    # On-plane edges (both endpoints sign 0) belonging to a kept
+    # (non-negative) triangle are tallied here rather than appended
+    # directly: such an edge is a pre-existing mesh edge, generally
+    # shared by exactly one other triangle. If that neighbor is *also*
+    # kept (e.g. two triangles fanning a flat face lying exactly on the
+    # clipping plane), the edge is interior to the retained surface and
+    # must not become a cap boundary -- it is tallied once per kept
+    # incident triangle, so an interior edge tallies twice (even) and a
+    # genuine boundary (kept next to discarded, or a mesh boundary edge)
+    # tallies once (odd). Only odd-tally edges are real cap boundaries.
+    on_plane_tally: dict[tuple[int, int], int] = {}
 
     for tri in faces:
         tri_signs = signs[tri]
         if np.all(tri_signs >= 0):
             out_faces.append([int(tri[0]), int(tri[1]), int(tri[2])])
+            for i in range(3):
+                j = (i + 1) % 3
+                if tri_signs[i] == 0 and tri_signs[j] == 0:
+                    a, b = int(tri[i]), int(tri[j])
+                    if a == b:
+                        # Degenerate (zero-area) triangle with a repeated
+                        # vertex index -- not a real edge, skip.
+                        continue
+                    key = (min(a, b), max(a, b))
+                    on_plane_tally[key] = on_plane_tally.get(key, 0) + 1
             continue
         if np.all(tri_signs < 0):
             continue
@@ -217,6 +238,16 @@ def _clip_mesh_generic(
         # vertices and inserting new intersection vertices on sign-crossing edges
         poly: list[int] = []
         tri_new_indices: list[int] = []
+        # A degenerate (zero-area) triangle with a repeated vertex index
+        # walks the same physical edge twice (once forward, once backward)
+        # within this single triangle. Without this guard, a cut on that
+        # edge would append the same welded intersection index to
+        # tri_new_indices twice, producing a bogus self-loop boundary edge
+        # ([idx, idx]) below. Track edge keys already counted for *this*
+        # triangle so each distinct physical edge contributes at most once
+        # -- a no-op for any non-degenerate triangle, whose 3 edges are
+        # always distinct.
+        tri_edge_keys_seen: set[tuple[int, int]] = set()
         n = 3
         for i in range(n):
             idx_a = int(tri[i])
@@ -246,7 +277,9 @@ def _clip_mesh_generic(
                     new_points.append(point)
                     edge_cache[edge_key] = new_index
                 poly.append(new_index)
-                tri_new_indices.append(new_index)
+                if edge_key not in tri_edge_keys_seen:
+                    tri_edge_keys_seen.add(edge_key)
+                    tri_new_indices.append(new_index)
 
         if len(tri_new_indices) == 2:
             boundary_edges.append([tri_new_indices[0], tri_new_indices[1]])
@@ -257,6 +290,10 @@ def _clip_mesh_generic(
 
         for i in range(1, len(poly) - 1):
             out_faces.append([poly[0], poly[i], poly[i + 1]])
+
+    for key, count in on_plane_tally.items():
+        if count % 2 == 1:
+            boundary_edges.append([key[0], key[1]])
 
     vertices_out = np.array(out_vertices, dtype=vertices.dtype)
     faces_out = (
@@ -358,11 +395,19 @@ def clip_mesh_f32(
 
 
 def _extract_loops(boundary_edges: np.ndarray) -> list[np.ndarray]:
+    if len(boundary_edges) == 0:
+        return []
+
     adjacency: dict[int, list[int]] = {}
     edges = [tuple(int(v) for v in edge) for edge in boundary_edges]
     for a, b in edges:
         adjacency.setdefault(a, []).append(b)
         adjacency.setdefault(b, []).append(a)
+
+    # Validate: every boundary vertex must have valence exactly 2
+    for v, nbrs in adjacency.items():
+        if len(nbrs) != 2:
+            raise ValueError(f"Boundary vertex {v} has valence {len(nbrs)}, expected 2")
 
     used_edges: set[frozenset] = set()
     loops: list[np.ndarray] = []
@@ -373,6 +418,7 @@ def _extract_loops(boundary_edges: np.ndarray) -> list[np.ndarray]:
         loop = [a, b]
         used_edges.add(key)
         current = b
+        closed = False
         while True:
             neighbors = [
                 n
@@ -384,9 +430,14 @@ def _extract_loops(boundary_edges: np.ndarray) -> list[np.ndarray]:
             nxt = neighbors[0]
             used_edges.add(frozenset((current, nxt)))
             if nxt == loop[0]:
+                closed = True
                 break
             loop.append(nxt)
             current = nxt
+        if not closed:
+            raise ValueError(
+                f"Open boundary chain at vertex {current}, loop so far: {loop}"
+            )
         loops.append(np.array(loop, dtype=np.int64))
     return loops
 
@@ -509,10 +560,14 @@ def _winding_consistent(vertices: np.ndarray, cap_faces: np.ndarray) -> bool:
     if len(cap_faces) == 0:
         return True
     normals = [_face_normal(vertices, face) for face in cap_faces]
-    ref = sum(normals)
-    ref_mag_sq = float(np.dot(ref, ref))
-    if ref_mag_sq == 0.0:
+    ref = None
+    for n in normals:
+        if float(np.dot(n, n)) > 0:
+            ref = n
+            break
+    if ref is None:
         return True
+    ref_mag_sq = float(np.dot(ref, ref))
     for n in normals:
         n_mag_sq = float(np.dot(n, n))
         if n_mag_sq < ref_mag_sq * 1e-10:
@@ -792,7 +847,7 @@ def diff_caps(ref: CapResult, cand: CapResult) -> PredicateDiff:
     elif not winding_agrees:
         first_divergence = f"winding_consistent: ref={ref.winding_consistent} cand={cand.winding_consistent}"
 
-    agrees = loops_agree
+    agrees = loops_agree and faces_agree and winding_agrees
     ref_loop_sizes = [len(loop) for loop in ref.loops]
     cand_loop_sizes = [len(loop) for loop in cand.loops]
     details = {

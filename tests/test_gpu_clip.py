@@ -118,9 +118,39 @@ class TestGPUClipEmit:
         assert result.total_positive_faces == 1
         assert result.total_negative_faces == 1
         assert result.total_intersections == 0
-        assert result.total_boundary_edges == 0
+        # All 3 edges of a fully coplanar (0,0,0) triangle lie on the
+        # clipping plane and are boundary edges.
+        assert result.total_boundary_edges == 3
         np.testing.assert_array_equal(np.sort(result.positive_faces[0]), [0, 1, 2])
         np.testing.assert_array_equal(np.sort(result.negative_faces[0]), [0, 1, 2])
+
+    def test_on_plane_edge_boundary(self, worker):
+        # Triangle: v0 above the plane, v1 and v2 on the plane. Zero cut
+        # edges, but the v1-v2 edge lies on the clipping plane and must be
+        # emitted as a boundary edge.
+        vertices = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+        faces = np.array([[0, 1, 2]], dtype=np.uint32)
+        plane_point = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        plane_normal = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+        signs, dots = _cpu_classify(vertices, plane_point, plane_normal)
+        assert list(signs) == [1, 0, 0]
+
+        result = dispatch_clip_emit(worker, vertices, faces, signs, dots)
+
+        assert result.total_positive_faces == 1  # whole triangle to positive
+        assert result.total_negative_faces == 0
+        assert result.total_intersections == 0
+        assert result.total_boundary_edges == 1  # on-plane edge (v1, v2)
+        edge = tuple(sorted(int(v) for v in result.boundary_edges[0]))
+        assert edge == (1, 2)
 
     def test_two_triangles_shared_edge(self, worker):
         # Two triangles sharing edge (v0, v1); v0 is above the plane and
