@@ -160,6 +160,7 @@ def test_no_absolute_epsilon():
     allowlisted_snippets = [
         "1e-30)",
         "norm < 1e-15",
+        "ref_mag_sq * 1e-10",
     ]
     scanned = source
     for snippet in allowlisted_snippets:

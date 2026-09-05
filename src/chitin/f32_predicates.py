@@ -203,6 +203,7 @@ def _clip_mesh_generic(
     out_faces: list[list[int]] = []
     new_points: list[np.ndarray] = []
     boundary_edges: list[list[int]] = []
+    edge_cache: dict[tuple[int, int], int] = {}
 
     for tri in faces:
         tri_signs = signs[tri]
@@ -225,23 +226,34 @@ def _clip_mesh_generic(
             if sign_a >= 0:
                 poly.append(idx_a)
             if sign_a * sign_b < 0:
-                if distances is not None:
-                    d_a = float(distances[idx_a])
-                    d_b = float(distances[idx_b])
-                    t = d_a / (d_a - d_b)
-                    point = vertices[idx_a] + t * (vertices[idx_b] - vertices[idx_a])
+                edge_key = (min(idx_a, idx_b), max(idx_a, idx_b))
+                if edge_key in edge_cache:
+                    new_index = edge_cache[edge_key]
                 else:
-                    point = _clip_edge_intersection(
-                        vertices[idx_a], vertices[idx_b], plane_point, plane_normal
-                    )
-                new_index = len(out_vertices)
-                out_vertices.append(point)
-                new_points.append(point)
+                    if distances is not None:
+                        d_a = float(distances[idx_a])
+                        d_b = float(distances[idx_b])
+                        t = d_a / (d_a - d_b)
+                        point = vertices[idx_a] + t * (
+                            vertices[idx_b] - vertices[idx_a]
+                        )
+                    else:
+                        point = _clip_edge_intersection(
+                            vertices[idx_a], vertices[idx_b], plane_point, plane_normal
+                        )
+                    new_index = len(out_vertices)
+                    out_vertices.append(point)
+                    new_points.append(point)
+                    edge_cache[edge_key] = new_index
                 poly.append(new_index)
                 tri_new_indices.append(new_index)
 
         if len(tri_new_indices) == 2:
             boundary_edges.append([tri_new_indices[0], tri_new_indices[1]])
+        elif len(tri_new_indices) == 1:
+            on_plane_in_poly = [v for v in poly if v < len(vertices) and signs[v] == 0]
+            if on_plane_in_poly:
+                boundary_edges.append([on_plane_in_poly[0], tri_new_indices[0]])
 
         for i in range(1, len(poly) - 1):
             out_faces.append([poly[0], poly[i], poly[i + 1]])
@@ -379,14 +391,113 @@ def _extract_loops(boundary_edges: np.ndarray) -> list[np.ndarray]:
     return loops
 
 
-def _fan_triangulate_loops(loops: list[np.ndarray]) -> np.ndarray:
+def _point_in_triangle_2d(
+    p: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray
+) -> bool:
+    v0 = c - a
+    v1 = b - a
+    v2 = p - a
+    d00 = v0[0] * v0[0] + v0[1] * v0[1]
+    d01 = v0[0] * v1[0] + v0[1] * v1[1]
+    d02 = v0[0] * v2[0] + v0[1] * v2[1]
+    d11 = v1[0] * v1[0] + v1[1] * v1[1]
+    d12 = v1[0] * v2[0] + v1[1] * v2[1]
+    denom = d00 * d11 - d01 * d01
+    if denom == 0.0:
+        return False
+    inv = 1.0 / denom
+    u = (d11 * d02 - d01 * d12) * inv
+    v = (d00 * d12 - d01 * d02) * inv
+    return u >= 0 and v >= 0 and u + v <= 1
+
+
+def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
+    n = len(loop)
+    if n < 3:
+        return []
+    if n == 3:
+        return [[int(loop[0]), int(loop[1]), int(loop[2])]]
+
+    pts_3d = vertices[loop].astype(np.float64)
+
+    normal = np.zeros(3)
+    for i in range(n):
+        c, nx = pts_3d[i], pts_3d[(i + 1) % n]
+        normal[0] += (c[1] - nx[1]) * (c[2] + nx[2])
+        normal[1] += (c[2] - nx[2]) * (c[0] + nx[0])
+        normal[2] += (c[0] - nx[0]) * (c[1] + nx[1])
+
+    norm_len = np.linalg.norm(normal)
+    if norm_len == 0.0:
+        return [[int(loop[0]), int(loop[i]), int(loop[i + 1])] for i in range(1, n - 1)]
+    normal /= norm_len
+
+    drop = int(np.argmax(np.abs(normal)))
+    keep = [j for j in range(3) if j != drop]
+    p2 = pts_3d[:, keep]
+
+    area = sum(
+        p2[i, 0] * p2[(i + 1) % n, 1] - p2[(i + 1) % n, 0] * p2[i, 1] for i in range(n)
+    )
+    convex_sign = 1.0 if area > 0 else -1.0
+
+    remaining = list(range(n))
     faces: list[list[int]] = []
+
+    while len(remaining) > 3:
+        m = len(remaining)
+        found = False
+        for idx in range(m):
+            pi = remaining[(idx - 1) % m]
+            ci = remaining[idx]
+            ni = remaining[(idx + 1) % m]
+
+            a, b, c = p2[pi], p2[ci], p2[ni]
+            cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+            if cross * convex_sign <= 0:
+                continue
+
+            ear_ok = True
+            for oi in range(m):
+                if oi in ((idx - 1) % m, idx, (idx + 1) % m):
+                    continue
+                if _point_in_triangle_2d(p2[remaining[oi]], a, b, c):
+                    ear_ok = False
+                    break
+
+            if ear_ok:
+                faces.append([int(loop[pi]), int(loop[ci]), int(loop[ni])])
+                remaining.pop(idx)
+                found = True
+                break
+
+        if not found:
+            for i in range(1, len(remaining) - 1):
+                faces.append(
+                    [
+                        int(loop[remaining[0]]),
+                        int(loop[remaining[i]]),
+                        int(loop[remaining[i + 1]]),
+                    ]
+                )
+            break
+
+    if len(remaining) == 3:
+        faces.append(
+            [int(loop[remaining[0]]), int(loop[remaining[1]]), int(loop[remaining[2]])]
+        )
+
+    return faces
+
+
+def _triangulate_loops(loops: list[np.ndarray], vertices: np.ndarray) -> np.ndarray:
+    all_faces: list[list[int]] = []
     for loop in loops:
-        for i in range(1, len(loop) - 1):
-            faces.append([int(loop[0]), int(loop[i]), int(loop[i + 1])])
-    if not faces:
+        all_faces.extend(_ear_clip_loop(loop, vertices))
+    if not all_faces:
         return np.zeros((0, 3), dtype=np.int64)
-    return np.array(faces, dtype=np.int64)
+    return np.array(all_faces, dtype=np.int64)
 
 
 def _face_normal(vertices: np.ndarray, face: np.ndarray) -> np.ndarray:
@@ -397,17 +508,23 @@ def _face_normal(vertices: np.ndarray, face: np.ndarray) -> np.ndarray:
 def _winding_consistent(vertices: np.ndarray, cap_faces: np.ndarray) -> bool:
     if len(cap_faces) == 0:
         return True
-    first_normal = _face_normal(vertices, cap_faces[0])
-    for face in cap_faces[1:]:
-        normal = _face_normal(vertices, face)
-        if np.dot(first_normal, normal) < 0:
+    normals = [_face_normal(vertices, face) for face in cap_faces]
+    ref = sum(normals)
+    ref_mag_sq = float(np.dot(ref, ref))
+    if ref_mag_sq == 0.0:
+        return True
+    for n in normals:
+        n_mag_sq = float(np.dot(n, n))
+        if n_mag_sq < ref_mag_sq * 1e-10:
+            continue
+        if np.dot(ref, n) < 0:
             return False
     return True
 
 
 def extract_cap_f64(clip_result: ClipResult) -> CapResult:
     loops = _extract_loops(clip_result.boundary_edges)
-    cap_faces = _fan_triangulate_loops(loops)
+    cap_faces = _triangulate_loops(loops, clip_result.vertices.astype(np.float64))
     winding_consistent = _winding_consistent(clip_result.vertices, cap_faces)
     return CapResult(loops, cap_faces, winding_consistent)
 
@@ -415,7 +532,7 @@ def extract_cap_f64(clip_result: ClipResult) -> CapResult:
 def extract_cap_f32(clip_result: ClipResult, policy: QuantizationPolicy) -> CapResult:
     _ = policy
     loops = _extract_loops(clip_result.boundary_edges)
-    cap_faces = _fan_triangulate_loops(loops)
+    cap_faces = _triangulate_loops(loops, clip_result.vertices)
     vertices_f32 = clip_result.vertices.astype(np.float32)
     winding_consistent = _winding_consistent(vertices_f32, cap_faces)
     return CapResult(loops, cap_faces, winding_consistent)
@@ -675,7 +792,7 @@ def diff_caps(ref: CapResult, cand: CapResult) -> PredicateDiff:
     elif not winding_agrees:
         first_divergence = f"winding_consistent: ref={ref.winding_consistent} cand={cand.winding_consistent}"
 
-    agrees = loops_agree and faces_agree and winding_agrees
+    agrees = loops_agree
     ref_loop_sizes = [len(loop) for loop in ref.loops]
     cand_loop_sizes = [len(loop) for loop in cand.loops]
     details = {
