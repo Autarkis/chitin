@@ -5,8 +5,6 @@ from pathlib import Path
 
 import numpy as np
 
-_log = logging.getLogger(__name__)
-
 from chitin.adapters import load
 from chitin.analyze import analyze_arrays
 from chitin.config import Config
@@ -23,6 +21,8 @@ from chitin.stages.splat import (
     normals_from_covariance,
 )
 from chitin.trace import TraceRecorder
+
+_log = logging.getLogger(__name__)
 
 
 def _normalize_geometry(
