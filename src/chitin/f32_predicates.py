@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.spatial import ConvexHull, KDTree, QhullError
@@ -10,6 +10,24 @@ from chitin.f32_policy import QuantizationPolicy
 _HULL_VOLUME_REL_TOL = 1e-3
 _POSITION_REL_TOL = 1e-3
 _GRID_CELL_SAFETY_FACTOR = 64.0
+# Ear-clip tie tolerance: an exact area tie at f64 (e.g. the four corners of
+# a symmetric square cap) is perturbed asymmetrically by f32 quantization, so
+# comparing raw areas for "largest" breaks the tie differently per precision.
+# Areas within this relative tolerance of the max are treated as tied and
+# resolved by smallest loop index instead, which both precisions agree on.
+_EAR_AREA_REL_TOL = 1e-3
+# Barycentric containment tolerance for _point_in_triangle_2d. A point that
+# is *exactly* on a triangle edge (u, v, or u+v exactly 0 / 1 in exact math)
+# is a genuine degeneracy in some cap loops (three loop vertices collinear).
+# f64 arithmetic resolves that boundary with float-epsilon noise; the f32
+# grid-quantized pipeline perturbs the same boundary point by a much larger
+# margin than the raw sub-micron quantization step, because Cramer's-rule
+# barycentric coordinates amplify position noise for query points near a
+# triangle edge (measured up to ~1.4e-4 on the thin_panel fixture). Padding
+# the test to be inclusive by this margin (same order as _EAR_AREA_REL_TOL)
+# makes both precisions agree on genuinely-degenerate (near-zero-margin)
+# containment queries.
+_BARY_CONTAINMENT_TOL = 1e-3
 
 
 @dataclass
@@ -29,6 +47,10 @@ class ClipResult:
     faces: np.ndarray
     intersection_points: np.ndarray
     boundary_edges: np.ndarray
+    edge_key_map: np.ndarray = field(
+        default_factory=lambda: np.zeros((0, 2), dtype=np.uint32)
+    )
+    ancestry: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.uint32))
 
 
 @dataclass
@@ -201,6 +223,7 @@ def _clip_mesh_generic(
 
     out_vertices = [vertices[i] for i in range(len(vertices))]
     out_faces: list[list[int]] = []
+    out_ancestry: list[int] = []
     new_points: list[np.ndarray] = []
     boundary_edges: list[list[int]] = []
     edge_cache: dict[tuple[int, int], int] = {}
@@ -216,10 +239,11 @@ def _clip_mesh_generic(
     # tallies once (odd). Only odd-tally edges are real cap boundaries.
     on_plane_tally: dict[tuple[int, int], int] = {}
 
-    for tri in faces:
+    for fi, tri in enumerate(faces):
         tri_signs = signs[tri]
         if np.all(tri_signs >= 0):
             out_faces.append([int(tri[0]), int(tri[1]), int(tri[2])])
+            out_ancestry.append(fi)
             for i in range(3):
                 j = (i + 1) % 3
                 if tri_signs[i] == 0 and tri_signs[j] == 0:
@@ -290,6 +314,11 @@ def _clip_mesh_generic(
 
         for i in range(1, len(poly) - 1):
             out_faces.append([poly[0], poly[i], poly[i + 1]])
+            out_ancestry.append(fi)
+
+    for key, count in on_plane_tally.items():
+        if count % 2 == 1:
+            boundary_edges.append([key[0], key[1]])
 
     for key, count in on_plane_tally.items():
         if count % 2 == 1:
@@ -311,7 +340,25 @@ def _clip_mesh_generic(
         if boundary_edges
         else np.zeros((0, 2), dtype=np.int64)
     )
-    return ClipResult(vertices_out, faces_out, intersection_points, boundary_edges_out)
+    ancestry_out = (
+        np.array(out_ancestry, dtype=np.uint32)
+        if out_ancestry
+        else np.array([], dtype=np.uint32)
+    )
+    n_original = len(vertices)
+    n_ixn = len(out_vertices) - n_original
+    ekm = np.zeros((n_ixn, 2), dtype=np.uint32)
+    for (v_lo, v_hi), idx in edge_cache.items():
+        ekm[idx - n_original] = [v_lo, v_hi]
+
+    return ClipResult(
+        vertices_out,
+        faces_out,
+        intersection_points,
+        boundary_edges_out,
+        edge_key_map=ekm,
+        ancestry=ancestry_out,
+    )
 
 
 def clip_mesh_f64(
@@ -391,6 +438,8 @@ def clip_mesh_f32(
         result_grid.faces,
         world_intersection_points,
         result_grid.boundary_edges,
+        edge_key_map=result_grid.edge_key_map,
+        ancestry=result_grid.ancestry,
     )
 
 
@@ -459,7 +508,8 @@ def _point_in_triangle_2d(
     inv = 1.0 / denom
     u = (d11 * d02 - d01 * d12) * inv
     v = (d00 * d12 - d01 * d02) * inv
-    return u >= 0 and v >= 0 and u + v <= 1
+    tol = _BARY_CONTAINMENT_TOL
+    return u >= -tol and v >= -tol and u + v <= 1 + tol
 
 
 def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
@@ -495,9 +545,11 @@ def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
     remaining = list(range(n))
     faces: list[list[int]] = []
 
+    loop_scale = 0.0
+
     while len(remaining) > 3:
         m = len(remaining)
-        found = False
+        raw_ears: list[tuple[int, int, int, int, float]] = []
         for idx in range(m):
             pi = remaining[(idx - 1) % m]
             ci = remaining[idx]
@@ -505,10 +557,18 @@ def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
 
             a, b, c = p2[pi], p2[ci], p2[ni]
             cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+            raw_ears.append((idx, pi, ci, ni, cross))
 
-            if cross * convex_sign <= 0:
+        max_abs_cross = max(abs(cross) for *_, cross in raw_ears)
+        cross_floor = _EAR_AREA_REL_TOL * max_abs_cross
+        loop_scale = max(loop_scale, max_abs_cross)
+
+        candidates: list[tuple[int, float, int, int, int]] = []
+        for idx, pi, ci, ni, cross in raw_ears:
+            if cross * convex_sign <= cross_floor:
                 continue
 
+            a, b, c = p2[pi], p2[ci], p2[ni]
             ear_ok = True
             for oi in range(m):
                 if oi in ((idx - 1) % m, idx, (idx + 1) % m):
@@ -518,13 +578,25 @@ def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
                     break
 
             if ear_ok:
-                faces.append([int(loop[pi]), int(loop[ci]), int(loop[ni])])
-                remaining.pop(idx)
-                found = True
-                break
+                candidates.append((idx, abs(cross), pi, ci, ni))
 
-        if not found:
+        if candidates:
+            idx, _, pi, ci, ni = candidates[0]
+            faces.append([int(loop[pi]), int(loop[ci]), int(loop[ni])])
+            remaining.pop(idx)
+        else:
+            fallback_floor = _EAR_AREA_REL_TOL * loop_scale
             for i in range(1, len(remaining) - 1):
+                fa, fb, fc = (
+                    p2[remaining[0]],
+                    p2[remaining[i]],
+                    p2[remaining[i + 1]],
+                )
+                fan_cross = (fb[0] - fa[0]) * (fc[1] - fa[1]) - (fb[1] - fa[1]) * (
+                    fc[0] - fa[0]
+                )
+                if abs(fan_cross) <= fallback_floor:
+                    continue
                 faces.append(
                     [
                         int(loop[remaining[0]]),
@@ -535,9 +607,18 @@ def _ear_clip_loop(loop: np.ndarray, vertices: np.ndarray) -> list[list[int]]:
             break
 
     if len(remaining) == 3:
-        faces.append(
-            [int(loop[remaining[0]]), int(loop[remaining[1]]), int(loop[remaining[2]])]
+        fa, fb, fc = p2[remaining[0]], p2[remaining[1]], p2[remaining[2]]
+        final_cross = (fb[0] - fa[0]) * (fc[1] - fa[1]) - (fb[1] - fa[1]) * (
+            fc[0] - fa[0]
         )
+        if abs(final_cross) > _EAR_AREA_REL_TOL * loop_scale:
+            faces.append(
+                [
+                    int(loop[remaining[0]]),
+                    int(loop[remaining[1]]),
+                    int(loop[remaining[2]]),
+                ]
+            )
 
     return faces
 

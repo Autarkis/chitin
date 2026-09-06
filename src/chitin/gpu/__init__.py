@@ -1,6 +1,12 @@
 """WebGPU compute backend for chitin geometry operations."""
 
+from chitin.gpu.caps import CapResult as GpuCapResult
+from chitin.gpu.caps import triangulate_caps
 from chitin.gpu.clip import ClipEmitResult, dispatch_clip_emit
+from chitin.gpu.clip_pipeline import (
+    dispatch_clip_pipeline,
+    dispatch_clip_pipeline_batch,
+)
 from chitin.gpu.dispatch import (
     dispatch_compact,
     dispatch_prefix_sum_exclusive,
@@ -11,6 +17,7 @@ from chitin.gpu.dispatch_multi import (
     dispatch_compact_multi,
     dispatch_prefix_sum_exclusive_multi,
     dispatch_reduce_sum_multi,
+    prefix_sum_gpu,
 )
 from chitin.gpu.errors import (
     CapacityError,
@@ -21,6 +28,14 @@ from chitin.gpu.errors import (
 from chitin.gpu.layouts import (
     ALL_LAYOUTS,
     StructLayout,
+)
+from chitin.gpu.loops import LoopExtractionResult, extract_boundary_loops
+from chitin.gpu.pipeline import (
+    ClipMetrics,
+    ClipPipelineResult,
+    ClipStatus,
+    compute_arena_bounds,
+    validate_clip_inputs,
 )
 from chitin.gpu.primitives import (
     compact,
@@ -36,16 +51,24 @@ __all__ = [
     "ALL_LAYOUTS",
     "CapacityError",
     "ClipEmitResult",
+    "ClipMetrics",
+    "ClipPipelineResult",
+    "ClipStatus",
     "DeviceLostError",
     "GPULimits",
     "GPUWorker",
+    "GpuCapResult",
+    "LoopExtractionResult",
     "OperationCancelledError",
     "ShaderCompilationError",
     "StructLayout",
     "WeldResult",
     "check_drift",
     "compact",
+    "compute_arena_bounds",
     "dispatch_clip_emit",
+    "dispatch_clip_pipeline",
+    "dispatch_clip_pipeline_batch",
     "dispatch_compact",
     "dispatch_compact_multi",
     "dispatch_prefix_sum_exclusive",
@@ -53,10 +76,14 @@ __all__ = [
     "dispatch_reduce_sum",
     "dispatch_reduce_sum_multi",
     "dispatch_segmented_scan",
+    "extract_boundary_loops",
     "generate_all_structs",
     "layout_to_wgsl",
     "prefix_sum_exclusive",
+    "prefix_sum_gpu",
     "reduce_sum",
     "segmented_scan",
+    "triangulate_caps",
+    "validate_clip_inputs",
     "weld_intersections",
 ]
