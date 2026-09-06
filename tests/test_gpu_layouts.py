@@ -5,9 +5,13 @@ import pytest
 
 from chitin.gpu.layouts import (
     ALL_LAYOUTS,
+    CLIP_PLANE,
+    EDGE_KEY,
     HULL_HEADER,
     INTERSECTION_POINT,
+    INTERSECTION_RECORD,
     MESH_HEADER,
+    NORM_PARAMS,
     OUTPUT_HEADER,
     PLANE,
     POINT,
@@ -28,6 +32,10 @@ class TestStructLayouts:
             (INTERSECTION_POINT, 16),
             (HULL_HEADER, 32),
             (OUTPUT_HEADER, 16),
+            (CLIP_PLANE, 32),
+            (EDGE_KEY, 8),
+            (INTERSECTION_RECORD, 32),
+            (NORM_PARAMS, 64),
         ],
     )
     def test_stride(self, layout, stride):
@@ -54,6 +62,10 @@ class TestStructLayouts:
             "IntersectionPoint",
             "HullHeader",
             "OutputHeader",
+            "ClipPlane",
+            "EdgeKey",
+            "IntersectionRecord",
+            "NormParams",
         }
 
     @pytest.mark.parametrize("layout", ALL_LAYOUTS.values())

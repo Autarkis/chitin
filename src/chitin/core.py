@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,8 @@ from chitin.stages.splat import (
     normals_from_covariance,
 )
 from chitin.trace import TraceRecorder
+
+_log = logging.getLogger(__name__)
 
 
 def _normalize_geometry(
@@ -115,6 +118,14 @@ def extract(
         )
         out.analysis = analysis
         out.resolved = resolved
+        try:
+            from chitin.provenance import build_logical_identity
+
+            out.build_identity = build_logical_identity(
+                result.positions, result.faces, config
+            )
+        except Exception:  # noqa: BLE001
+            _log.debug("build_identity unavailable", exc_info=True)
         return out
 
     if result.faces is not None:
@@ -129,6 +140,14 @@ def extract(
         )
         out.analysis = analysis
         out.resolved = resolved
+        try:
+            from chitin.provenance import build_logical_identity
+
+            out.build_identity = build_logical_identity(
+                result.positions, result.faces, config
+            )
+        except Exception:  # noqa: BLE001
+            _log.debug("build_identity unavailable", exc_info=True)
         return out
 
     plan.collider_kind = "point_cloud"
