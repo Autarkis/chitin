@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "esbuild": "^0.28.2",
     "serve": "^14.2.6",
     "three": "^0.185.1"
