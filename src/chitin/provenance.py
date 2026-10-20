@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -116,11 +118,16 @@ _OUTPUT_AFFECTING_CONFIG_FIELDS = (
 
 
 def effective_input_digest(vertices: numpy.ndarray, faces: numpy.ndarray) -> str:
-    """SHA-256 of the post-preprocessing canonical geometry entering CoACD.
+    """SHA-256 of the loaded geometry arrays (float32 vertices + int32 faces).
 
-    This is the effective input — not the source file hash. A remeshed mesh
-    has a different effective input than the unmodified mesh even if the
-    source file is the same.
+    Computed from the positions/faces as loaded (after any target-normalization
+    in ``extract``), i.e. BEFORE chitin's own preprocessing (seam repair, up-axis
+    handling, height scaling, CoACD preprocess). It is not the source file hash.
+    Preprocessing is captured by ``config_digest`` (``seam_repair``, ``up_axis``,
+    ``target_height``, ``coacd_preprocess_*`` are output-affecting config
+    fields), so ``(effective_input_digest, config_digest, algorithm_version)``
+    functionally determines the geometry that actually enters CoACD. Point
+    clouds are digested with an empty ``(0, 3)`` int32 faces array.
     """
     v_bytes = vertices.astype("float32").tobytes()
     f_bytes = faces.astype("int32").tobytes()
@@ -166,3 +173,67 @@ def build_realization(logical_identity: dict, artifact_sha256: str | None) -> di
         },
         "artifact_digest": f"sha256:{artifact_sha256}" if artifact_sha256 else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Realization manifest (lingot contracts/realization_manifest.schema.json)
+# ---------------------------------------------------------------------------
+
+REALIZATION_MANIFEST_VERSION = "1.0.0"
+
+_VERDICT_STATUSES = ("pass", "fail", "not_evaluated")
+_HEX_RE = re.compile(r"^[0-9a-f]+$")
+
+
+def _normalize_sha256(digest: str | None) -> str:
+    if not digest or not isinstance(digest, str):
+        raise ValueError("artifact_sha256 is required (bare hex or 'sha256:<hex>')")
+    hex_part = digest.removeprefix("sha256:")
+    hex_part = hex_part.lower()
+    if not _HEX_RE.match(hex_part):
+        raise ValueError(f"artifact_sha256 is not a hex digest: {digest!r}")
+    return f"sha256:{hex_part}"
+
+
+def build_realization_manifest(
+    logical_identity: dict,
+    artifact_sha256: str,
+    *,
+    timestamp: str | None = None,
+    conformance: dict | None = None,
+    platform_evidence: dict | None = None,
+) -> dict:
+    """Schema-valid realization manifest (``realization_manifest.schema.json``)."""
+    digest = _normalize_sha256(artifact_sha256)
+    base = build_realization(logical_identity, artifact_sha256=None)
+    realization = dict(base["realization"])
+    if platform_evidence is not None:
+        realization["platform_evidence"] = dict(platform_evidence)
+    if timestamp is None:
+        timestamp = (
+            datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
+    manifest = {
+        "realization_manifest_version": REALIZATION_MANIFEST_VERSION,
+        "logical_build_identity": base["logical_build_identity"],
+        "realization": realization,
+        "artifact_digest": digest,
+        "timestamp": timestamp,
+    }
+    if conformance is not None:
+        if "profile" not in conformance:
+            raise ValueError("conformance requires a 'profile' key")
+        if conformance.get("verdict_status") not in _VERDICT_STATUSES:
+            raise ValueError(
+                f"conformance.verdict_status must be one of {_VERDICT_STATUSES}"
+            )
+        manifest["conformance"] = dict(conformance)
+    return manifest
+
+
+def realization_address(manifest: dict) -> str:
+    """Content address of a manifest: sha256 over canonical (sorted, compact) JSON."""
+    blob = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(blob).hexdigest()}"
