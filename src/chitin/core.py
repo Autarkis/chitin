@@ -165,6 +165,14 @@ def extract(
     )
     out.analysis = analysis
     out.resolved = resolved
+    try:
+        from chitin.provenance import build_logical_identity
+
+        out.build_identity = build_logical_identity(
+            result.positions, np.empty((0, 3), dtype=np.int32), config
+        )
+    except Exception:  # noqa: BLE001
+        _log.debug("build_identity unavailable", exc_info=True)
     return out
 
 
