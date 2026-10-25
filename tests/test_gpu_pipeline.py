@@ -17,13 +17,15 @@ Covers the DoD:
 import numpy as np
 import pytest
 
+from chitin.f32_policy import POLICY_0_3_0
+from chitin.f32_predicates import clip_mesh_f32
 from chitin.gpu.clip_pipeline import (
     dispatch_clip_pipeline,
     dispatch_clip_pipeline_batch,
 )
 from chitin.gpu.pipeline import ClipMetrics, ClipPipelineResult, ClipStatus
 from chitin.gpu.worker import GPUWorker
-from chitin.trace_fixtures import box_mesh
+from chitin.trace_fixtures import box_mesh, high_complexity_mesh
 
 
 @pytest.fixture
@@ -468,3 +470,76 @@ class TestCompactOrdering:
             for row in pos_src:
                 dists = np.linalg.norm(v - row, axis=1)
                 assert dists.min() < 1e-6
+
+
+class TestMultiTilePipeline:
+    """Meshes past one 256-element scan tile (high_complexity: 1280 faces).
+
+    Regression: prefix_sum_gpu read its tile-sum buffer back through the host
+    for n > 256, which made every such clip raise GPUValidationError on
+    readback. The box fixtures (12 faces) never reached that path.
+    """
+
+    @staticmethod
+    def _mesh():
+        v, f = high_complexity_mesh()
+        assert len(f) > 256
+        return v.astype(np.float32), f.astype(np.uint32)
+
+    @staticmethod
+    def _assert_oracle_parity(result, verts, faces, pp, pn):
+        """The unit sphere's cross-section is one loop, so the cap is a
+        fan of (boundary_edges - 2) triangles on top of the oracle's faces."""
+        pos = clip_mesh_f32(verts, faces, pp, pn, POLICY_0_3_0)
+        neg = clip_mesh_f32(verts, faces, pp, -pn, POLICY_0_3_0)
+        assert len(result.intersection_records) == len(pos.intersection_points)
+        assert (
+            len(result.positive_faces) == len(pos.faces) + len(pos.boundary_edges) - 2
+        )
+        assert (
+            len(result.negative_faces) == len(neg.faces) + len(neg.boundary_edges) - 2
+        )
+
+    @pytest.mark.parametrize(
+        "z", [0.0, 0.123], ids=["equator_mid_z", "off_center_mid_z"]
+    )
+    def test_mid_z_plane(self, worker, z):
+        verts, faces = self._mesh()
+        pp = np.array([0.0, 0.0, z], dtype=np.float32)
+        pn = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        result = dispatch_clip_pipeline(worker, verts, faces, pp, pn)
+        assert result.status == ClipStatus.OK
+        assert len(result.positive_faces) > 0
+        assert len(result.negative_faces) > 0
+        assert result.positive_faces.max() < len(result.positive_vertices)
+        assert result.negative_faces.max() < len(result.negative_vertices)
+        self._assert_oracle_parity(result, verts, faces, pp, pn)
+
+    def test_plane_through_vertex(self, worker):
+        verts, faces = self._mesh()
+        # A vertex well off the equator, so the plane is not the all-on-plane
+        # equatorial case and exactly the touched vertices are on-plane.
+        idx = int(np.argmin(np.abs(verts[:, 2] - 0.5)))
+        pp = verts[idx].copy()
+        pn = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        result = dispatch_clip_pipeline(worker, verts, faces, pp, pn)
+        assert result.status == ClipStatus.OK
+        assert result.metrics.classify_on_plane_count >= 1
+        assert len(result.positive_faces) > 0
+        assert len(result.negative_faces) > 0
+        self._assert_oracle_parity(result, verts, faces, pp, pn)
+
+    def test_over_scan_cap_raises(self, worker):
+        """Documented limit: prefix_sum_gpu is two-level (256 * 256 elements).
+        subdivisions=6 gives 81920 faces; the clip fails loudly, not silently.
+        Update this test when the scan gains a third level."""
+        verts, faces = high_complexity_mesh(6)
+        assert len(faces) > 256 * 256
+        with pytest.raises(ValueError, match="two-level scan cap"):
+            dispatch_clip_pipeline(
+                worker,
+                verts.astype(np.float32),
+                faces.astype(np.uint32),
+                np.array([0.0, 0.0, 0.123], dtype=np.float32),
+                np.array([0.0, 0.0, 1.0], dtype=np.float32),
+            )
