@@ -1,15 +1,22 @@
 """Build identity: logical identity is stable and distinct from artifact digest."""
 
+import json
+from pathlib import Path
+
 import numpy as np
+import pytest
 import trimesh
 
 from chitin import Config, extract_from_mesh
 from chitin.provenance import (
     ALGORITHM_VERSION,
+    REALIZATION_MANIFEST_VERSION,
     build_logical_identity,
     build_realization,
+    build_realization_manifest,
     effective_input_digest,
     output_affecting_config_digest,
+    realization_address,
 )
 from chitin.report import build_compilation_report
 
@@ -98,6 +105,73 @@ class TestRealization:
         assert real["logical_build_identity"] == logical
         assert real["artifact_digest"] == f"sha256:{'a' * 64}"
         assert real["realization"]["runtime"]["kind"] == "python_native"
+
+
+_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "lingot"
+    / "contracts"
+    / "realization_manifest.schema.json"
+)
+
+
+def _manifest(**kw):
+    v, f = _box_mesh()
+    logical = build_logical_identity(v, f, Config())
+    return build_realization_manifest(logical, kw.pop("digest", "a" * 64), **kw)
+
+
+class TestRealizationManifest:
+    def test_validates_against_lingot_schema(self):
+        jsonschema = pytest.importorskip("jsonschema")
+        if not _SCHEMA_PATH.exists():
+            pytest.skip(f"lingot schema not found at {_SCHEMA_PATH}")
+        schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+        full = _manifest(
+            conformance={"profile": "walkable", "verdict_status": "pass"},
+            platform_evidence={"os": "linux"},
+        )
+        jsonschema.validate(full, schema, format_checker=jsonschema.FormatChecker())
+        jsonschema.validate(_manifest(), schema)
+        assert full["realization_manifest_version"] == REALIZATION_MANIFEST_VERSION
+
+    def test_bare_and_prefixed_digest_normalize(self):
+        a = _manifest(digest="a" * 64, timestamp="2026-01-01T00:00:00Z")
+        b = _manifest(digest="sha256:" + "a" * 64, timestamp="2026-01-01T00:00:00Z")
+        assert a == b
+        assert a["artifact_digest"] == f"sha256:{'a' * 64}"
+
+    @pytest.mark.parametrize("bad", [None, "", "sha256:", "zz", "sha256:xyz"])
+    def test_bad_digest_raises(self, bad):
+        with pytest.raises(ValueError):
+            _manifest(digest=bad)
+
+    def test_conformance_included_or_omitted(self):
+        assert "conformance" not in _manifest()
+        c = {"profile": None, "verdict_status": "not_evaluated"}
+        assert _manifest(conformance=c)["conformance"] == c
+        with pytest.raises(ValueError):
+            _manifest(conformance={"profile": "x", "verdict_status": "maybe"})
+        with pytest.raises(ValueError):
+            _manifest(conformance={"verdict_status": "pass"})
+
+    def test_platform_evidence_only_when_given(self):
+        assert "platform_evidence" not in _manifest()["realization"]
+
+    def test_default_timestamp_is_utc_z(self):
+        ts = _manifest()["timestamp"]
+        assert ts.endswith("Z")
+
+    def test_build_realization_unchanged(self):
+        v, f = _box_mesh()
+        logical = build_logical_identity(v, f, Config())
+        assert build_realization(logical, None)["artifact_digest"] is None
+
+    def test_address_matches_gesso(self, tmp_path):
+        gesso_store = pytest.importorskip("gesso.store")
+        m = _manifest(timestamp="2026-01-01T00:00:00Z")
+        addr = gesso_store.LocalStore(tmp_path).put_json(m)
+        assert realization_address(m) == addr
 
 
 class TestReportBuildIdentity:
