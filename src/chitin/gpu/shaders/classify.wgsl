@@ -46,6 +46,7 @@ struct NormParams {
 @group(0) @binding(3) var<storage, read_write> signs: array<i32>;
 @group(0) @binding(4) var<storage, read_write> world_dots: array<f32>;
 @group(0) @binding(5) var<uniform> params: vec4<u32>; // x = vertex_count, y = pair_index
+@group(0) @binding(6) var<storage, read_write> counters: array<atomic<u32>>; // [0]=fallback, [1]=on_plane
 
 @compute @workgroup_size(256)
 fn main(
@@ -91,7 +92,12 @@ fn main(
     if (abs(dot) > np.ambiguity_bound) {
         sign = select(-1, 1, dot > 0.0);
     } else {
+        atomicAdd(&counters[0], 1u);
         sign = select(select(-1, 1, world_dot > 0.0), 0, world_dot == 0.0);
+    }
+
+    if (sign == 0) {
+        atomicAdd(&counters[1], 1u);
     }
 
     signs[idx] = sign;
