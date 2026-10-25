@@ -320,10 +320,6 @@ def _clip_mesh_generic(
         if count % 2 == 1:
             boundary_edges.append([key[0], key[1]])
 
-    for key, count in on_plane_tally.items():
-        if count % 2 == 1:
-            boundary_edges.append([key[0], key[1]])
-
     vertices_out = np.array(out_vertices, dtype=vertices.dtype)
     faces_out = (
         np.array(out_faces, dtype=np.int64)
