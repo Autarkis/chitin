@@ -365,6 +365,27 @@ for issue in issues:
 `@autarkis/chitin-lite` also compiles a self-contained GLB directly in the
 browser without blocking the main thread:
 
+For an engine-first mesh path, use the reusable Worker client and consume the
+returned hull arrays directly:
+
+```typescript
+import { ChitinWorkerClient } from "@autarkis/chitin-lite";
+
+const engine = new ChitinWorkerClient({
+  js: "/coacd/coacd.mjs",
+  wasm: "/coacd/coacd.wasm",
+});
+const { hulls } = await engine.decompose(vertices, faces, { threshold: 0.05 }, {
+  checkManifold: true,
+});
+engine.terminate();
+```
+
+`vertices` is a flat `Float64Array`; `faces` is a flat triangle-index
+`Int32Array`. This path does not require `.phys`. Use `ChitinCompiler` when the
+application wants GLB parsing, connected-component policy, progress/report
+assembly, quality sampling, and `.phys` bytes:
+
 ```typescript
 import { ChitinCompiler } from "@autarkis/chitin-lite";
 
