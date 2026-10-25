@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import trimesh
 
-from chitin import Config, extract, extract_from_mesh
+from chitin import Config, extract_from_mesh
 from chitin.provenance import (
     ALGORITHM_VERSION,
     REALIZATION_MANIFEST_VERSION,
@@ -172,29 +172,6 @@ class TestRealizationManifest:
         m = _manifest(timestamp="2026-01-01T00:00:00Z")
         addr = gesso_store.LocalStore(tmp_path).put_json(m)
         assert realization_address(m) == addr
-
-
-class TestPointCloudBuildIdentity:
-    def test_point_cloud_extract_carries_build_identity(self, tmp_path):
-        rng = np.random.default_rng(0)
-        pts = rng.normal(size=(400, 3))
-        pts /= np.linalg.norm(pts, axis=1, keepdims=True)
-        ply = tmp_path / "cloud.ply"
-        lines = [
-            "ply",
-            "format ascii 1.0",
-            f"element vertex {len(pts)}",
-            "property float x",
-            "property float y",
-            "property float z",
-            "end_header",
-            *(f"{x:.6f} {y:.6f} {z:.6f}" for x, y, z in pts),
-        ]
-        ply.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        out = extract(ply, config=Config())
-        assert out.build_identity is not None
-        assert out.build_identity["algorithm_version"] == ALGORITHM_VERSION
-        assert out.build_identity["effective_input_digest"].startswith("sha256:")
 
 
 class TestReportBuildIdentity:

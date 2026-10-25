@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 
-from chitin import Config, extract_from_arrays
+from chitin import Config, extract, extract_from_arrays
 from chitin._metric_names import SOURCE_SURFACE_COVERAGE, WORST_DECILE_SURFACE_COVERAGE
+from chitin.provenance import ALGORITHM_VERSION
 
 try:
     import open3d  # noqa: F401
@@ -736,3 +737,27 @@ def test_thin_shell_produces_hulls():
         config=Config(concavity=0.5, thin_shell=True),
     )
     assert len(r.hulls) >= 1
+
+
+# Lives here: the core CI shard excludes this module, and the open3d Poisson path must run in the point-cloud shard.
+@requires_open3d
+def test_point_cloud_extract_carries_build_identity(tmp_path):
+    rng = np.random.default_rng(0)
+    pts = rng.normal(size=(400, 3))
+    pts /= np.linalg.norm(pts, axis=1, keepdims=True)
+    ply = tmp_path / "cloud.ply"
+    lines = [
+        "ply",
+        "format ascii 1.0",
+        f"element vertex {len(pts)}",
+        "property float x",
+        "property float y",
+        "property float z",
+        "end_header",
+        *(f"{x:.6f} {y:.6f} {z:.6f}" for x, y, z in pts),
+    ]
+    ply.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out = extract(ply, config=Config())
+    assert out.build_identity is not None
+    assert out.build_identity["algorithm_version"] == ALGORITHM_VERSION
+    assert out.build_identity["effective_input_digest"].startswith("sha256:")
