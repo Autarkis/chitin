@@ -185,9 +185,17 @@ def prefix_sum_gpu(
         (num_blocks, 1, 1),
     )
 
-    total_raw = worker.read_buffer(scanned_blocks_buf, (num_blocks + 1) * 4)
-    total_val = np.frombuffer(total_raw, dtype=np.int32)[num_blocks]
-    total_buf = _buffer_from_numpy(worker, np.array([total_val], dtype=np.int32))
+    # prefix_sum.wgsl writes the grand total one past the scanned range. A tiny
+    # kernel lifts it into its own 4-byte buffer, keeping the whole scan on the
+    # GPU (no mid-pipeline readback) with the same usage flags as the
+    # single-block path's total buffer.
+    total_buf = _rw_buffer(worker, 4)
+    _dispatch_pass(
+        worker,
+        "prefix_sum_total",
+        [scanned_blocks_buf, total_buf, blocks_params_buf],
+        (1, 1, 1),
+    )
 
     return output_buf, total_buf
 
