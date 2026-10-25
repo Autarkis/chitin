@@ -451,6 +451,14 @@ def h_shape_mesh(
     return _extrude_polygon(profile, 0.0, thickness)
 
 
+def h_shape_calibration_mesh() -> tuple[np.ndarray, np.ndarray]:
+    """Corrected CCW extrusion; historical h_shape_mesh bytes stay frozen."""
+    vertices, _ = h_shape_mesh()
+    n = len(vertices) // 2
+    profile = [tuple(map(float, p)) for p in vertices[:n, :2][::-1]]
+    return _extrude_polygon(profile, 0.0, 0.5)
+
+
 def oblique_gear_prism_mesh() -> tuple[np.ndarray, np.ndarray]:
     """13-tooth asymmetric gear prism — many concave corners, anisotropic transform."""
     n_teeth = 13
@@ -999,6 +1007,197 @@ def _translate_mesh(
     return translated
 
 
+def g2_oblique_dipyramid() -> tuple[np.ndarray, np.ndarray]:
+    """13-gon dipyramid rotated off-axis — no face normal aligned to a coordinate axis."""
+    k = np.arange(13)
+    angles = 2 * np.pi * k / 13
+    equator = np.stack([np.cos(angles), np.zeros(13), np.sin(angles)], axis=1)
+    top_apex = np.array([[0.0, 1.5, 0.0]])
+    bottom_apex = np.array([[0.0, -1.5, 0.0]])
+    vertices = np.concatenate([equator, top_apex, bottom_apex], axis=0).astype(
+        np.float64
+    )
+
+    top_idx, bottom_idx = 13, 14
+    faces = []
+    for kk in range(13):
+        k1 = (kk + 1) % 13
+        faces.append((top_idx, kk, k1))
+        faces.append((bottom_idx, k1, kk))
+
+    theta = 0.436332
+    axis = np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0)
+    cos_t, sin_t = np.cos(theta), np.sin(theta)
+    dot_av = vertices @ axis
+    v_rot = (
+        vertices * cos_t
+        + np.cross(axis, vertices) * sin_t
+        + np.outer(dot_av, axis) * (1 - cos_t)
+    )
+
+    return v_rot.astype(np.float32), np.array(faces, dtype=np.int32)
+
+
+def g2_razor_star_prism() -> tuple[np.ndarray, np.ndarray]:
+    """Extruded 7-pointed star with near-degenerate thin spikes — thin-edge stratum."""
+    k = np.arange(7)
+    outer = (
+        np.stack([np.cos(2 * np.pi * k / 7), np.sin(2 * np.pi * k / 7)], axis=1) * 1.0
+    )
+    inner = (
+        np.stack(
+            [
+                np.cos(2 * np.pi * (k + 0.5) / 7),
+                np.sin(2 * np.pi * (k + 0.5) / 7),
+            ],
+            axis=1,
+        )
+        * 0.15
+    )
+
+    boundary_xy = np.empty((14, 2), dtype=np.float64)
+    boundary_xy[0::2] = outer
+    boundary_xy[1::2] = inner
+
+    bottom = np.concatenate([boundary_xy, np.zeros((14, 1))], axis=1)
+    top = np.concatenate([boundary_xy, np.full((14, 1), 0.003)], axis=1)
+    bottom_center = np.array([[0.0, 0.0, 0.0]])
+    top_center = np.array([[0.0, 0.0, 0.003]])
+
+    vertices = np.concatenate([bottom, top, bottom_center, top_center], axis=0)
+    bottom_idx = np.arange(14)
+    top_idx = np.arange(14, 28)
+    bc, tc = 28, 29
+
+    faces = []
+    for i in range(14):
+        j = (i + 1) % 14
+        faces.append((bc, bottom_idx[j], bottom_idx[i]))
+    for i in range(14):
+        j = (i + 1) % 14
+        faces.append((tc, top_idx[i], top_idx[j]))
+    for i in range(14):
+        j = (i + 1) % 14
+        faces.append((bottom_idx[i], bottom_idx[j], top_idx[j]))
+        faces.append((bottom_idx[i], top_idx[j], top_idx[i]))
+
+    return vertices.astype(np.float32), np.array(faces, dtype=np.int32)
+
+
+def g2_separated_octahedra_trio() -> tuple[np.ndarray, np.ndarray]:
+    """Three disjoint regular octahedra — multiple connected components in one mesh."""
+    base_vertices = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+        ],
+        dtype=np.float64,
+    )
+    base_faces = np.array(
+        [
+            (0, 2, 4),
+            (2, 1, 4),
+            (1, 3, 4),
+            (3, 0, 4),
+            (2, 0, 5),
+            (1, 2, 5),
+            (3, 1, 5),
+            (0, 3, 5),
+        ],
+        dtype=np.int32,
+    )
+    offsets = [(0.0, 0.0, 0.0), (8.0, 0.0, 0.0), (0.0, 8.0, 0.0)]
+
+    all_vertices = [base_vertices + np.array(offset) for offset in offsets]
+    all_faces = [base_faces + 6 * i for i in range(len(offsets))]
+
+    vertices = np.concatenate(all_vertices, axis=0)
+    faces = np.concatenate(all_faces, axis=0)
+    return vertices.astype(np.float32), faces.astype(np.int32)
+
+
+def g2_high_valence_bipyramid() -> tuple[np.ndarray, np.ndarray]:
+    """24-gon bipyramid — apex valence 24, stresses high-valence vertex handling."""
+    k = np.arange(24)
+    angles = 2 * np.pi * k / 24
+    equator = np.stack([np.cos(angles), np.zeros(24), np.sin(angles)], axis=1)
+    top_apex = np.array([[0.0, 2.0, 0.0]])
+    bottom_apex = np.array([[0.0, -2.0, 0.0]])
+    vertices = np.concatenate([equator, top_apex, bottom_apex], axis=0)
+
+    top_idx, bottom_idx = 24, 25
+    faces = []
+    for kk in range(24):
+        k1 = (kk + 1) % 24
+        faces.append((top_idx, kk, k1))
+        faces.append((bottom_idx, k1, kk))
+
+    return vertices.astype(np.float32), np.array(faces, dtype=np.int32)
+
+
+def g2_multiscale_lattice_box() -> tuple[np.ndarray, np.ndarray]:
+    """Large box fused to a tiny box on top via shared junction vertices — mixed-scale stratum."""
+    vertices = np.array(
+        [
+            [-1.0, -1.0, -1.0],
+            [1.0, -1.0, -1.0],
+            [1.0, -1.0, 1.0],
+            [-1.0, -1.0, 1.0],
+            [-1.0, 1.0, -1.0],
+            [1.0, 1.0, -1.0],
+            [1.0, 1.0, 1.0],
+            [-1.0, 1.0, 1.0],
+            [-0.01, 1.0, -0.01],
+            [0.01, 1.0, -0.01],
+            [0.01, 1.0, 0.01],
+            [-0.01, 1.0, 0.01],
+            [-0.01, 1.02, -0.01],
+            [0.01, 1.02, -0.01],
+            [0.01, 1.02, 0.01],
+            [-0.01, 1.02, 0.01],
+        ],
+        dtype=np.float32,
+    )
+    faces = np.array(
+        [
+            (0, 2, 1),
+            (0, 3, 2),
+            (0, 1, 5),
+            (0, 5, 4),
+            (1, 2, 6),
+            (1, 6, 5),
+            (2, 3, 7),
+            (2, 7, 6),
+            (3, 0, 4),
+            (3, 4, 7),
+            (4, 5, 9),
+            (4, 9, 8),
+            (5, 6, 10),
+            (5, 10, 9),
+            (6, 7, 11),
+            (6, 11, 10),
+            (7, 4, 8),
+            (7, 8, 11),
+            (8, 9, 13),
+            (8, 13, 12),
+            (9, 10, 14),
+            (9, 14, 13),
+            (10, 11, 15),
+            (10, 15, 14),
+            (11, 8, 12),
+            (11, 12, 15),
+            (12, 13, 14),
+            (12, 14, 15),
+        ],
+        dtype=np.int32,
+    )
+    return vertices, faces
+
+
 # Registry of all fixtures
 FIXTURES = {
     "box": box_mesh,
@@ -1025,4 +1224,12 @@ HOLDOUT_FIXTURES = {
         fluted_twist_column_mesh, (1e7, 5e6, 3e6)
     ),
     "ridged_torus_offset": _translate_mesh(ridged_torus_mesh, (1e7, 5e6, 3e6)),
+}
+
+G2_HOLDOUT_FIXTURES = {
+    "g2_oblique_dipyramid": g2_oblique_dipyramid,
+    "g2_razor_star_prism": g2_razor_star_prism,
+    "g2_separated_octahedra_trio": g2_separated_octahedra_trio,
+    "g2_high_valence_bipyramid": g2_high_valence_bipyramid,
+    "g2_multiscale_lattice_box": g2_multiscale_lattice_box,
 }
