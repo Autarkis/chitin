@@ -1,0 +1,198 @@
+{
+  "evaluation_date": "2026-09-05T22:16:28Z",
+  "evaluator_digest": "6157c16a04572042f92b3f255ce34913cfdb02c6df4b6bed5a136c706bf4fde4",
+  "implementation_commit": "c7f0621f63efc375e40c535098a267df5fdf9e78",
+  "manifest_digest": "5448fd7a427fa66dc1409ce8f5f016b1b7018f22df29b2fb2debfcb72d65f566",
+  "policy_version": "0.3.0",
+  "adapter": {
+    "name": "NVIDIA GeForce RTX 4090 Laptop GPU",
+    "backend": "Vulkan",
+    "driver": "595.79"
+  },
+  "shader_hashes": {
+    "classify.wgsl": "844f0c874656273e3dedc4faf3f7f7919758098192ea7bb2c1bb5f211970fc74",
+    "classify_norm.wgsl": "f5bd049c32552d6ca4b36150aed07db983f8464dc1a4d6c921a5a37e826516e4",
+    "clip_count.wgsl": "08b2fabd3ebb259722a8fee4ed8e017a2d22382e87972d609cf37c66baf63701",
+    "clip_emit.wgsl": "87f71b0f914d96933380f8865541cae54fc34c92a0d51de5991a376955a23092",
+    "compact.wgsl": "2298d377b64dee771dbc10648263c1e5883d628452f0cf688ce1731701661176",
+    "pack_offsets.wgsl": "a49d3f3c2efee4453bfcf0d1a45884d1528695546a1c35ec6d462557d603c33b",
+    "prefix_sum.wgsl": "847fe28f6d6388c0777887366436f440ce2630daf7a3308053c59ade218caf5d",
+    "prefix_sum_local.wgsl": "1f8fb254d4ceeae389b743428df014fc4cb37d080063c5a2d6f47e1144fcdcb0",
+    "prefix_sum_propagate.wgsl": "cc953a9afc53eb6a1b6868c4a422d8bd76d206ea56e048733a88c0bfef27eed1",
+    "reduce_sum.wgsl": "3516c773ccb50f344eca286e281707674968bd0473bb025791b74f7dd16dead8",
+    "reduce_sum_multi.wgsl": "d09b18c4e936d1bfc0a16a15dc9659da46d42a129d86580ed0c8e9235f08be17",
+    "segmented_scan.wgsl": "a5cc0b8695dead2fe880be92c70061341d436f9ad725d36f7f59f9a189566a0f",
+    "weld_dedup.wgsl": "fa098cf6e259dca2265b84f5229f0b62f30f790e1d978b69ca05c6ff1ec9bb47",
+    "weld_finalize.wgsl": "03ca9fb6d32efe8838cf15d937eb50b6587979dde28ab46638021b5e48b666f9",
+    "weld_rewrite.wgsl": "224affd1746cf17164e50cbe5f79944b8501a66f669bf3e640046f81f4a65d2d",
+    "weld_sort_step.wgsl": "a6ac0a9040fe3fae2c7f351f427f21f979e6c9ec7bac0b49a388e34455ad9119",
+    "weld_stamp.wgsl": "e76e8750ec39c41b9ef06055f533a26f66e5d164cee672cc3d742b1b804c7043"
+  },
+  "fixture_set": "calibration",
+  "repeat_count": 2,
+  "fixtures": [
+    {
+      "name": "box",
+      "source_digest": "aa14a4513960b3982b088e616f632a38190f58ad483c8ea649aecf61a4ac561e",
+      "num_planes": 200,
+      "results": {
+        "classification": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "topology": {
+          "agree": 198,
+          "total": 200,
+          "pass": false
+        },
+        "finite_coords": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "valid_indices": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "loops_closed": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "caps_wound": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        }
+      },
+      "deterministic": true,
+      "pass": false
+    },
+    {
+      "name": "cross_bracket",
+      "source_digest": "d6fccd02b251c7c891ac1be39c139216c1b002ab629dc77bb04dd2c3c5ffe986",
+      "num_planes": 200,
+      "results": {
+        "classification": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "topology": {
+          "agree": 195,
+          "total": 200,
+          "pass": false
+        },
+        "finite_coords": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "valid_indices": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "loops_closed": {
+          "agree": 194,
+          "total": 200,
+          "pass": false
+        },
+        "caps_wound": {
+          "agree": 197,
+          "total": 200,
+          "pass": false
+        }
+      },
+      "deterministic": true,
+      "pass": false
+    },
+    {
+      "name": "curved_pipe_quarter",
+      "source_digest": "73a23bf0749bb588b2ba68a4c957fa17ef750ca6f4540484b5aa3c83fef8e59a",
+      "num_planes": 200,
+      "results": {
+        "classification": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "topology": {
+          "agree": 193,
+          "total": 200,
+          "pass": false
+        },
+        "finite_coords": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "valid_indices": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "loops_closed": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "caps_wound": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        }
+      },
+      "deterministic": true,
+      "pass": false
+    },
+    {
+      "name": "h_shape",
+      "source_digest": "0fc851d088320310df6ab92edf857ae9a401f26e2527a7d5018c9bfc5802c8c7",
+      "num_planes": 200,
+      "results": {
+        "classification": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "topology": {
+          "agree": 67,
+          "total": 200,
+          "pass": false
+        },
+        "finite_coords": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "valid_indices": {
+          "agree": 200,
+          "total": 200,
+          "pass": true
+        },
+        "loops_closed": {
+          "agree": 197,
+          "total": 200,
+          "pass": false
+        },
+        "caps_wound": {
+          "agree": 92,
+          "total": 200,
+          "pass": false
+        }
+      },
+      "deterministic": true,
+      "pass": false
+    }
+  ],
+  "aggregate": {
+    "total_clips": 800,
+    "total_fixtures": 4,
+    "all_criteria_pass": false
+  },
+  "verdict": "FAIL",
+  "readback_audit": "PASS (verified by test_readback_audit, <= 9 calls)"
+}
