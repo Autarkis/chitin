@@ -125,12 +125,21 @@ def dispatch_classify(
     signs_buf = _output_buffer(worker, n * 4)
     dots_buf = _output_buffer(worker, n * 4)
     classify_params = _uniform_buffer(worker, n, 0)  # vertex_count, pair_index
+    counters_buf = _rw_buffer(worker, 8)
 
     num_workgroups = math.ceil(n / 256)
     _dispatch_pass(
         worker,
         "classify",
-        [verts_buf, plane_buf, norm_buf, signs_buf, dots_buf, classify_params],
+        [
+            verts_buf,
+            plane_buf,
+            norm_buf,
+            signs_buf,
+            dots_buf,
+            classify_params,
+            counters_buf,
+        ],
         (num_workgroups, 1, 1),
     )
 

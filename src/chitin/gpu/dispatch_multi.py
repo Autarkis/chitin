@@ -135,6 +135,71 @@ def dispatch_prefix_sum_exclusive_multi(
     return result, total
 
 
+def prefix_sum_gpu(
+    worker: GPUWorker, input_buf: object, count: int
+) -> tuple[object, object]:
+    """GPU-only exclusive prefix sum returning GPU buffers, not numpy arrays.
+
+    Returns (offsets_buf, total_buf) where offsets_buf holds *count* int32
+    exclusive-scan results and total_buf is a 4-byte buffer whose first
+    element is the grand total.
+    """
+    n = count
+    if n == 0:
+        return _rw_buffer(worker, 4), _rw_buffer(worker, 4)
+
+    num_blocks = math.ceil(n / _TILE)
+    if num_blocks > _TILE:
+        raise ValueError(
+            f"prefix_sum_gpu: {n} elements need {num_blocks} tiles, "
+            f"exceeding the two-level scan cap of {_TILE * _TILE} elements"
+        )
+
+    output_buf = _rw_buffer(worker, n * 4)
+    block_sums_buf = _rw_buffer(worker, num_blocks * 4)
+    params_buf = _uniform_buffer(worker, n)
+
+    _dispatch_pass(
+        worker,
+        "prefix_sum_local",
+        [input_buf, output_buf, block_sums_buf, params_buf],
+        (num_blocks, 1, 1),
+    )
+
+    if num_blocks == 1:
+        return output_buf, block_sums_buf
+
+    blocks_params_buf = _uniform_buffer(worker, num_blocks)
+    scanned_blocks_buf = _rw_buffer(worker, (num_blocks + 1) * 4)
+    _dispatch_pass(
+        worker,
+        "prefix_sum",
+        [block_sums_buf, scanned_blocks_buf, blocks_params_buf],
+        (1, 1, 1),
+    )
+
+    _dispatch_pass(
+        worker,
+        "prefix_sum_propagate",
+        [output_buf, scanned_blocks_buf, params_buf],
+        (num_blocks, 1, 1),
+    )
+
+    # prefix_sum.wgsl writes the grand total one past the scanned range. A tiny
+    # kernel lifts it into its own 4-byte buffer, keeping the whole scan on the
+    # GPU (no mid-pipeline readback) with the same usage flags as the
+    # single-block path's total buffer.
+    total_buf = _rw_buffer(worker, 4)
+    _dispatch_pass(
+        worker,
+        "prefix_sum_total",
+        [scanned_blocks_buf, total_buf, blocks_params_buf],
+        (1, 1, 1),
+    )
+
+    return output_buf, total_buf
+
+
 def dispatch_compact_multi(
     worker: GPUWorker, values: np.ndarray, mask: np.ndarray
 ) -> tuple[np.ndarray, int]:
