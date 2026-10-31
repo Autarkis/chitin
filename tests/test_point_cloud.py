@@ -739,9 +739,23 @@ def test_thin_shell_produces_hulls():
     assert len(r.hulls) >= 1
 
 
-# Lives here: the core CI shard excludes this module, and the open3d Poisson path must run in the point-cloud shard.
-@requires_open3d
-def test_point_cloud_extract_carries_build_identity(tmp_path):
+# Poisson is stubbed: the real reconstruction took 34 s on ubuntu and 146 s on windows-latest
+# in CI (180 s timeout). This test only checks the route sets build_identity.
+def test_point_cloud_extract_carries_build_identity(tmp_path, monkeypatch):
+    import trimesh
+
+    calls = []
+
+    def fake_poisson(positions, normals, resolved):
+        calls.append(len(positions))
+        sphere = trimesh.creation.icosphere(subdivisions=1, radius=1.0)
+        return (
+            np.asarray(sphere.vertices, dtype=np.float64),
+            np.asarray(sphere.faces, dtype=np.int32),
+        )
+
+    monkeypatch.setattr("chitin.core.poisson_reconstruct", fake_poisson)
+
     rng = np.random.default_rng(0)
     pts = rng.normal(size=(400, 3))
     pts /= np.linalg.norm(pts, axis=1, keepdims=True)
@@ -758,6 +772,9 @@ def test_point_cloud_extract_carries_build_identity(tmp_path):
     ]
     ply.write_text("\n".join(lines) + "\n", encoding="utf-8")
     out = extract(ply, config=Config())
+    assert calls == [len(pts)]
+    assert out.build_plan.collider_kind == "point_cloud"
+    assert "reconstruct" in out.build_plan.pipeline
     assert out.build_identity is not None
     assert out.build_identity["algorithm_version"] == ALGORITHM_VERSION
     assert out.build_identity["effective_input_digest"].startswith("sha256:")
