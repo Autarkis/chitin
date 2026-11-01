@@ -2,11 +2,10 @@
 
 Compiles [CoACD](https://github.com/SarahWeiii/CoACD) and [PoissonRecon](https://github.com/mkazhdan/PoissonRecon) to WebAssembly via Emscripten. Produces ES modules + `.wasm` binaries for convex decomposition and surface reconstruction in the browser or a WebWorker.
 
-CoACD is built with `-DWITH_3RD_PARTY_LIBS=OFF`, which strips OpenVDB, Boost, TBB, and spdlog. The core algorithm (MCTS search, concavity metric, plane clipping, convex hull) is unchanged. The only trade-off: no automatic manifold repair. Input meshes must already be manifold.
+CoACD is built with `-DWITH_3RD_PARTY_LIBS=OFF`, which strips OpenVDB, Boost, TBB, and spdlog. The core algorithm (MCTS search, concavity metric, plane clipping, convex hull) is unchanged. This build has no automatic manifold repair; input meshes must be manifold.
 
 The CoACD binding enables CoACD's final convex-hull decimation pass, so
-`maxChVertex` is an enforced output limit rather than inert configuration. The
-Node functional test exercises a dense sphere and fails if the emitted hull
+`maxChVertex` limits the output vertices per hull. The Node functional test exercises a dense sphere and fails if the emitted hull
 exceeds its requested vertex cap.
 
 `src/poisson_bind.cpp` wraps Kazhdan's PoissonRecon via Embind, exposing `poissonReconstruct(positions, normals, depth, densityQuantile)`. Single-threaded (WASM constraint).
@@ -31,10 +30,10 @@ source /path/to/emsdk/emsdk_env.sh
 ```
 
 Output lands in `dist/`:
-- `coacd.mjs` (~96KB) -- Emscripten ES module (`export default createCoACD`)
-- `coacd.wasm` (~558KB) -- the compiled decomposer
-- `poisson.mjs` (~TBD) -- Emscripten ES module (`export default createPoisson`)
-- `poisson.wasm` (~TBD) -- the compiled reconstructor
+- `coacd.mjs` -- Emscripten ES module (`export default createCoACD`)
+- `coacd.wasm` -- the compiled decomposer
+- `poisson.mjs` -- Emscripten ES module (`export default createPoisson`)
+- `poisson.wasm` -- the compiled reconstructor
 
 Override sources or refs:
 
@@ -51,28 +50,17 @@ imports CoACD under Node.
 
 ## CI and releases
 
-The `wasm` job in `.github/workflows/ci.yml` builds both modules, runs the Node
-functional tests, and enforces a size band on every PR that touches
-`integrations/wasm/`. On a `wasm-v*` tag `release-wasm.yml` attaches all four
-files to the GitHub Release and publishes them to npm as
-[`@autarkis/chitin-wasm`](https://www.npmjs.com/package/@autarkis/chitin-wasm),
-which is the one to use at runtime -- npm CDNs send CORS headers, so it is
-fetchable cross-origin from the browser (release assets are not):
+The `wasm-build` and `browser-gate` jobs in `.github/workflows/ci.yml` build
+the modules and exercise packed browser consumers. The `wasm-v*` tag workflow
+builds, runs Node/wrapper checks, attaches GitHub release assets, and attempts
+npm publication.
+
+The WASM package is not on npm as of 2026-10-31. Build all four files and
+serve them from your app:
 
 ```
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/poisson.mjs
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/poisson.wasm
+/coacd/coacd.mjs
+/coacd/coacd.wasm
+/coacd/poisson.mjs
+/coacd/poisson.wasm
 ```
-
-## Output size
-
-| File | Size |
-|------|------|
-| `coacd.wasm` | ~558 KB |
-| `coacd.mjs` | ~96 KB |
-| `poisson.wasm` | ~TBD |
-| `poisson.mjs` | ~TBD |
-
-For comparison, the open3d 0.19.0 Python wheel (cp312) is ~427 MB on Linux (`manylinux_2_31_x86_64`), ~98 MB on macOS (`universal2`), and ~66 MB on Windows (`win_amd64`).

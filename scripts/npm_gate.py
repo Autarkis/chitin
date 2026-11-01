@@ -24,6 +24,13 @@ STEPS = [
 ]
 
 
+def has_node_modules(pkg: Path) -> bool:
+    """Accept local or ancestor dependencies, matching npm workspace resolution."""
+    return any(
+        (directory / "node_modules").is_dir() for directory in (pkg, *pkg.parents)
+    )
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -40,8 +47,8 @@ def main() -> None:
             "web gate."
         )
 
-    if not (pkg / "node_modules").exists():
-        sys.exit(f"{pkg.name} has no node_modules; run `npm ci` in {pkg}")
+    if not has_node_modules(pkg):
+        sys.exit(f"{pkg.name} has no local or ancestor node_modules; run `npm ci`")
 
     for label, args in STEPS:
         result = subprocess.run([npm, *args], cwd=pkg, check=False)

@@ -3,10 +3,14 @@
 Native algorithms compiled to WebAssembly for chitin-lite: CoACD convex
 decomposition and Poisson surface reconstruction.
 
-Ships two independent WASM modules. [`@autarkis/chitin-lite`](https://www.npmjs.com/package/@autarkis/chitin-lite)
-is the TypeScript API; this package is the compiled binaries it drives. The
-separate package lets the binaries be versioned independently. npm CDNs send
-CORS headers, so they can be loaded from jsDelivr without hosting them yourself.
+Contains two WASM modules. [`@autarkis/chitin-lite`](https://www.npmjs.com/package/@autarkis/chitin-lite)
+provides the TypeScript API that loads these binaries. The packages have
+independent versions.
+
+**Source build:** this package is not on npm as of 2026-10-31. Build the four
+files in `integrations/wasm/` and serve them from your app. The examples
+below use `/coacd/` for those self-hosted files. Maintainer build and release
+instructions are in [RELEASING.md](RELEASING.md).
 
 ## Usage
 
@@ -16,8 +20,8 @@ CORS headers, so they can be loaded from jsDelivr without hosting them yourself.
 import { initFromUrl, decompose, writePhys } from "@autarkis/chitin-lite";
 
 await initFromUrl(
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.3.0/coacd.mjs",
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.3.0/coacd.wasm",
+  "/coacd/coacd.mjs",
+  "/coacd/coacd.wasm",
 );
 
 const result = await decompose(vertices, faces, { threshold: 0.05 });
@@ -48,8 +52,7 @@ const result = await compileGaussianField(field, {
 console.log(result.phys, result.hulls, result.report);
 ```
 
-To pin your own copy instead of the CDN, install the package and serve the files
-from your app, then point `initFromUrl` at those paths.
+When using published binaries, pin their version in your app or CDN URL.
 
 ## Contents
 

@@ -362,6 +362,7 @@ jobs:
             'integrations/chitin-wasm/' \
             'integrations/wasm-lite/' \
             'integrations/web/' \
+            | grep -v '\.md$' \
             | grep -v '__tests__/' \
             | grep -v '\.test\.' \
             | grep -v '\.spec\.' \

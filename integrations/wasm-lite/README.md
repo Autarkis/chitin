@@ -1,33 +1,33 @@
 # @autarkis/chitin-lite
 
-Convex decomposition and `.phys` sidecar generation in the browser. Takes mesh vertices + faces, runs CoACD via WebAssembly, and writes portable `.phys` files that any chitin consumer can read.
+Compile browser mesh data into convex hulls and `.phys` files using CoACD
+WebAssembly. GLB and Gaussian-field helpers handle input preparation; Workers
+keep compilation off the UI thread.
 
 ## Setup
+
+**Source-build examples:** npm latest is 0.1.2 as of 2026-10-31. These examples
+use newer source APIs. Build the native modules from `integrations/wasm/` and
+serve them under `/coacd/` in your app; the WASM package is not yet on npm.
 
 ```bash
 npm install @autarkis/chitin-lite
 ```
 
-You also need the CoACD WASM module. It ships as a separate package,
-[`@autarkis/chitin-wasm`](https://www.npmjs.com/package/@autarkis/chitin-wasm),
-so it can be loaded straight from a CDN (npm CDNs send CORS headers; GitHub
-release assets do not):
+Serve the CoACD build files at the URLs passed to the compiler:
 
 ```
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs
-https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm
+/coacd/coacd.mjs
+/coacd/coacd.wasm
 ```
-
-To pin your own copy, `npm install @autarkis/chitin-wasm` and serve the two
-files from your app.
 
 ## Usage
 
 ### Compile a GLB off the main thread
 
-`compileGlb()` is the user-facing one-shot API. It accepts a `File`, `Blob`,
+`compileGlb()` compiles one input and closes its workers afterward. It accepts a `File`, `Blob`,
 `ArrayBuffer`, typed-array view, `URL`, or URL string and returns the `.phys`
-bytes, hulls, source facts, reuse facts, and the versioned compilation report.
+bytes, hulls, source statistics, cache reuse counts, and a compilation report.
 
 ```typescript
 import { compileGlb } from "@autarkis/chitin-lite";
@@ -86,10 +86,11 @@ one-hull-per-component minimum plus any configured hollow-shell reservations.
 per-component ceiling. Use `componentPolicy: { enabled: false }` for uniform
 full-detail-per-part behavior, or `maxHulls: -1` to opt out of the total cap.
 Skins, morph targets, non-triangle primitives, external buffers, and
-Draco/meshopt compression are rejected with `UNSUPPORTED_GLTF` instead of being
-silently miscompiled. Only
-the `interactive` profile is currently accepted; its report verdict remains
-`not_evaluated` until artifact-level outcome checks ship.
+Draco/meshopt compression return `UNSUPPORTED_GLTF`. The high-level compiler accepts `interactive`, `walkable`,
+and `robotics`. Interactive remains `not_evaluated`; walkable/robotics evaluate
+sampled quality thresholds but retain `not_evaluated` for missing native
+walkable/capsule probes or snug-fit checks. A measured threshold failure is
+reported as `fail`.
 
 Artifact-fit measurement is available as explicit opt-in work:
 
@@ -104,7 +105,7 @@ console.log(result.report.metrics.deep_false_fill_fraction);
 
 The sampler measures source-surface representation and collider volume in
 source-free space. It is disabled during normal interactive compilation.
-Metric definitions and verdict semantics live in the
+Metric definitions and verdict rules are in the
 [compilation report contract](../../docs/compilation-report.md).
 
 A reusable compiler caches the prepared geometry for the same immutable
@@ -199,8 +200,8 @@ import { initFromUrl } from "@autarkis/chitin-lite";
 
 // Point to wherever you host the WASM build output
 await initFromUrl(
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
-  "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
+  "/coacd/coacd.mjs",
+  "/coacd/coacd.wasm",
 );
 ```
 
@@ -268,8 +269,8 @@ import { createColliders } from "@autarkis/chitin-web/rapier";
 
 const { phys: physBuffer, report } = await compileGlb(file, {
   wasm: {
-    js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
-    wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
+    js: "/coacd/coacd.mjs",
+    wasm: "/coacd/coacd.wasm",
     version: "0.2.0",
   },
 });
@@ -291,8 +292,8 @@ import { ChitinWorkerClient, writePhys } from "@autarkis/chitin-lite";
 
 const worker = new ChitinWorkerClient(
   {
-    js: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.mjs",
-    wasm: "https://cdn.jsdelivr.net/npm/@autarkis/chitin-wasm@0.2.0/coacd.wasm",
+    js: "/coacd/coacd.mjs",
+    wasm: "/coacd/coacd.wasm",
   },
 );
 

@@ -3,81 +3,25 @@
 [![CI](https://github.com/Autarkis/chitin/actions/workflows/ci.yml/badge.svg)](https://github.com/Autarkis/chitin/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Open-source geometry-to-physics compiler for generated, captured, and authored
-3D assets.
+Chitin compiles meshes, point clouds, and Gaussian fields into convex collision
+hulls. Use the hulls directly or save them as `.phys` sidecars for Python,
+TypeScript, C#, and C++ readers.
 
-Chitin is a free MIT-licensed compiler that turns geometry into physics
-colliders. Feed it a point cloud, Gaussian field, mesh, or skinned model and
-get back portable convex hulls that a physics engine can load. Raw hulls are
-the direct output; `.phys` is the persistent format, with readers for Python,
-TypeScript, C#, and C++.
+- **Meshes:** OBJ, STL, GLB, and USD input; experimental skinned GLB support.
+- **Scans and splats:** surface reconstruction, opacity filtering, and spatial
+  partitioning in the Python compiler.
+- **Browser compilation:** GLB and decoded Gaussian fields through CoACD and
+  Poisson WebAssembly modules running in Workers.
+- **Runtime integration:** Rapier and Three.js bindings, a Unity importer, and
+  an Unreal hull-data importer.
+- **Inspection:** CLI checks, compilation reports, collision LODs, and a browser
+  demo for inspecting and simulating the result.
 
-It is not a splat viewer feature or a single-engine import button. Viewer collision tools are great for making one splat scene walkable; Chitin compiles 3D assets into portable convex hulls that work across engines and pipelines.
+## Browser backends
 
-## Why Chitin
-
-- **Free MIT infrastructure**: audit it, vendor it, modify it, or run it offline without service lock-in.
-- **Portable artifact contract**: `.phys` stores quantized convex hulls, bind transforms, and collision LOD tiers instead of engine-owned caches or viewer-only collision data.
-- **Attachable to any viewer**: load a `.phys` sidecar next to a splat, mesh, or generated scene and feed the hulls into your runtime physics API.
-- **Broader input surface**: splats, point clouds, static meshes, USD assets, and experimental rigged GLB support.
-- **Thin runtime readers**: Python, TypeScript, C#, and C++ consumers load the same binary format while the heavy reconstruction/decomposition work stays in the compiler.
-- **Pipeline-friendly checks**: `chitin check`, `inspect`, and `validate` make collision generation scriptable and reviewable.
-- **Runtime direction**: the portable WebGPU program is building toward a warm,
-  persistent physicalization session for generated assets, topology-change
-  events, and progressively navigable captures.
-
-## Use cases
-
-- **Gaussian splat scenes**: extract collision geometry from PLY point clouds with opacity filtering
-- **Robotics simulation**: generate colliders for scanned environments (Isaac Sim, Gazebo, MuJoCo)
-- **Web/XR**: load `.phys` sidecars in the browser alongside your 3D viewer (Three.js + Rapier)
-- **Game engines**: Unity's ScriptedImporter turns `.phys` into MeshColliders on drop; the Unreal plugin imports the hull data as an asset
-- **Rigged characters**: per-bone convex hulls in bone-local space, ready for ragdoll or hit detection
-- **Generated and mutable worlds**: locally physicalize novel mesh components
-  and committed topology revisions without a server-side asset oven (roadmap)
-
-## Compared with viewer collision
-
-Splat viewer pipelines usually voxelize a gaussian splat, fill or carve navigable space, and feed that occupancy data to a specific viewer/runtime. That is the right shape for immediate walk mode.
-
-Chitin reconstructs surfaces and decomposes them into convex hulls. That is the right shape when the output needs to become a reusable physics asset: versioned, validated, loadable by multiple engines, and independent of the original viewer. A splat viewer can keep its visual format and load Chitin collision as a sidecar.
-
-## Ecosystem
-
-Chitin is the geometry-to-physics layer. It emits convex hulls directly and
-optional `.phys` files for persistence. It stays independent but is designed to
-sit under a **scene-level registry** that owns coordinate frames, identity, and
-layout. The registry references Chitin artifacts rather than producing physics
-itself.
-
-Visual-only viewers (mesh or gaussian-splat) render read-only geometry; Chitin
-colliders fill the collision/raycast gap via the Three.js + Rapier reader
-(`@autarkis/chitin-web`).
-
-Integration is by artifact (`.phys`) and reference type, never by package
-import.
-
-## Direction
-
-The shipping browser path is Worker-hosted WASM. A hard-gated portable WebGPU
-implementation is in progress; it is not yet a shipping GPU claim. The target
-is one persistent runtime that can serve three workload classes:
-
-- novel generated or uploaded objects;
-- batches created by committed fracture/topology-change events; and
-- spatial tiles reconstructed from captured Gaussian or point data.
-
-The first portability gate is complete: Policy 0.3.0 is the default plane-
-classification contract, with canonical f32 inputs and a filtered ambiguity
-path. It passed the frozen ordinary and large-offset holdout with zero genuine
-arithmetic disagreements across 583,188 replayed clips. This establishes the
-predicate contract; it does not mean end-to-end WebGPU decomposition ships.
-
-See the [architecture](docs/architecture.md), [Policy 0.3 input
-contract](docs/policy-0.3-input-contract.md), and [adversarial predicate
-testing](docs/adversarial-predicate-testing.md). Public performance claims wait
-for the remaining stage-continuation, complete-output, and end-to-end vendor
-admission gates.
+The browser compiler uses WebAssembly. WebGPU decomposition is in development.
+See the [architecture](docs/architecture.md) and
+[numerical input contract](docs/policy-0.3-input-contract.md) for details.
 
 ## Install
 
@@ -91,21 +35,24 @@ pip install chitin[all]         # everything
 
 The base install handles mesh inputs with just trimesh + CoACD. The `[splat]` extra adds Open3D for Poisson surface reconstruction from point clouds and gaussian splats.
 
-Requires Python 3.12. (`chitin[splat]` requires open3d, which does not yet have a 3.13 wheel. The base install works on 3.13+.)
+Mesh compilation supports Python 3.12+. The `[splat]` extra currently requires
+Python 3.12 because Open3D has no Python 3.13 wheel.
 
 ### Browser path
 
-You can skip Python entirely and compile in the browser — both static meshes
-and Gaussian splats:
+**Release status (2026-10-31):** the examples below describe the current source
+API. The published lite/web packages are at 0.1.2; chitin-wasm is not yet on
+npm. Use source builds and locally served native binaries for these examples.
+
+The browser API compiles static meshes and decoded Gaussian fields:
 
 ```bash
 npm install @autarkis/chitin-lite
 ```
 
-This drives CoACD and Poisson reconstruction compiled to WebAssembly in a
-Worker and writes the same `.phys` format the Python compiler produces. The
-native WASM modules ship separately as `@autarkis/chitin-wasm` (CoACD for
-decomposition, Poisson for surface reconstruction from splats).
+CoACD and Poisson run as WebAssembly in a Worker. The output uses the same
+`.phys` format as the Python compiler. The separate `@autarkis/chitin-wasm`
+source package contains the native binaries.
 
 **Mesh compilation** — `compileGlb()` accepts a `File`, `Blob`, buffer, or URL:
 
@@ -241,11 +188,13 @@ issues = validate_phys("colliders.phys")
 
 ## .phys format
 
-The `.phys` binary sidecar is the primary output. It stores quantized convex hulls with optional per-bone bind transforms and collision LOD tiers in a single file that loads in microseconds. Full spec in [docs/phys.md](docs/phys.md).
+The `.phys` binary format stores quantized convex hulls, optional per-bone
+bind transforms, and collision LOD tiers. See [docs/phys.md](docs/phys.md).
 
 ### Collision LOD
 
-A single decomposition forces a tradeoff between fidelity and cost. Multi-LOD solves this: the producer generates tiers at different concavity thresholds, the consumer picks based on distance, platform budget, or simulation context. LOD 0 is always the highest-detail decomposition. Additional tiers are coarser and cheaper. v2 readers open a v3 file and get LOD 0 without changes.
+Generate LOD tiers at different concavity thresholds, then select a tier for
+the viewing distance or simulation budget. LOD 0 is always the highest-detail decomposition. Additional tiers are coarser and cheaper. v2 readers open a v3 file and get LOD 0 without changes.
 
 Runtime tier *selection* by nearest concavity is available in every reader: `phys.lod_tier(...)` (Python), `selectLodHulls(phys, ...)` / `createColliders(..., { lodConcavity })` (TypeScript), `PhysAsset.SelectLod(...)` (Unity), and `UChitinPhysAsset::SelectLod(...)` (Unreal). Readers with no target pick default to LOD 0.
 
@@ -333,7 +282,7 @@ chitin-server download <job_id> -o ./output
 - **Rigged GLTF support is experimental.** Skinning is read directly from GLB binary (trimesh drops these attributes). Currently supports single-primitive meshes. Interleaved `byteStride` is handled, but multiple primitives and vertex reordering may produce incorrect bone segmentation.
 - **Flat surfaces can over-decompose.** A PCA-based flatness detector (`--flatness-threshold`, default 0.9) replaces near-flat octree cells with oriented boxes instead of running CoACD. On the one measured scene (Mip-NeRF 360 Garden, 585 hulls) it did not fire on any cell. See `examples/utility-proof/README.md` for the run and the `--flatness-threshold 0` escape hatch.
 - **No sparse voxel collision output yet.** Chitin currently emits convex hull artifacts, not viewer-native SVO/voxel grids for walk-mode raycasts.
-- **Python 3.12 only** until open3d ships a 3.13 wheel.
+- **Point-cloud dependencies require Python 3.12.** The mesh-only install also supports Python 3.13+.
 - **FBX needs Blender.** trimesh has no FBX loader, so `chitin extract model.fbx` auto-converts the file to GLB via headless Blender (Blender must be on PATH) and extracts from that. `chitin convert` runs the same step explicitly. Without Blender, FBX extraction raises a clear error.
 - **No physics material metadata.** Input formats (USD, GLTF) may carry material properties (friction, density, restitution) that chitin does not propagate to the output. Consumers must assign material properties manually.
 - **Rigged runtime placement is bind-pose only.** The web `addToWorld()` helper bakes each rigged hull to its bone's bind (rest) pose on a single fixed body, and the Three.js debug meshes do the same. For *animated* skinning — hulls that track moving bones — use `createColliders()` and attach each `boneMap` entry to its own body, driven by your bone poses.
