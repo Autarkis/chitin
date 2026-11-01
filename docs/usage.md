@@ -2,7 +2,10 @@
 
 ## Installation
 
-> **Status:** not published yet -- the current PyPI `chitin` is an unrelated placeholder and the npm packages are unpublished. Until release, install from source: clone the repo and `pip install -e .` (add extras, e.g. `pip install -e ".[splat]"`).
+> **Release status (2026-10-31):** PyPI `chitin` and npm lite/web publish 0.1.2.
+> Current source browser APIs are ahead of those packages; chitin-wasm returns
+> 404. Use source builds and locally served native binaries for the current
+> browser workflow.
 
 ```bash
 pip install chitin              # mesh extraction (OBJ, GLB, STL)

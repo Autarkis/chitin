@@ -1,17 +1,19 @@
 # @autarkis/chitin-web
 
-Load chitin `.phys` collision sidecars in the browser. Parses the binary format
-and turns it into Rapier colliders or Three.js debug meshes.
+Read `.phys` files in the browser and create Rapier colliders or Three.js
+debug meshes.
 
 ## Setup
+
+Public npm latest is 0.1.2 (checked 2026-10-31). The examples here document
+the current source API; consult the installed version for available exports.
 
 ```bash
 npm install @autarkis/chitin-web
 ```
 
-The package uses subpath exports. The root is dependency-free -- just the `.phys`
-parser and validator. The Rapier and Three.js bindings live under `/rapier` and
-`/three` and pull their engines in as optional peer dependencies:
+The root export contains the parser and validator with no dependencies.
+Install the optional peers for the `/rapier` and `/three` exports:
 
 ```bash
 npm install @dimforge/rapier3d-compat   # for /rapier
@@ -59,7 +61,7 @@ const coarseHulls = selectLodHulls(phys, 0.3); // hull data only
 const { colliders } = createColliders(rapier, phys, { lodConcavity: 0.3 });
 ```
 
-Readers with no target pick default to LOD 0 (highest detail).
+Omitting the target selects LOD 0, the highest-detail tier.
 
 ### Debug meshes
 

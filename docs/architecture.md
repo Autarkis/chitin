@@ -1,34 +1,21 @@
 # Chitin Architecture
 
-Chitin is a compiler, not a library.
+Chitin loads 3D geometry, reconstructs surfaces where needed, and decomposes
+meshes into convex collision hulls. The Python compiler and browser packages
+return hull data; `.phys` stores it for later use in other runtimes.
 
-It takes messy, heterogeneous 3D input -- gaussian splats, photogrammetry scans, rigged characters, raw meshes -- and produces portable, validated physics colliders. The interesting problem is not convex decomposition (CoACD does that). The interesting problem is the boundary: how geometry from dozens of authoring tools becomes trusted runtime physics data that engines can load without thinking.
+## Geometry and storage
 
-## The contract
+Raw indexed hulls can go directly to a physics engine. A `.phys` sidecar stores:
 
-`.phys` is the contract. A binary sidecar that is:
+- Quantized vertices and triangle indices for each hull.
+- Optional bone assignments and bind transforms.
+- Collision LOD tiers.
+- A versioned header and block layout checked by the readers.
 
-- **Explicit**: every hull, bone assignment, and quantization parameter is inspectable. No opaque engine-specific blobs.
-- **Versioned**: format version in the header, layout invariants documented, and the Python/TypeScript readers reject unknown versions and flags.
-- **Portable**: identical dequantization in Python, TypeScript, C#, and C++. Author once, ship everywhere.
-- **Validated**: `chitin validate` checks structural integrity, offset consistency, index bounds, AABB sanity, and bind-pose block completeness before anything touches a physics engine.
-
-The format is documented in [phys.md](phys.md).
-
-## Positioning
-
-Chitin is free MIT-licensed infrastructure, but the strategic distinction is not "open source vs. closed." Adjacent splat tooling can be open source too. The important distinction is the contract Chitin produces.
-
-| Viewer collision pipeline | Chitin |
-|---------------------------|--------|
-| Starts from a splat viewer/editor workflow | Starts from an asset build pipeline |
-| Voxelizes occupancy for walk mode, raycasts, or broad-phase queries | Reconstructs surfaces and decomposes them into convex hulls |
-| Often depends on a seed point, fill/carve presets, and a specific runtime | Uses explicit compiler config, build diagnostics, and portable readers |
-| Emits viewer-oriented voxel data or a generated collision mesh | Emits `.phys`: versioned, validated convex hull data with optional LOD and rig blocks |
-| Usually lives inside one viewer's collision path | Loads beside any visual asset as a sidecar |
-| Optimized for "can I walk around this splat now?" | Optimized for "can I ship this collision asset everywhere?" |
-
-The approaches can coexist. A splat viewer can use voxel collision for immediate navigation while Chitin produces the final physics artifact for Unity, Unreal, Rapier, robotics simulators, or custom engines. In the browser, `@autarkis/chitin-web` exposes `parsePhys`, `createColliders`, `addToWorld`, and Three.js debug meshes so a viewer can attach Chitin collision with a few lines of runtime code.
+Python, TypeScript, C#, and C++ readers use the same dequantization rules.
+`chitin validate` checks offsets, indices, bounds, and bind-pose data. The
+binary layout is documented in [phys.md](phys.md).
 
 ## Components
 
@@ -81,7 +68,8 @@ The approaches can coexist. A splat viewer can use voxel collision for immediate
 
 ### Compiler (`chitin-core`)
 
-The compiler kernel is a deterministic pipeline. Same input bytes + same config = same output bytes. This is what makes caching work.
+With deterministic settings and the same runtime/toolchain, repeated builds
+of the same input and configuration produce the same bytes.
 
 Determinism is not free, and one dependency has to be held to it deliberately. CoACD's search is OpenMP-parallel, and its thread scheduling decides which decomposition it settles on: run unpinned, the same mesh returns a different hull count and different bytes every time (measured: 47/48/50 hulls over four runs of one 3.6k-face mesh, four distinct hashes). Chitin therefore runs the CoACD worker with `OMP_NUM_THREADS=1` by default, which costs 2-4x wall time on concave assets and buys byte-identical output. `--fast` (`Config(coacd_deterministic=False)`) trades that back for speed; the choice is recorded in the build plan and in `resolved-config.json`, and the `robotics` profile rejects a build that took it. This is the same fix, for the same reason, as the single-threaded Poisson note below.
 
@@ -113,15 +101,16 @@ The compiler does not make runtime decisions. It produces an artifact. Consumers
 ### Build service (`chitin-service`)
 
 A local build server that wraps the compiler with:
-- **Content-addressed caching**: `SHA-256(input_bytes + config_dict + compiler_version)`. Cache hit rate is high because iteration loops mostly change the asset, not the physics config.
+- **Content-addressed caching**: `SHA-256(input_bytes + config_dict + compiler_version)`.
 - **Job tracking**: created, uploaded, running, complete, failed. Stored in SQLite.
 - **Artifact storage**: `.phys`, `.json`, `.usda` written to local disk, downloadable by job ID.
 
-Currently synchronous and single-process. Designed for local dev and CI, not production multi-tenant use. The job model exists so the transition to async workers is a schema change, not an architecture change.
+The service runs synchronously in one process for local development and CI.
 
 ### Consumers
 
-Consumers are thin. They read `.phys`, dequantize vertices, and hand geometry to the engine's physics API. Each consumer is ~100-150 lines. The complexity lives in the compiler, not the readers.
+Readers parse `.phys`, dequantize vertices, and pass hull geometry to the
+engine's physics API.
 
 | Consumer | Language | Physics API | Matrix convention |
 |----------|----------|-------------|-------------------|
@@ -132,8 +121,6 @@ Consumers are thin. They read `.phys`, dequantize vertices, and hand geometry to
 | `chitin.phys` | Python | Direct numpy | Row-vector (native match) |
 
 ### Validation and diagnostics
-
-Validation is a first-class output, not a debugging afterthought.
 
 `chitin validate` checks:
 - Magic bytes, version, header size
@@ -167,12 +154,12 @@ Golden fixtures with known transforms are tested in Python and TypeScript on eve
 
 **Two-tier dependency model.** The Python compiler (`pip install chitin`) handles the heavy path: point clouds, splats, Poisson reconstruction, environment scan filtering. The browser module (`@autarkis/chitin-lite`) handles both the mesh path (GLB → CoACD → `.phys`) and the Gaussian splat path (splat preprocessing → Poisson WASM reconstruction → CoACD → `.phys`). Both tiers produce the same `.phys` format. The browser's Poisson reconstruction is Kazhdan's PoissonRecon compiled to WASM, matching the algorithm Open3D wraps on the server. Native algorithms ship as `@autarkis/chitin-wasm` (CoACD + Poisson).
 
-## What chitin is not
+## Runtime responsibilities
 
-- Not a physics engine. It produces collider geometry; something else simulates it.
-- Not a splat viewer or walk-mode runtime. It compiles collider artifacts; viewer UX, seed picking, and camera navigation belong upstream or downstream.
-- Not a mesh optimizer. It does not simplify or retopologize visual meshes. Collision LOD tiers are fresh decompositions at different concavity thresholds, not decimations.
-- Not a format converter. `.phys` is the primary output. JSON and USD are companions for ecosystems that need them.
+The consuming application owns simulation, rendering, camera navigation, and
+physics materials. Chitin supplies collision geometry. Collision LOD tiers are
+separate decompositions at different concavity thresholds; visual mesh
+simplification and retopology belong to asset preparation.
 
 ## Maturity
 
