@@ -3,6 +3,10 @@
 from chitin.gpu.caps import CapResult as GpuCapResult
 from chitin.gpu.caps import triangulate_caps
 from chitin.gpu.clip import ClipEmitResult, dispatch_clip_emit
+from chitin.gpu.clip_pipeline import (
+    dispatch_clip_pipeline,
+    dispatch_clip_pipeline_batch,
+)
 from chitin.gpu.dispatch import (
     dispatch_compact,
     dispatch_prefix_sum_exclusive,
@@ -26,6 +30,13 @@ from chitin.gpu.layouts import (
     StructLayout,
 )
 from chitin.gpu.loops import LoopExtractionResult, extract_boundary_loops
+from chitin.gpu.pipeline import (
+    ClipMetrics,
+    ClipPipelineResult,
+    ClipStatus,
+    compute_arena_bounds,
+    validate_clip_inputs,
+)
 from chitin.gpu.primitives import (
     compact,
     prefix_sum_exclusive,
@@ -40,6 +51,9 @@ __all__ = [
     "ALL_LAYOUTS",
     "CapacityError",
     "ClipEmitResult",
+    "ClipMetrics",
+    "ClipPipelineResult",
+    "ClipStatus",
     "DeviceLostError",
     "GPULimits",
     "GPUWorker",
@@ -51,7 +65,10 @@ __all__ = [
     "WeldResult",
     "check_drift",
     "compact",
+    "compute_arena_bounds",
     "dispatch_clip_emit",
+    "dispatch_clip_pipeline",
+    "dispatch_clip_pipeline_batch",
     "dispatch_compact",
     "dispatch_compact_multi",
     "dispatch_prefix_sum_exclusive",
@@ -67,5 +84,6 @@ __all__ = [
     "reduce_sum",
     "segmented_scan",
     "triangulate_caps",
+    "validate_clip_inputs",
     "weld_intersections",
 ]
