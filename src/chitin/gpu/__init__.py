@@ -19,6 +19,17 @@ from chitin.gpu.dispatch_multi import (
     dispatch_reduce_sum_multi,
     prefix_sum_gpu,
 )
+from chitin.gpu.equivalence import (
+    CALIBRATION_FIXTURES,
+    canonicalize_vertex,
+    check_cap_winding,
+    check_criteria,
+    check_side_loop_equivalence,
+    check_topology_parity,
+    compare_caps_equivalent,
+    generate_planes,
+    run_cpu_oracle,
+)
 from chitin.gpu.errors import (
     CapacityError,
     DeviceLostError,
@@ -49,6 +60,7 @@ from chitin.gpu.worker import GPULimits, GPUWorker
 
 __all__ = [
     "ALL_LAYOUTS",
+    "CALIBRATION_FIXTURES",
     "CapacityError",
     "ClipEmitResult",
     "ClipMetrics",
@@ -63,8 +75,14 @@ __all__ = [
     "ShaderCompilationError",
     "StructLayout",
     "WeldResult",
+    "canonicalize_vertex",
+    "check_cap_winding",
+    "check_criteria",
     "check_drift",
+    "check_side_loop_equivalence",
+    "check_topology_parity",
     "compact",
+    "compare_caps_equivalent",
     "compute_arena_bounds",
     "dispatch_clip_emit",
     "dispatch_clip_pipeline",
@@ -78,10 +96,12 @@ __all__ = [
     "dispatch_segmented_scan",
     "extract_boundary_loops",
     "generate_all_structs",
+    "generate_planes",
     "layout_to_wgsl",
     "prefix_sum_exclusive",
     "prefix_sum_gpu",
     "reduce_sum",
+    "run_cpu_oracle",
     "segmented_scan",
     "triangulate_caps",
     "validate_clip_inputs",

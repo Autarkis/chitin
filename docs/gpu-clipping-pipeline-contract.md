@@ -720,9 +720,11 @@ All criteria must pass simultaneously:
      mesh.
    - Intersection vertices are identified by their `EdgeKey`.
    - Each output face is a triple of canonical vertex identities.
-   - The face **sets** (unordered, but preserving multiplicity and
-     per-face winding orientation relative to the plane normal) must
-     match between GPU and CPU for both halves.
+   - **2a (clip faces):** The face **sets** (unordered, but preserving
+     multiplicity and per-face winding orientation relative to the plane
+     normal) must match between GPU and CPU for both halves.
+   - **2b (cap faces):** Cap faces are checked by **triangulation
+     equivalence**, not strict face-set identity. See Amendment A1.
    - Source-face ancestry must match: each output face traces to the
      same source triangle.
 
@@ -759,3 +761,116 @@ All criteria must pass simultaneously:
 9. Issue PASS or FAIL verdict.
 10. If PASS: close #92, #93, #103, #120 with sha link.
 11. If FAIL: document failure class, file remediation issue.
+
+---
+
+## Amendments
+
+### Amendment A2 — Calibration repairs (2026-09-06)
+
+This amendment precedes G2 evaluation. Historical results and fixture digests
+remain unchanged.
+
+- Boundary-loop identity is invariant under cyclic rotation **and reversal**.
+  Boundary extraction walks undirected edges. Cap winding remains a separate,
+  side-specific check; reversed triangles are still rejected.
+- A1 condition 4 now requires exact nonzero area of the supplied binary
+  coordinates. The `d² × 1e-5` margin remains an informational quality metric.
+  Below that margin the validator uses rational cross products to distinguish
+  a narrow triangle from a truly collinear one. Curved-pipe calibration clip 12
+  demonstrated why whole-loop size is not a valid degeneracy threshold.
+- Host cap assembly uses deterministic dynamic programming over valid diagonals,
+  maximizing minimum triangle area. It preserves boundary vertices and edges;
+  it neither falls back to an unchecked fan nor drops small triangles.
+  Both CPU gate assembly and the permitted host GPU-cap stage use this geometry
+  utility. Their classification, clipping, positions, and boundary extraction
+  inputs remain independently produced. Cap coverage is checked independently
+  by the evaluator. Historical policy cap APIs retain their existing semantics.
+- Each half extracts boundaries from its own retained surface. Incident-face
+  fans determine connectivity at shared vertices; repeated occurrences split
+  weakly simple walks into simple cycles. Coplanar faces are accounted for per
+  half. Unconstructible caps fail with no partial mesh.
+- Calibration replaces invalid `h_shape` with `h_shape_corrected`. The original
+  clockwise profile was passed to a CCW extrusion helper: its top triangles had
+  absolute area 1.0 against polygon area approximately 0.58. The historical
+  generator remains unchanged; the corrected generator reverses the profile.
+  New results record the new name and source digest, and are not a rerun of
+  identical historical inputs. G2 generators and manifest are untouched.
+
+### Amendment A1 — Cap triangulation equivalence
+
+**Date:** 2026-09-05
+**Rationale:** Calibration on the four-fixture corpus exposed an
+overconstrained representation check in Criterion 2. The CPU oracle and
+GPU pipeline use different ear-clipping implementations that may choose
+different internal diagonals for the same boundary loop. Both
+triangulations are valid covers of the same polygon — different diagonals
+encode the same capped surface. Requiring strict face-set identity on cap
+faces penalises a representation difference, not a geometric error.
+
+**Change to Criterion 2 (Topology parity):**
+
+Criterion 2 is split into two sub-criteria with different strength:
+
+- **2a — Clip-face parity (unchanged).** Canonical face sets for clip
+  faces (ancestry ≠ 0xFFFFFFFF) must match between GPU and CPU by strict
+  multiset identity, preserving multiplicity and per-face winding.
+
+- **2b — Cap-face triangulation equivalence (amended).** For cap faces
+  (ancestry == 0xFFFFFFFF), the gate checks **triangulation equivalence**
+  instead of strict face-set identity. Two sets of cap triangles are
+  equivalent for a given boundary loop if and only if all of the following
+  hold:
+
+  1. **Identical boundary loops.** The GPU and CPU boundary loops have
+     identical canonical vertex identities (same vertices in the same
+     cyclic order, compared after canonical rotation to the
+     lexicographically smallest vertex).
+  2. **Every cap vertex belongs to its loop.** No cap triangle references
+     a vertex outside the boundary loop it covers.
+  3. **Triangle count.** Exactly `n − 2` triangles for an `n`-vertex
+     loop.
+  4. **Nondegenerate triangles.** Every cap triangle has nonzero area:
+     the f64 cross-product magnitude of its edge vectors exceeds a
+     scale-relative threshold `d² × 1e-5`, where `d` is the diagonal of
+     the loop's bounding box. This is the noise floor for the cross
+     product of two f32-rounded edges of length at most `d`; an absolute
+     threshold would pass sliver triangles on large loops and reject
+     legitimate triangles on small ones.
+  5. **Boundary-edge coverage.** Every consecutive edge of the boundary
+     loop appears exactly once across the triangles.
+  6. **Internal-diagonal pairing.** Every non-boundary edge (internal
+     diagonal) appears exactly twice, with opposite orientation.
+  7. **No crossing diagonals.** No two internal diagonals intersect in
+     the polygon's 2D projection (proper intersection, not shared
+     endpoints).
+  8. **No boundary intersection.** No internal diagonal crosses a
+     boundary edge.
+  9. **Consistent winding.** All cap triangles wind consistently relative
+     to the clipping plane normal (all positive-dot or all negative-dot,
+     matching the expected side).
+  10. **Projected containment.** Every triangle, projected onto the
+      clipping plane, lies inside the boundary polygon.
+  11. **Area parity.** The sum of triangle areas equals the boundary
+      polygon area within a scale-relative f32 tolerance (relative error
+      < 1e-4).
+  12. **Independent loop validation.** Each disconnected boundary loop is
+      validated independently. A pass requires all loops equivalent.
+
+  **Nested loops** remain unsupported. A mesh section producing nested
+  loops fails with `NESTED_LOOPS` — this amendment does not change that.
+
+  **Strict face-set parity** is retained as an **informational metric**
+  reported alongside the equivalence result. It is not a gate criterion
+  for cap faces.
+
+**Unchanged criteria:** 1 (classification), 3 (finite coords), 4 (valid
+indices), 5 (loops closed), 6 (caps wound), 7 (no readback), 8
+(determinism). Criteria 5, 6, and the equivalence conditions above are
+**independently gated** — a pass on equivalence does not excuse a winding
+or loop-closure failure.
+
+**Non-excuse clause:** The 111 cap-winding failures observed in
+calibration (Criterion 6) remain failures. This amendment relaxes the
+representation check for valid triangulations; it does not relax any
+geometric-correctness criterion.
