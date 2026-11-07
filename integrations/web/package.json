@@ -62,8 +62,8 @@
   },
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.20.0",
-    "@types/three": "^0.185.4",
-    "three": "^0.185.1",
+    "@types/three": "^0.187.0",
+    "three": "^0.187.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.6"
   },
